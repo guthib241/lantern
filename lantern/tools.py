@@ -41,7 +41,7 @@ class ToolError(Exception):
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None, forms=None):
+                 router=None, forms=None, email=None):
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -51,14 +51,23 @@ class Toolbox:
         self.gate = as_gate(approve)
         self.router = router  # router.Router: the private lane (Muse Glimmer)
         self.forms = forms    # forms.FormService: Lantern's browser for form filling
+        self.email = email    # email_tool.EmailService
         self.tainted = False  # set once untrusted content reached the model in this task
+        self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
         self.cancel = threading.Event()  # the agent swaps in its own (STOP / kill switch)
         self.on_event: Callable[[str, dict], None] = lambda kind, data: None
 
     def begin_task(self, task_id: int | None = None) -> None:
         self.tainted = False
+        self.untrusted_emails = set()
         self.task_id = task_id
+
+    def _saw_untrusted(self, text: str) -> None:
+        """Untrusted text reached the model: taint the task and note any addresses in it."""
+        from .email_tool import emails_in
+        self.tainted = True
+        self.untrusted_emails |= emails_in(text)
 
     def _approve(self, action: str, summary: str, payload: dict):
         """Ask the gate. Returns commit(payload) on yes, None on no."""
@@ -152,7 +161,7 @@ class Toolbox:
         if p.suffix.lower() not in TEXT_EXTS:
             return {"path": str(p), "note": f"binary file ({p.suffix}), {p.stat().st_size} bytes; cannot show text"}
         text = self.policy.read_text(p, limit=MAX_READ_CHARS + 1)
-        self.tainted = True
+        self._saw_untrusted(text)
         return {"path": str(p), "truncated": len(text) > MAX_READ_CHARS, **wrap(text[:MAX_READ_CHARS], str(p))}
 
     def ask_private(self, path: str, question: str) -> dict:
@@ -162,7 +171,7 @@ class Toolbox:
             raise ToolError("the private lane (local Muse Glimmer) is not set up, so I can't read private files")
         try:
             result = self.router.ask_private(path, question)
-            self.tainted = True  # the answer is derived from untrusted file content
+            self._saw_untrusted(result.get("answer", ""))  # derived from untrusted file content
             return result
         except PrivateLaneError as e:
             raise ToolError(f"{e}. Private files never go to the cloud, so I can't answer this right now.") from e
@@ -222,8 +231,31 @@ class Toolbox:
                                      task_id=self.task_id, cancel=self.cancel, on_event=self.on_event)
         except FormError as e:
             raise ToolError(str(e)) from e
-        self.tainted = True  # labels and the confirmation text come from a web page
+        # labels and the confirmation text come from a web page
+        self._saw_untrusted((result.get("confirmation") or {}).get("content", ""))
         return result
+
+    # ---- email -----------------------------------------------------------------
+    def send_email(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None,
+                   cc: list[str] | None = None) -> dict:
+        """Send an email after approval; verified by finding it in the Sent folder."""
+        from .email_tool import EmailError, emails_in
+        if self.email is None:
+            raise ToolError("email isn't set up on this computer")
+        known: set[str] = set()  # addresses the user gave: in the request or remembered facts
+        for value in self.memory.facts().values():
+            known |= emails_in(value)
+        if self.task_id:
+            try:
+                known |= emails_in(self.memory.get_task(self.task_id).goal)
+            except KeyError:
+                pass
+        try:
+            return self.email.send(to, subject, body, attachments, cc, approve=self._approve, commit=self._commit,
+                                   untrusted_emails=self.untrusted_emails, known_emails=known,
+                                   task_id=self.task_id)
+        except EmailError as e:
+            raise ToolError(str(e)) from e
 
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
@@ -298,5 +330,13 @@ TOOL_SPECS = [
         {"url": {**S, "description": "The form's URL, or the name of a saved form such as 'hackathon reimbursement'"},
          "goal": {**S, "description": "What to fill in, with details the profile doesn't have (amount, date, purpose, receipt file path)"}},
         ["url", "goal"]),
+    _fn("send_email",
+        "Send an email. The user approves the exact recipients, subject, body and attachments first; "
+        "the result says whether it was found in the Sent folder (verified).",
+        {"to": {"type": "array", "items": S, "description": "Recipient addresses"},
+         "subject": S, "body": {**S, "description": "Plain-text body"},
+         "attachments": {"type": "array", "items": S, "description": "File paths to attach"},
+         "cc": {"type": "array", "items": S}},
+        ["to", "subject", "body"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

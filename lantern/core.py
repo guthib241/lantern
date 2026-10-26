@@ -11,6 +11,7 @@ import os
 import queue
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from . import config as config_mod
@@ -18,6 +19,7 @@ from . import models
 from .agent import Agent
 from .approvals import ApprovalBus, BusGate
 from .audit import AuditLog, GuardedClient
+from .email_tool import EmailService, EmailSettings
 from .forms import FormService, FormSettings
 from .memory import Memory
 from .policy import Policy
@@ -42,7 +44,7 @@ class Core:
     def __init__(self, cfg: config_mod.Config, client: Any = None, *, memory: Memory | None = None,
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
                  bus: ApprovalBus | None = None, approval_timeout: float | None = None,
-                 forms: FormService | None = None):
+                 forms: FormService | None = None, email: EmailService | None = None):
         self.cfg = cfg
         self.memory = memory or Memory(cfg.db_path)
         self.audit = audit or AuditLog(cfg.audit_path)
@@ -54,8 +56,10 @@ class Core:
         self.client = client if isinstance(client, GuardedClient) else GuardedClient(client, self.audit,
                                                                                      destination=cfg.base_url)
         self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
+        self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
+                                           outbox_dir=Path(cfg.media_dir) / "outbox")
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
-                               forms=self.forms)
+                               forms=self.forms, email=self.email)
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
                            on_event=self._agent_event)

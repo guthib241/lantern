@@ -16,6 +16,7 @@ import sys
 from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
+from .email_tool import EmailService, EmailSettings
 from .forms import FormService, FormSettings, Vault, VaultError
 from .memory import Memory
 from .policy import ZONES, Policy
@@ -99,7 +100,9 @@ def build_agent(cfg, mem: Memory) -> Agent:
     policy = Policy.load(cfg.zones_file, cfg.roots)
     router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
     forms = FormService(FormSettings.from_config(cfg), client, policy, mem)
-    tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms)
+    email = EmailService(EmailSettings.from_env(dict(os.environ)), policy, audit,
+                         outbox_dir=os.path.join(cfg.media_dir, "outbox"))
+    tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms, email=email)
     tools.on_event = show_event
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 

@@ -60,6 +60,10 @@ Setup (once):
 
 Telegram fallback: create a bot with @BotFather, then set `LANTERN_CHANNELS=telegram`, `TELEGRAM_BOT_TOKEN` and `LANTERN_TELEGRAM_OWNER` (your chat id).
 
+## Email
+
+`send_email` asks first, with a card showing the recipients, subject, body preview and attachments (private files flagged). It warns if a recipient only appeared inside a file or web page. It sends over SMTP and checks the Sent folder over IMAP before calling it verified. Gmail setup: turn on 2-step verification, create an **app password**, then set `LANTERN_EMAIL_MODE=smtp`, `LANTERN_SMTP_USER` and `LANTERN_SMTP_PASSWORD` in `.env`.
+
 ## Tests
 
 ```bash
