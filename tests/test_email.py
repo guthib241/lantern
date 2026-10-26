@@ -197,3 +197,13 @@ def test_smtp_mode_needs_credentials(tmp_path, home):
     with pytest.raises(EmailError, match="app password"):
         SmtpMailer(EmailSettings(mode="smtp"))
     assert EmailSettings.from_env({"LANTERN_EMAIL_MODE": "smtp", "LANTERN_SMTP_USER": "u@gmail.com"}).from_addr == "u@gmail.com"
+
+
+def test_message_ids_never_look_like_card_numbers():
+    # make_msgid() embeds up to 20 random digits; a Luhn-valid run got "redacted" as a card number
+    # when the send result went back to the model. Ours has letters only before the @.
+    from lantern.email_tool import message_id
+    from lantern.scrubber import Scrubber
+    ids = {message_id("example.com") for _ in range(500)}
+    assert len(ids) == 500 and all(i.startswith("<lantern.") and i.endswith("@example.com>") for i in ids)
+    assert all(Scrubber().scrub(i).count == 0 for i in ids)

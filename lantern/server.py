@@ -199,7 +199,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
 
     @app.get("/zones", dependencies=[Depends(auth)])
     def zones():
-        return {"zones": core.policy.describe(), "choices": list(ZONES)}
+        return {"zones": [{**z, "exists": Path(z["path"]).exists()} for z in core.policy.describe()],
+                "choices": list(ZONES)}
 
     @app.post("/zones", dependencies=[Depends(auth)])
     def set_zone(body: ZoneIn):

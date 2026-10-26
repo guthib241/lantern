@@ -41,7 +41,8 @@ def test_one_approval_moves_everything_and_verifies(tmp_path):
     tb, dl, asked, bus = setup(tmp_path)
     r = tb.organize_files(plan(dl))
     assert r["done"] and r["verified"] and r["moved"] == 3 and r["failed"] == []
-    assert len(asked) == 1 and asked[0].startswith("Move 3 files: 2 → ") and "Images" in asked[0]
+    assert len(asked) == 1 and asked[0].startswith("Move 3 files: 2 → home/Downloads/Images; 1 → home/Downloads/Docs")
+    assert str(tmp_path) not in asked[0]   # readable paths on the card; the payload keeps the full ones
     assert sorted(p.name for p in (dl / "Images").iterdir()) == ["a.jpg", "b.png"]
     assert (dl / "Docs" / "invoice.pdf").read_bytes() == b"%PDF" and not (dl / "c.pdf").exists()
     a = list(bus._items.values())[0]

@@ -249,7 +249,7 @@
   // ---- privacy --------------------------------------------------------------------------------------
   async function loadPrivacy() {
     try {
-      const v = LanternAudit.view(await api.get('/audit'));
+      const v = LanternAudit.view(await api.get('/audit'), { rehearsal: !!health.demo });
       $('audit-headline').textContent = v.headline;
       $('audit-private').textContent = v.privateLine + (v.selfhosted ? ' · ' + v.selfhosted : '');
       const rows = $('audit-rows');
@@ -259,11 +259,14 @@
       const z = await api.get('/zones');
       const list = $('zones');
       list.textContent = '';
-      for (const zone of z.zones) {
+      // Built-in hidden paths for other systems (macOS keychains on Linux, ...) don't exist here: fold them away.
+      const folded = z.zones.filter((zone) => zone.zone === 'hidden' && zone.exists === false);
+      for (const zone of z.zones.filter((x) => !folded.includes(x))) {
         const sel = h('select', { onchange: (e) => setZone(zone.path, e.target.value) },
           z.choices.map((c) => h('option', c === zone.zone ? { selected: true } : {}, c)));
         list.append(h('div', { class: 'zone' }, h('code', {}, zone.path), sel));
       }
+      if (folded.length) list.append(h('p', { class: 'hint' }, `+ ${folded.length} built-in hidden paths that don't exist on this computer`));
     } catch (e) {
       $('audit-headline').textContent = `Can't reach Lantern (${e.message})`;
     }

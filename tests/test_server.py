@@ -179,3 +179,11 @@ def test_real_uvicorn_serves_the_event_websocket(tmp_path):
         server.should_exit = True
         thread.join(5)
     assert not thread.is_alive()  # shutdown isn't stuck on a forgotten websocket
+
+
+def test_zones_say_whether_each_path_exists(tmp_path):
+    core, c, root = make(tmp_path, [])
+    zones = c.get("/zones", headers=H).json()["zones"]
+    by_path = {z["path"]: z["exists"] for z in zones}
+    assert by_path[str(root.resolve())] is True
+    assert any(z["zone"] == "hidden" and z["exists"] is False for z in zones)   # other systems' defaults

@@ -86,3 +86,12 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **CI:** `.github/workflows/ci.yml` runs on each pull request and on pushes to main: pyflakes, the whole test suite (real Chromium, real uvicorn, the desktop's node tests), the full offline rehearsal (`lantern --demo-run`, which fails the build if any beat fails) and the doctor.
   - **Lint:** fixed the two unused imports pyflakes found.
   - 348 passing.
+- End-to-end check of the real desktop app (asked: "are you sure this is complete end to end?").
+  - **What it does:** `desktop/e2e/run.js` (`npm run e2e`, also run by pytest when Electron is installed) starts the real Python server in rehearsal mode and launches the real Electron 44.5.1 app (under Xvfb here). It clicks through the whole story in the panel: the form with two Allow clicks and verification, the private question, the planted key, projects, the widget with Allow and the sandboxed frame, a reminder, tidy Downloads with Allow, the phone, the Setup tab, costs and STOP. Screenshots are saved.
+  - **Bug it found:** the email's Message-ID (from `make_msgid()`) carried a random run of up to 20 digits. About one time in ten it passed Luhn and showed up as a fake "card number" redaction in the privacy view. Lantern now makes its own letters-only Message-ID.
+  - **Polish from the screenshots:**
+    - The tidy approval card (desktop and phone) shows `home/Downloads/Images` instead of `/tmp/…` paths.
+    - The zones list folds away built-in hidden paths that don't exist on this computer.
+    - In rehearsal, the privacy view says "would have left this laptop (rehearsal: nothing was sent)".
+  - `node_modules/` is gitignored; `desktop/package-lock.json` is committed.
+  - 351 passing (including the Electron e2e) and 18 desktop tests.

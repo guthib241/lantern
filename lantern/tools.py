@@ -228,6 +228,14 @@ class Toolbox:
         ok = dst.exists() and not src.exists()  # verify on disk
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
 
+    def _short(self, path: str | Path) -> str:
+        """A path as the user thinks of it: 'Downloads/Images', relative to the allowed folder it's in."""
+        p = Path(path)
+        for root in sorted(self.policy.roots, key=lambda r: len(r.parts), reverse=True):
+            if p == root or root in p.parents:
+                return str(Path(root.name) / p.relative_to(root)) if p != root else root.name
+        return str(p)
+
     def organize_files(self, moves: list[dict]) -> dict:
         """Many moves, one approval: the card shows the whole plan, bound to every file's path, size
         and modified time. Each move is verified on disk; on a failure Lantern stops and reports."""
@@ -267,7 +275,7 @@ class Toolbox:
         for _, dst in plan:
             groups[str(dst.parent)] = groups.get(str(dst.parent), 0) + 1
         summary = f"Move {len(plan)} file{'s' if len(plan) != 1 else ''}: " + "; ".join(
-            f"{n} → {folder}" for folder, n in sorted(groups.items(), key=lambda g: -g[1])[:6])
+            f"{n} → {self._short(folder)}" for folder, n in sorted(groups.items(), key=lambda g: -g[1])[:6])
         if len(groups) > 6:
             summary += f"; and {len(groups) - 6} more folders"
         payload = identity()

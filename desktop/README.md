@@ -9,6 +9,7 @@ npm run mock         # no Python, no API key: a scripted story (form → approva
 npm start            # the real thing: needs `python -m lantern --serve` running
                      # (or `python -m lantern --serve --demo`: real server, scripted model, $0)
 npm test             # logic + mock server tests (node --test)
+npm run e2e          # the real app against the real server (rehearsal), clicking through the whole story
 ```
 
 - **Avatar window:** transparent, frameless, always on top, and click-through except over the avatar. Click it to open the panel; right-click it for STOP and Quit. The face follows Lantern's state (idle, thinking, smug, annoyed, celebrating, needs-approval, sleeping). Faces come from Muse: `assets/avatar/<expression>.webm` (animated, Muse Video / Vibes), `.webp` or `.png` (Muse Image). A faceless glow stands in until they exist.

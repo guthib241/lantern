@@ -182,3 +182,11 @@ test('setup check: failures first, fixes only where needed, a plain readiness li
   assert.equal(v.rehearsal, 'Rehearsal: ready ✓');
   assert.deepEqual(Setup.view(null).rows, []);
 });
+
+test('audit view is honest in rehearsal: nothing actually left', () => {
+  const audit = { summary: { cloud: { calls: 2, bytes: 2048, by_model: {}, redactions: {} }, local: { calls: 0, bytes: 0 },
+                             selfhosted: { calls: 0, bytes: 0 } } };
+  assert.equal(A.view(audit).headline, '2.0 KB left this laptop today, in 2 calls');
+  assert.equal(A.view(audit, { rehearsal: true }).headline,
+    '2.0 KB would have left this laptop today, in 2 calls (rehearsal: nothing was sent)');
+});

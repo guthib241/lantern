@@ -20,11 +20,13 @@ import hashlib
 import imaplib
 import mimetypes
 import re
+import secrets
 import smtplib
+import string
 import time
 from dataclasses import dataclass
 from email.message import EmailMessage
-from email.utils import formatdate, make_msgid, parseaddr
+from email.utils import formatdate, parseaddr
 from pathlib import Path
 from typing import Any, Callable
 
@@ -62,6 +64,14 @@ class EmailSettings:
                    from_addr=env.get("LANTERN_EMAIL_FROM", user),
                    imap_host=env.get("LANTERN_IMAP_HOST", cls.imap_host),
                    sent_folder=env.get("LANTERN_SENT_FOLDER", cls.sent_folder))
+
+
+def message_id(domain: str) -> str:
+    """A unique Message-ID with letters only before the @. email.utils.make_msgid() puts a random run
+    of up to 20 digits in it, which can pass the Luhn check and be "redacted" as a card number when
+    the send result goes back to the model (a false alarm in the audit view)."""
+    token = "".join(secrets.choice(string.ascii_lowercase) for _ in range(24))
+    return f"<lantern.{token}@{domain}>"
 
 
 # ---- mailers ------------------------------------------------------------------------------
@@ -231,7 +241,7 @@ class EmailService:
             msg["Cc"] = ", ".join(cc_list)
         msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
-        msg["Message-ID"] = make_msgid(domain=self.from_addr.split("@")[-1] or "lantern.local")
+        msg["Message-ID"] = message_id(self.from_addr.split("@")[-1] or "lantern.local")
         msg.set_content(body)
         for f in final_files:
             ctype = mimetypes.guess_type(f["name"])[0] or "application/octet-stream"

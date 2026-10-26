@@ -171,6 +171,7 @@ pip install -e ".[dev]"
 python -m pytest -q          # ~350 tests, offline: fake model, real Chromium on demo/forms, real uvicorn, desktop node tests
 python -m pyflakes lantern scripts tests
 cd desktop && npm test       # the panel's logic and the mock server on their own
+cd desktop && npm install && npm run e2e   # the real Electron app against the real server, whole story (Linux without a screen: xvfb-run -a npm run e2e)
 ```
 
 GitHub Actions runs the lint, every test, the full offline rehearsal and the doctor on each pull request (`.github/workflows/ci.yml`). `python -m lantern …` and `lantern …` are the same command.

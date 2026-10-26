@@ -8,9 +8,11 @@
     "start": "electron .",
     "mock": "electron . --mock",
     "mock:server": "node mock/server.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "e2e": "node e2e/run.js"
   },
   "devDependencies": {
-    "electron": "44.5.1"
+    "electron": "44.5.1",
+    "playwright": "1.63.0"
   }
 }

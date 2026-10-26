@@ -22,7 +22,9 @@
     return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
   }
 
-  function view(audit) {
+  /** opts.rehearsal: the server runs --demo, so nothing actually left; say what *would* have. */
+  function view(audit, opts) {
+    const rehearsal = !!(opts && opts.rehearsal);
     const s = (audit && audit.summary) || { cloud: { calls: 0, bytes: 0, by_model: {}, redactions: {} },
                                             local: { calls: 0, bytes: 0 }, selfhosted: { calls: 0, bytes: 0 } };
     const c = s.cloud;
@@ -31,7 +33,9 @@
       .sort((a, b) => b.raw - a.raw);
     const redactions = Object.entries(c.redactions || {}).map(([k, v]) => `${k.replace(/_/g, ' ')} ×${v}`);
     return {
-      headline: c.calls ? `${bytes(c.bytes)} left this laptop today, in ${c.calls} call${c.calls === 1 ? '' : 's'}`
+      headline: c.calls
+        ? `${bytes(c.bytes)} ${rehearsal ? 'would have left' : 'left'} this laptop today, in ${c.calls} call${c.calls === 1 ? '' : 's'}`
+          + (rehearsal ? ' (rehearsal: nothing was sent)' : '')
         : 'Nothing has left this laptop today',
       rows,
       redactions,
