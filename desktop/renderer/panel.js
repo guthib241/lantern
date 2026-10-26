@@ -45,7 +45,7 @@
   }
 
   // ---- tabs ---------------------------------------------------------------------------------
-  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets };
+  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets, setup: loadDoctor };
   let tab = 'tasks';
   for (const b of document.querySelectorAll('.tabs button')) {
     b.addEventListener('click', () => {
@@ -146,6 +146,24 @@
       toast(`Couldn't resume: ${e.message}`);
     }
   }
+
+  // ---- setup check (lantern --doctor) ------------------------------------------------------------
+  async function loadDoctor() {
+    const box = $('doctor');
+    box.textContent = 'Checking…';
+    let d;
+    try { d = await api.get('/doctor'); } catch (e) { box.textContent = `Couldn't check: ${e.message}`; return; }
+    const v = LanternSetup.view(d);
+    $('ready-demo').textContent = v.demo;
+    $('ready-rehearsal').textContent = v.rehearsal;
+    box.textContent = '';
+    for (const c of v.rows) {
+      box.append(h('div', { class: `check ${c.status}` },
+        h('span', { class: 'mark' }, c.mark),
+        h('div', {}, h('b', {}, c.title), h('div', { class: 'detail' }, c.detail), c.fix ? h('code', {}, c.fix) : null)));
+    }
+  }
+  $('doctor-again').addEventListener('click', loadDoctor);
 
   async function retryTask(id) {
     try {

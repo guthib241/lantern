@@ -99,3 +99,11 @@ button.ghost { border: 1px solid var(--line); background: #fff; border-radius: 1
 .reminder .forget { margin-top: 0; }
 .interrupted { margin-top: 12px; padding: 10px 14px; border-radius: 16px; background: #f4f0ff; border: 1px solid #d9cffe; font-size: 13px; }
 .interrupted ul { margin: 6px 0; padding-left: 18px; color: var(--muted); }
+.check { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.check .mark { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; }
+.check.ok .mark { background: var(--ok); }
+.check.warn .mark { background: #d97706; }
+.check.fail .mark { background: var(--danger); }
+.check.off .mark { background: var(--muted); }
+.check .detail { color: var(--muted); }
+.check code { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 8px; background: #f6f3fa; font-size: 12px; white-space: pre-wrap; word-break: break-word; }

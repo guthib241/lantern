@@ -76,3 +76,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **What the resumed task knows:** the original goal plus what the cut-short run already did ("fill_form (verified)"), so it doesn't submit twice. Every change still needs approval anyway. The old task becomes `resumed`.
   - **Second server refused:** a second `--serve` on a busy port now exits with a clear message instead of marking the live server's tasks interrupted and then failing to bind.
   - 6 new tests plus 1 desktop test; 344 passing.
+- M21: Setup doctor.
+  - **What it checks:** `python -m lantern --doctor` (also `GET /doctor` and the panel's new **Setup** tab) covers Python, packages, Chromium, the API key (present/missing, never shown), `.env` not tracked by git, the computer-use model and calibration, the private lane (probed only when local), ffmpeg, WhatsApp variables and owner format, cloudflared, Telegram, SMTP, folders and zones (warns when nothing is private), encryption key store, Node + Electron, and the Muse face.
+  - **How it reports:** each problem comes with its exact fix. A summary says whether the rehearsal and the real demo are ready, what blocks them and what's still to do.
+  - **Read-only:** no keys created, no Meta calls.
+  - 4 new tests plus 1 desktop test; 348 passing.

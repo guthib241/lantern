@@ -25,5 +25,5 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M18 ☁ Reminders: `set_reminder` / `list_reminders` / `cancel_reminder`, encrypted storage, a scheduler that pings every phone channel and the desktop (late ones say so), daily/weekly repeats
 - [x] M19 ☁ Tidy a folder: `organize_files` moves many files under one approval bound to the whole plan, each move verified
 - [x] M20 ☁ Resume after restart: tasks cut off by a crash or restart are marked interrupted, reported, and can be resumed
-- [ ] M21 ☁/💻 `lantern --doctor`: one checklist of everything the laptop needs, with the exact fix for each item (CLI, API, desktop)
+- [x] M21 ☁/💻 `lantern --doctor`: one checklist of everything the laptop needs, with the exact fix for each item (CLI, API, desktop)
 - [ ] M22 ☁ Packaging and CI: `pyproject.toml` with a `lantern` command, GitHub Actions running every test

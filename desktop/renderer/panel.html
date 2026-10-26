@@ -22,6 +22,7 @@
     <button role="tab" data-tab="phone">Phone</button>
     <button role="tab" data-tab="costs">Costs</button>
     <button role="tab" data-tab="widgets">Widgets</button>
+    <button role="tab" data-tab="setup">Setup</button>
   </nav>
 
   <main>
@@ -36,6 +37,17 @@
       </div>
       <div id="reminders" class="reminders" hidden></div>
       <div id="tasks" class="tasks"></div>
+    </section>
+
+    <section data-panel="setup">
+      <div class="card">
+        <h3>Setup check</h3>
+        <p class="hint">What Lantern needs on this computer, and the exact fix for anything missing. Read-only: nothing is created or sent.</p>
+        <p class="headline" id="ready-demo">…</p>
+        <p class="hint" id="ready-rehearsal"></p>
+        <div id="doctor"></div>
+        <button class="ghost" id="doctor-again">Check again</button>
+      </div>
     </section>
 
     <section data-panel="privacy">
@@ -100,6 +112,7 @@
   <script src="lib/audit.js"></script>
   <script src="lib/widgets.js"></script>
   <script src="lib/api.js"></script>
+  <script src="lib/setup.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

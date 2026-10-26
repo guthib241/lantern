@@ -207,6 +207,7 @@ def main(argv=None) -> None:
     p.add_argument("--forget-fact", metavar="KEY", help="really delete one remembered fact")
     p.add_argument("--forget-everything", action="store_true", help="erase memory, audit log, voice notes, screenshots")
     p.add_argument("--resume", action="store_true", help="continue the tasks cut short when Lantern last stopped")
+    p.add_argument("--doctor", action="store_true", help="check everything Lantern needs on this computer")
     p.add_argument("--demo", action="store_true", help="with --serve: rehearsal mode (scripted model, demo/home, nothing sent)")
     p.add_argument("--demo-run", action="store_true", help="play the 3-minute demo story offline and print it")
     p.add_argument("--demo-dir", metavar="DIR", help="empty folder for the rehearsal's data (default: a new temp folder)")
@@ -218,6 +219,11 @@ def main(argv=None) -> None:
     cfg = config_mod.load()
     if a.persona:
         cfg.persona = a.persona
+    if a.doctor:  # before opening memory: the doctor creates nothing
+        from .doctor import report, run_checks
+        print("🏮 Lantern doctor\n")
+        print(report(run_checks(cfg)))
+        return
     mem = Memory(cfg.db_path, cipher_for(cfg))
 
     if a.tasks:

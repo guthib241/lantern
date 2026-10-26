@@ -24,6 +24,7 @@ in the browser can't drive Lantern through localhost.
   POST /tasks/{id}/retry            run a failed task's goal again (an interrupted one is resumed)
   POST /tasks/resume                resume every task cut short when Lantern stopped (M20)
   GET  /reminders, POST /reminders/{id}/cancel   upcoming reminders (M18)
+  GET  /doctor                      setup checklist with fixes (M21)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
@@ -155,6 +156,11 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    @app.get("/doctor", dependencies=[Depends(auth)])
+    def doctor():
+        from .doctor import as_json, run_checks
+        return as_json(run_checks(core.cfg))
 
     @app.get("/reminders", dependencies=[Depends(auth)])
     def reminders():

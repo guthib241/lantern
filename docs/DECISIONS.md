@@ -61,3 +61,7 @@
   - **What the new task gets:** the old timeline's tool results, summarised ("fill_form (verified); send_email not reached"), with an instruction to check before repeating anything that changes something.
   - **Safety:** every change still needs a fresh approval bound to its payload, so a duplicate submit would show up on a card.
   - **Who marks tasks interrupted:** only the long-running owner, Core (the server) or `--resume`, so a read-only CLI command can never mark a live server's task interrupted. The server refuses to start twice on the same port.
+- Oct 26 (M21): The doctor is read-only and offline on purpose.
+  - **What it won't do:** it never creates the encryption key (it names the key store it would use), never calls Meta's API (that's `scripts/smoke.py`, which costs money), and probes the private lane only on localhost, since a remote Modal/Baseten URL is the user's business.
+  - **Secrets:** shown as present or missing only.
+  - **Status levels:** fail = blocks; warn = works but not demo-grade (the stand-in private lane, the simulated phone, the local email outbox, no face yet). Readiness is reported separately for the rehearsal and the real demo, so "what do I still need?" has a one-line answer.

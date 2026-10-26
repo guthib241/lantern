@@ -166,3 +166,19 @@ test('interrupted tasks come with hello and leave when resumed', () => {
   assert.deepEqual(s.interrupted, []);
   assert.equal(s.tasks[4].status, 'resumed');
 });
+
+test('setup check: failures first, fixes only where needed, a plain readiness line', () => {
+  const Setup = require('../renderer/lib/setup.js');
+  const v = Setup.view({
+    checks: [{ id: 'python', title: 'Python', status: 'ok', detail: '3.12', fix: 'never shown' },
+             { id: 'glimmer', title: 'Private lane', status: 'warn', detail: 'stand-in', fix: 'set the URL' },
+             { id: 'key', title: 'Key', status: 'fail', detail: 'missing', fix: 'add it' }],
+    ready: { demo: { blocked_by: ['key'], to_do: ['glimmer'] }, rehearsal: { blocked_by: [], to_do: [] } },
+  });
+  assert.deepEqual(v.rows.map((r) => r.id), ['key', 'glimmer', 'python']);
+  assert.deepEqual(v.rows.map((r) => r.mark), ['✗', '!', '✓']);
+  assert.equal(v.rows[2].fix, '');
+  assert.equal(v.demo, 'Real demo: blocked by key · then glimmer');
+  assert.equal(v.rehearsal, 'Rehearsal: ready ✓');
+  assert.deepEqual(Setup.view(null).rows, []);
+});

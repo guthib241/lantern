@@ -20,7 +20,7 @@ python -m lantern --serve                           # then, in a 2nd terminal: c
 - a real Chromium filling [`demo/forms/`](demo/forms)
 - the email outbox, the project map, the widget checker and every verification
 
-Use `python -m lantern --serve --demo` to click through the same story in the desktop app.
+Use `python -m lantern --serve --demo` to click through the same story in the desktop app. `python -m lantern --doctor` tells you what this laptop still needs for the real thing, with the exact fix for each item.
 
 ## The demo (3 minutes)
 
@@ -170,6 +170,8 @@ cd desktop && npm test       # the panel's logic and the mock server
 ```
 
 ## What you need to set up on your laptop
+
+`python -m lantern --doctor` (or the panel's **Setup** tab) checks all of this and prints the fix for anything missing.
 
 1. `MODEL_API_KEY` in `.env`, then `python scripts/smoke.py` and `python scripts/smoke.py cua`.
 2. `python -m playwright install chromium` (once).
