@@ -120,6 +120,7 @@ def main(argv=None) -> None:
     p.add_argument("--persona", choices=sorted(PERSONAS))
     p.add_argument("--serve", action="store_true", help="run the local API server for the desktop app and channels")
     p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--channel-test", metavar="TEXT", help="send TEXT through the configured channels and exit")
     a = p.parse_args(argv)
 
     cfg = config_mod.load()
@@ -162,11 +163,19 @@ def main(argv=None) -> None:
         print("\n".join(f"- {k}: {v}" for k, v in facts.items()) or "Nothing remembered yet.")
         return
 
-    if a.serve:
+    if a.serve or a.channel_test:
+        from .channels import ChannelHub, channels_from_env
         from .core import Core
         from .server import serve
         mem.close()
-        return serve(Core(cfg), config_mod.HOME, port=a.port)
+        core = Core(cfg)
+        hub = ChannelHub(core, channels_from_env(dict(os.environ)))
+        if a.channel_test:  # prove the phone side works before the demo
+            for ch in hub.channels.values():
+                ch.send_text(a.channel_test)
+                print(f"sent via {ch.name}")
+            return
+        return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
 
     agent = build_agent(cfg, mem)
 

@@ -46,6 +46,20 @@ python scripts/smoke.py cua                                         # check comp
 
 It never types passwords, one-time codes, card or ID numbers, stops at CAPTCHAs ("you do this part"), and always asks before Submit, with the approval bound to a hash of every value. Afterwards it checks the confirmation page and saves a screenshot. Set `LANTERN_FORMS_MODEL=muse-wonder-1.0` for final runs and `LANTERN_FORMS_HEADLESS=0` to watch it work.
 
+## Your phone: WhatsApp (and Telegram)
+
+Lantern's WhatsApp number is a **personal task and approval console for your own computer, not a general chatbot** (WhatsApp's January 2026 rule on AI providers). Only your number is listened to. Send it a task or a voice note (Ray-Ban Meta: "Hey Meta, send a voice message to Lantern on WhatsApp"). Approvals arrive as **Approve / Deny / Show** buttons, and **STOP** halts everything.
+
+Setup (once):
+1. developers.facebook.com → create an app → add the **WhatsApp** product → note the test number's **Phone number ID**; add your own number as a recipient.
+2. Business settings → System users → create one, give it the app with `whatsapp_business_messaging`, and generate a **permanent token** (not the 24-hour one). App settings → Basic → **App secret**.
+3. Put them in `.env`: `LANTERN_CHANNELS=whatsapp`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` (any random string), `LANTERN_WHATSAPP_OWNER` (your number, digits only, with country code).
+4. `python -m lantern --serve`, then `cloudflared tunnel --url http://127.0.0.1:8765`.
+5. In the app's WhatsApp → Configuration: callback URL `https://<tunnel>/webhook/whatsapp`, the same verify token, and subscribe to **messages**.
+6. Send "hi" to the test number (this opens WhatsApp's 24-hour window), then run `python -m lantern --channel-test "Lantern here"`.
+
+Telegram fallback: create a bot with @BotFather, then set `LANTERN_CHANNELS=telegram`, `TELEGRAM_BOT_TOKEN` and `LANTERN_TELEGRAM_OWNER` (your chat id).
+
 ## Tests
 
 ```bash

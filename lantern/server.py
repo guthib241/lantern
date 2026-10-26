@@ -16,21 +16,28 @@ in the browser can't drive Lantern through localhost.
   GET  /memory                      remembered facts
   GET  /usage                       tokens and cost per model
   GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
+  GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
+  POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
+  GET  /channel/messages            what the simulated phone received (fake channel)
+  POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from . import __version__, models
 from .approvals import ApprovalError
+from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
 from .core import Core
 from .forms import Vault, VaultError
 from .policy import ZONES
@@ -65,13 +72,18 @@ class ZoneIn(BaseModel):
     zone: str
 
 
+class PhoneIn(BaseModel):
+    text: str = ""
+    button: str = ""
+
+
 class ProfileIn(BaseModel):
     key: str
     value: str
     section: str = "profile"
 
 
-def create_app(core: Core, token: str) -> FastAPI:
+def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
     app = FastAPI(title="Lantern", version=__version__, docs_url=None, redoc_url=None)
     app.add_middleware(
         CORSMiddleware,
@@ -87,7 +99,8 @@ def create_app(core: Core, token: str) -> FastAPI:
     def health():
         return {"ok": True, "version": __version__, "model": core.cfg.model,
                 "badge": models.badge(core.cfg.model), "has_key": bool(os.environ.get(models.API_KEY_ENV)),
-                "private_lane": core.router.backend.name, "busy": core.current_task is not None}
+                "private_lane": core.router.backend.name, "busy": core.current_task is not None,
+                "channels": sorted(hub.channels) if hub else []}
 
     @app.post("/task", dependencies=[Depends(auth)])
     def post_task(body: TaskIn):
@@ -164,6 +177,41 @@ def create_app(core: Core, token: str) -> FastAPI:
             raise HTTPException(400, str(e))
         return vault.load()
 
+    whatsapp = hub.channels.get("whatsapp") if hub else None
+    if isinstance(whatsapp, WhatsAppChannel):
+        @app.get("/webhook/whatsapp")
+        def whatsapp_handshake(request: Request):
+            challenge = verify_handshake(dict(request.query_params), whatsapp.verify_token)
+            if challenge is None:
+                raise HTTPException(403, "verification failed")
+            return PlainTextResponse(challenge)
+
+        @app.post("/webhook/whatsapp")
+        async def whatsapp_webhook(request: Request):
+            raw = await request.body()
+            if not verify_signature(raw, request.headers.get("X-Hub-Signature-256"), whatsapp.app_secret):
+                raise HTTPException(401, "bad signature")
+            try:
+                payload = json.loads(raw)
+            except ValueError:
+                raise HTTPException(400, "not JSON")
+            for item in whatsapp.parse(payload):
+                hub.receive(item)  # processed on the hub's thread; answer Meta right away
+            return {"ok": True}
+
+    phone = hub.channels.get("fake") if hub else None
+    if isinstance(phone, FakeChannel):
+        @app.get("/channel/messages", dependencies=[Depends(auth)])
+        def phone_messages():
+            return {"owner": phone.owner, "messages": phone.messages()}
+
+        @app.post("/channel/fake", dependencies=[Depends(auth)])
+        def phone_send(body: PhoneIn):
+            if not (body.text.strip() or body.button):
+                raise HTTPException(400, "send text or a button id")
+            hub.receive(FakeChannel.incoming(text=body.text, button=body.button, sender=phone.owner))
+            return {"ok": True}
+
     @app.websocket("/events")
     async def events(ws: WebSocket, token_q: str = Query(default="", alias="token")):
         if not secrets.compare_digest(token_q, token):
@@ -201,10 +249,13 @@ def _jsonable(obj):
     return json.loads(json.dumps(obj, default=str))
 
 
-def serve(core: Core, home: Path, host: str = "127.0.0.1", port: int = 8765) -> None:
+def serve(core: Core, home: Path, host: str = "127.0.0.1", port: int = 8765, hub: ChannelHub | None = None) -> None:
     if host not in LOCAL_HOSTS:
         raise SystemExit("Lantern's server only listens on 127.0.0.1")
     import uvicorn
     token = load_token(home)
     print(f"🏮 Lantern server on http://{host}:{port}  (token in {home / 'token'})")
-    uvicorn.run(create_app(core, token), host=host, port=port, log_level="warning")
+    if hub:
+        print(f"   channels: {', '.join(sorted(hub.channels)) or 'none'}"
+              + ("  ·  WhatsApp webhook: https://<your tunnel>/webhook/whatsapp" if "whatsapp" in hub.channels else ""))
+    uvicorn.run(create_app(core, token, hub), host=host, port=port, log_level="warning")
