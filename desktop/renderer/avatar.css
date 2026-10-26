@@ -2,7 +2,9 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 body { font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #2b2236; }
 .stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 6px; }
 .sprite { width: 170px; height: 204px; cursor: pointer; animation: bob 3.2s ease-in-out infinite; filter: drop-shadow(0 8px 18px rgba(240, 120, 47, .35)); }
-.sprite svg, .sprite img, .sprite video { width: 100%; height: 100%; display: block; object-fit: contain; }
+.sprite svg { width: 100%; height: 100%; display: block; }
+.sprite .portrait { width: 156px; height: 156px; margin: 16px auto 0; display: block; border-radius: 50%; object-fit: cover;
+                    box-shadow: 0 0 0 4px rgba(255, 255, 255, .9), 0 0 36px rgba(255, 179, 71, .65); }
 .sprite.sleeping { animation-duration: 6s; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .2)); }
 .sprite.celebrating { animation: hop .6s ease-in-out 3, bob 3.2s ease-in-out 1.8s infinite; }
 .sprite.needs-approval { animation: nudge 1.4s ease-in-out infinite; }

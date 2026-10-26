@@ -7,30 +7,31 @@
   const api = new LanternApi.Api(cfg.apiBase, cfg.token);
   let state = LanternState.initial();
   let shown = '';
-  let imageOk = {};       // expression -> how many image formats failed so far
   let lastBadge = '';
   let lastBadgeAt = 0;
 
   const now = () => Date.now() / 1000;
 
-  // The face is Muse's: assets/avatar/<expression>.webm (an animated loop from Muse Video / Vibes),
-  // .webp or .png (Muse Image, via scripts/make_avatar.py or imported from the MetaMuse app).
-  // The glow from sprite.js is only a stand-in until those exist (no key, tests, mock mode).
-  const FORMATS = ['webm', 'webp', 'png'];
+  // The face is Muse's: desktop/assets/avatar/manifest.js lists, per expression, an animated loop
+  // (.webm, from Vibes / Muse Video) or an image (.webp/.png, Muse Image). Expressions without
+  // their own file show idle. The glow from sprite.js only stands in until any art exists.
+  const sheet = (window.LanternAvatarManifest && window.LanternAvatarManifest.expressions) || {};
+  let broken = false;
 
   function setSprite(expression) {
     if (expression === shown) return;
     shown = expression;
     spriteEl.className = 'sprite ' + expression;
     spriteEl.textContent = '';
-    const tried = imageOk[expression] || 0;
-    if (tried < FORMATS.length) {
-      const format = FORMATS[tried];
-      const media = format === 'webm' ? document.createElement('video') : new Image();
-      if (format === 'webm') Object.assign(media, { autoplay: true, loop: true, muted: true, playsInline: true });
+    const entry = sheet[expression] || sheet.idle;
+    if (entry && !broken) {
+      const video = /\.(webm|mp4)$/i.test(entry.file);
+      const media = video ? document.createElement('video') : new Image();
+      if (video) Object.assign(media, { autoplay: true, loop: true, muted: true, playsInline: true });
+      media.className = 'portrait';
       media.setAttribute('aria-label', `Lantern looks ${expression}`);
-      media.onerror = () => { imageOk[expression] = tried + 1; shown = ''; render(); };
-      media.src = `../assets/avatar/${expression}.${format}`;
+      media.onerror = () => { broken = true; shown = ''; render(); };
+      media.src = `../assets/avatar/${entry.file}`;
       spriteEl.appendChild(media);
     } else {
       spriteEl.innerHTML = LanternSprite.svg(expression);   // our own trusted SVG, no user text inside

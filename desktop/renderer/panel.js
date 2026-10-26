@@ -8,6 +8,13 @@
   let health = {};
   const now = () => Date.now() / 1000;
 
+  // Lantern's Muse-made face in the header, when the avatar sheet exists.
+  const face = ((window.LanternAvatarManifest || {}).expressions || {}).idle;
+  if (face && /\.(webp|png)$/.test(face.file)) {
+    const img = h('img', { src: `../assets/avatar/${face.file}`, alt: 'Lantern', class: 'face' });
+    $('mark').replaceChildren(img);
+  }
+
   function h(tag, props, ...children) {
     const el = document.createElement(tag);
     for (const [k, v] of Object.entries(props || {})) {

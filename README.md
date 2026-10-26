@@ -68,6 +68,14 @@ Telegram fallback: create a bot with @BotFather, then set `LANTERN_CHANNELS=tele
 
 `cd desktop && npm install && npm start` opens the avatar and panel. Run it next to `python -m lantern --serve`. `npm run mock` rehearses the whole story offline. Details: [desktop/README.md](desktop/README.md).
 
+## Lantern's face (made with Muse)
+
+```bash
+python scripts/make_avatar.py                         # Muse Image: canonical portrait + 6 anchored expressions (~$0.07)
+python scripts/make_avatar.py --canonical my_art.png  # start from a character you made in the MetaMuse app
+python scripts/import_avatar.py ~/Downloads/muse/     # use MetaMuse / Vibes exports (idle.png, celebrating.mp4, ...)
+```
+
 ## Tests
 
 ```bash
