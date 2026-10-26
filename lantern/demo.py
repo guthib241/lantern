@@ -58,8 +58,9 @@ STORY = [
 HELP = ("This is rehearsal mode, so I only know the demo script. Try: fill the hackathon reimbursement "
         "form and email it to the organiser · what does my offer letter say? · anything I forgot in my "
         "project notes? · which projects use torch? · make me a water timer · remind me in 20 minutes to "
-        "record the video.")
-EXTRAS = [Beat("Remind me in 20 minutes to record the demo video.")]   # served by --serve --demo, not --demo-run
+        "record the video · tidy my Downloads.")
+EXTRAS = [Beat("Remind me in 20 minutes to record the demo video."),   # served by --serve --demo, not --demo-run
+          Beat("Tidy my Downloads folder.")]
 
 
 class DemoError(RuntimeError):
@@ -223,6 +224,9 @@ def pick_story(goal: str, instructions: str = "") -> Story:
     if "form" in g or "reimburse" in g:
         m = re.search(r"organi[sz]er[^\n]*?([\w.+-]+@[\w-]+(?:\.[\w-]+)+)", instructions, re.I)
         return _forms_story(m.group(1) if m else ORGANISER)
+    if re.search(r"\b(tidy|clean up|organi[sz]e)\b", g):
+        m = re.search(r"\b(downloads|documents)\b", g)
+        return _tidy_story(m.group(1).capitalize() if m else "Downloads")
     if "offer" in g or "salary" in g or "private" in g:
         return _private_story()
     if "notes" in g or "forgot" in g:
@@ -243,6 +247,32 @@ def _reminder_story(goal: str) -> Story:
         yield _Say(f"Set for {r['due']}: “{r['text']}”. Your phone and the desktop will hear about it.")
     else:
         yield _Say(f"No reminder: {r.get('error') or r.get('reason', 'not set')}.")
+
+
+TIDY = {"Images": (".jpg", ".jpeg", ".png", ".gif", ".heic", ".webp"),
+        "Documents": (".pdf", ".docx", ".txt", ".md"), "Spreadsheets": (".csv", ".xlsx")}
+
+
+def _tidy_story(folder: str) -> Story:
+    [listing] = yield _call("list_dir", path=folder)
+    if listing.get("error"):
+        yield _Say(f"I can't look in {folder}: {listing['error']}")
+        return
+    moves = []
+    for entry in listing.get("entries", []):
+        name = entry["name"]
+        group = next((g for g, exts in TIDY.items() if Path(name).suffix.lower() in exts), None)
+        if group and not name.endswith("/"):
+            moves.append({"source": f"{folder}/{name}", "destination": f"{folder}/{group}/"})
+    if not moves:
+        yield _Say(f"{folder} is already tidy. Suspiciously tidy.")
+        return
+    [r] = yield _call("organize_files", moves=moves)
+    if r.get("verified"):
+        where = ", ".join(f"{n} into {Path(f).name}" for f, n in r.get("folders", {}).items())
+        yield _Say(f"Moved {r['moved']} files: {where}. Every move checked on disk. Say “undo” and I'll put them back.")
+    else:
+        yield _Say(f"Nothing moved: {r.get('error') or r.get('reason') or r.get('failed')}.")
 
 
 def _say_story(text: str) -> Story:
@@ -400,6 +430,7 @@ def prepare(data_dir: str | Path | None = None) -> config_mod.Config:
     cfg.forms_domains = []
     zones = {"zones": [{"path": str(home), "zone": "open"},
                        {"path": str(home / "Documents"), "zone": "writable"},
+                       {"path": str(home / "Downloads"), "zone": "writable"},
                        {"path": str(home / "Private"), "zone": "private"}]}
     Path(cfg.zones_file).write_text(json.dumps(zones, indent=1))
     Vault(cfg.profile_path).save(json.loads(DEMO_PROFILE.read_text()))
@@ -458,6 +489,10 @@ def _label(e: dict) -> str:
         "read_file": lambda: f"read {Path(str(r.get('path', ''))).name}",
         "which_projects_use": lambda: f"checked the project map ({len(r.get('projects', []))} hits)",
         "make_widget": lambda: "widget saved and verified ✓" if r.get("verified") else f"widget: {r.get('reason', '?')}",
+        "organize_files": lambda: f"moved {r.get('moved', 0)} of {r.get('of', '?')} files ✓" if r.get("verified")
+        else f"organize: {r.get('reason') or r.get('failed')}",
+        "set_reminder": lambda: f"reminder set for {r.get('due')} ✓" if r.get("verified") else f"reminder: {r.get('reason')}",
+        "list_dir": lambda: f"looked in {Path(str(r.get('path', ''))).name}",
     }
     return labels.get(name, lambda: name)()
 

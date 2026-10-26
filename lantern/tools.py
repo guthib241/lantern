@@ -211,6 +211,9 @@ class Toolbox:
             raise ToolError(str(e)) from e
         if not src.exists():
             raise ToolError(f"{src} does not exist")
+        if src.is_dir() and (inner := self.policy.nested_zones(src)):  # refuse before asking, not after
+            raise ToolError(f"'{src}' contains a {inner[0].zone} folder ({inner[0].path}); "
+                            "moving it would take that folder out of its zone. Move the files instead.")
         if dst.is_dir():
             dst = dst / src.name
         if dst.exists():
@@ -224,6 +227,75 @@ class Toolbox:
         self.policy.move(src, dst)
         ok = dst.exists() and not src.exists()  # verify on disk
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
+
+    def organize_files(self, moves: list[dict]) -> dict:
+        """Many moves, one approval: the card shows the whole plan, bound to every file's path, size
+        and modified time. Each move is verified on disk; on a failure Lantern stops and reports."""
+        if not isinstance(moves, list) or not moves:
+            raise ToolError("moves is empty")
+        if len(moves) > MAX_ORGANIZE:
+            raise ToolError(f"at most {MAX_ORGANIZE} moves at a time")
+        plan, seen_src, seen_dst = [], set(), set()
+        for m in moves:
+            if not isinstance(m, dict) or not m.get("source") or not m.get("destination"):
+                raise ToolError("each move needs a source and a destination")
+            try:
+                src = self.policy.check_writable(m["source"])
+                dst = self.policy.check_writable(m["destination"])
+            except PolicyError as e:
+                raise ToolError(str(e)) from e
+            if not src.is_file():
+                raise ToolError(f"{src} is not a file (organize_files moves files only)")
+            if dst.is_dir() or str(m["destination"]).endswith(("/", "\\")):
+                dst = dst / src.name
+            if dst.exists() or dst in seen_dst:
+                raise ToolError(f"{dst} already exists or is used twice; pick another name")
+            if src in seen_src:
+                raise ToolError(f"{src} appears twice")
+            seen_src.add(src)
+            seen_dst.add(dst)
+            plan.append((src, dst))
+
+        def identity() -> dict:
+            out = []
+            for src, dst in plan:
+                st = src.stat() if src.exists() else None
+                out.append({"from": str(src), "to": str(dst), "bytes": st.st_size if st else None,
+                            "mtime_ns": st.st_mtime_ns if st else None})
+            return {"moves": out}
+        groups: dict[str, int] = {}
+        for _, dst in plan:
+            groups[str(dst.parent)] = groups.get(str(dst.parent), 0) + 1
+        summary = f"Move {len(plan)} file{'s' if len(plan) != 1 else ''}: " + "; ".join(
+            f"{n} → {folder}" for folder, n in sorted(groups.items(), key=lambda g: -g[1])[:6])
+        if len(groups) > 6:
+            summary += f"; and {len(groups) - 6} more folders"
+        payload = identity()
+        commit = self._approve("organize_files", summary, payload)
+        if commit is None:
+            return {"done": False, "reason": "user declined"}
+        if refused := self._commit(commit, identity()):  # a file changed or vanished since the card
+            return refused
+        moved, failed = [], []
+        for (src, dst), before in zip(plan, payload["moves"]):
+            if self.cancel.is_set():
+                failed.append({"from": str(src), "error": "stopped by the user"})
+                break
+            try:
+                self.policy.move(src, dst)
+            except (PolicyError, OSError) as e:
+                failed.append({"from": str(src), "error": str(e)})
+                break
+            ok = dst.is_file() and not src.exists() and dst.stat().st_size == before["bytes"]
+            (moved if ok else failed).append({"from": str(src), "to": str(dst)} if ok
+                                             else {"from": str(src), "error": "not found at the destination"})
+            if not ok:
+                break
+        result = {"done": not failed and len(moved) == len(plan), "verified": not failed and len(moved) == len(plan),
+                  "moved": len(moved), "of": len(plan), "folders": groups, "failed": failed}
+        if moved and len(moved) <= 50:  # enough for "undo that" (another approved organize_files)
+            result["undo"] = [{"source": m["to"], "destination": m["from"]} for m in moved]
+        return result
 
     # ---- forms (computer use) ------------------------------------------------
     def fill_form(self, url: str, goal: str) -> dict:
@@ -488,6 +560,7 @@ def _fn(name: str, description: str, props: dict, required: list[str]) -> dict:
 
 
 S = {"type": "string"}
+MAX_ORGANIZE = 200
 TOOL_SPECS = [
     _fn("list_folders", "List the folders Lantern may see and their privacy zone (private / open / writable).", {}, []),
     _fn("list_dir", "List files and subfolders in a folder.", {"path": {**S, "description": "Folder path; empty for the main folder"}}, []),
@@ -543,5 +616,12 @@ TOOL_SPECS = [
         ["text", "when"]),
     _fn("list_reminders", "List upcoming reminders.", {}, []),
     _fn("cancel_reminder", "Cancel an upcoming reminder by its number.", {"id": {"type": "integer"}}, ["id"]),
+    _fn("organize_files", "Tidy files: move many files at once (into new subfolders if needed). The user approves "
+        "the whole plan once; each move is verified, and the result includes an undo plan.",
+        {"moves": {"type": "array", "description": "Up to 200 moves",
+                   "items": {"type": "object", "properties": {"source": S, "destination": {
+                       **S, "description": "Target folder (ending in /) or full new path"}},
+                       "required": ["source", "destination"], "additionalProperties": False}}},
+        ["moves"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

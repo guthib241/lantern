@@ -235,9 +235,18 @@ class Policy:
         p.write_bytes(content)
         return p
 
+    def nested_zones(self, folder: str | Path) -> list[Rule]:
+        """Zone rules strictly inside `folder` that differ from its own zone."""
+        f = _resolve(folder)
+        own = self.zone_of(f)
+        return [r for r in self.rules if r.path != f and _under(r.path, f) and r.zone != own]
+
     def move(self, src: str | Path, dst: str | Path) -> tuple[Path, Path]:
         s = self.check_writable(src)
         d = self.check_writable(dst)
+        if s.is_dir() and (inner := self.nested_zones(s)):
+            # Zones are paths: moving the folder would carry a private or hidden folder out of its zone.
+            raise PolicyError(f"'{s}' contains a {inner[0].zone} folder ({inner[0].path}); move files, not this folder")
         d.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(s), str(d))
         return s, d

@@ -52,3 +52,7 @@
   - **Late delivery:** a reminder that fell due while Lantern was off is delivered at the next start with a note, never silently dropped.
   - **Approval tier:** same as `remember`. Automatic in a trusted task, approval once untrusted content is in context, because a reminder's text goes to the user's phone and must not be plantable by a web page or file.
   - **No advice:** the text is the user's own words; the agent rules say never to add advice.
+- Oct 26 (M19): Bulk moves are one tool with one approval rather than N `move_file` cards: nobody reads twenty cards, so one card that shows the grouped plan (and the full list behind "Show") is the safer UX.
+  - **Binding:** the approval binds each file's path, size and `mtime_ns`, not a content hash, so tidying big folders stays fast while a file swapped after approval still changes the hash.
+  - **Scope:** files only, because a folder move can drag a nested private or hidden zone out of its zone. That gap also existed in `move_file` and is now closed in `policy.move` itself.
+  - **Undo:** another `organize_files` with the reversed plan, so it is approved and verified like any change. Lantern still never deletes.

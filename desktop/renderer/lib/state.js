@@ -67,6 +67,8 @@
       case 'set_reminder': return r.verified ? `Reminder set for ${r.due || 'later'} ✓` : 'Reminder: ' + (r.reason || 'not set');
       case 'cancel_reminder': return r.verified ? `Reminder #${r.id} cancelled ✓` : 'Reminder: ' + (r.reason || 'not cancelled');
       case 'list_reminders': return `Checked reminders (${r.count != null ? r.count : '?'})`;
+      case 'organize_files': return r.verified ? `Moved ${r.moved} file(s), each checked ✓`
+        : `Tidy: ${r.reason || (r.failed && r.failed[0] && r.failed[0].error) || 'not done'}`;
       case 'finish': return 'Finished';
       default: return e.name;
     }

@@ -65,3 +65,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **Panel and API:** a Reminders card with Cancel, a toast and the avatar's bubble; `GET /reminders` and `POST /reminders/{id}/cancel`.
   - **Mocks:** the desktop mock and the rehearsal model support it.
   - 16 new tests plus 2 desktop tests; 325 passing.
+- M19: Tidy a folder.
+  - **`organize_files`** (appended): up to 200 file moves (new subfolders as needed) under **one** approval. The card groups the plan by destination folder. The approval is bound to every file's path, size and modified time and re-checked right before acting, so a file swapped after "yes" stops the whole thing. Each move is verified on disk (destination present, source gone, same size). On the first failure Lantern stops and reports. The result carries an undo plan.
+  - **Security fix:** moving a writable folder that contains a private or hidden sub-zone would have carried those files out of their zone (zones are paths). `policy.move` now refuses it, and `move_file` refuses before asking.
+  - **Rehearsal:** the demo home gained a messy `Downloads/` (tiny valid JPG/PNG/PDF files), and "tidy my Downloads" is a rehearsal beat.
+  - 13 new tests; 338 passing.
