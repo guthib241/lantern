@@ -18,6 +18,7 @@ from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
 from .crypto import cipher_for
+from .reliability import RetryingClient, explain
 from .email_tool import EmailService, EmailSettings
 from .envmap import EnvMap
 from .forms import FormService, FormSettings, Vault, VaultError
@@ -100,7 +101,10 @@ def build_agent(cfg, mem: Memory) -> Agent:
     if not key:
         sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
     audit = AuditLog(cfg.audit_path, mem.cipher)
-    client = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key), audit, destination=cfg.base_url)
+    client = RetryingClient(
+        GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key, timeout=cfg.timeout, max_retries=0), audit,
+                      destination=cfg.base_url),
+        on_retry=lambda info: print(f"  … {info['error']} Retrying in {info['wait_s']} s"))
     policy = Policy.load(cfg.zones_file, cfg.roots)
     router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
     forms = FormService(FormSettings.from_config(cfg), client, policy, mem)
@@ -111,6 +115,29 @@ def build_agent(cfg, mem: Memory) -> Agent:
     tools.client = client
     tools.on_event = show_event
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
+
+
+def run_demo(a) -> None:
+    """Rehearsal: a fresh copy of demo/home, a scripted model, the simulated phone. Nothing leaves the laptop."""
+    from . import demo
+    cfg = demo.prepare(a.demo_dir)
+    if a.persona:
+        cfg.persona = a.persona
+    core, hub, phone = demo.build(cfg)
+    print(f"🏮 Rehearsal mode: scripted model, zero tokens, nothing sent. Data in {Path(cfg.db_path).parent}")
+    if a.demo_run:
+        hub.start(listen=False)
+        try:
+            result = demo.run_story(core, hub, phone)
+        finally:
+            hub.stop()
+            core.shutdown()
+        if any(b["status"] != "done" for b in result["beats"]):
+            sys.exit("✗ some beats did not finish; see above")
+        return
+    from .server import serve
+    print("   Try: " + " · ".join(b.goal for b in demo.STORY))
+    return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
 
 
 def main(argv=None) -> None:
@@ -136,7 +163,13 @@ def main(argv=None) -> None:
     p.add_argument("--forget-task", type=int, metavar="ID", help="really delete one task, its timeline and audit rows")
     p.add_argument("--forget-fact", metavar="KEY", help="really delete one remembered fact")
     p.add_argument("--forget-everything", action="store_true", help="erase memory, audit log, voice notes, screenshots")
+    p.add_argument("--demo", action="store_true", help="with --serve: rehearsal mode (scripted model, demo/home, nothing sent)")
+    p.add_argument("--demo-run", action="store_true", help="play the 3-minute demo story offline and print it")
+    p.add_argument("--demo-dir", metavar="DIR", help="empty folder for the rehearsal's data (default: a new temp folder)")
     a = p.parse_args(argv)
+
+    if a.demo or a.demo_run:
+        return run_demo(a)
 
     cfg = config_mod.load()
     if a.persona:
@@ -261,7 +294,7 @@ def main(argv=None) -> None:
         try:
             do(line)
         except Exception as e:  # keep the chat alive on network/API errors
-            print(f"  ✗ error: {e}")
+            print(f"  ✗ {explain(e)}")
 
 
 if __name__ == "__main__":

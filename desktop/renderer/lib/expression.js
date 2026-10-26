@@ -31,6 +31,8 @@
     const face = pick(state, now);
     const c = state.lastCheckin;
     if (c && now - c.at < 8 && face !== 'needs-approval') return c.reaction;
+    const r = state.lastRetry;
+    if (r && now - r.at < r.wait_s + 2 && state.current != null) return `The network's wobbly. Retrying in ${Math.ceil(r.wait_s)} s…`;
     const n = Object.keys(state.approvals || {}).length;
     const lines = {
       'needs-approval': n > 1 ? `${n} things need your OK.` : 'I need your OK for this one.',

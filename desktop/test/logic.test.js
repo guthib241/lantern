@@ -142,3 +142,9 @@ test('a camera check-in shows its reaction for a few seconds', () => {
   assert.equal(X.pick(s, 12), 'smug');
   assert.equal(X.bubble(s, 30), '');
 });
+
+test('retries show in the bubble while a task runs', () => {
+  const s = run([{ type: 'task', id: 1, goal: 'g', ts: 1 }, { type: 'retry', wait_s: 2, error: 'no internet', ts: 2 }]);
+  assert.match(X.bubble(s, 3), /wobbly/);
+  assert.equal(X.bubble(s, 10), 'Working on it…');
+});

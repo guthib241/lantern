@@ -47,6 +47,7 @@ class Config:
     widgets_dir: str = str(HOME / "widgets")
     mcp_config: str = str(HOME / "mcp.json")
     encrypt: bool = True                  # memory + audit log encrypted at rest (key in the OS keychain)
+    timeout: float = 120.0                # seconds per model call (LANTERN_TIMEOUT)
 
 
 PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
@@ -82,6 +83,8 @@ def load() -> Config:
     if os.environ.get("LANTERN_FORMS_DOMAINS"):
         cfg.forms_domains = [d.strip() for d in os.environ["LANTERN_FORMS_DOMAINS"].split(",") if d.strip()]
     cfg.chromium_path = os.environ.get("LANTERN_CHROMIUM", cfg.chromium_path)
+    if os.environ.get("LANTERN_TIMEOUT"):
+        cfg.timeout = float(os.environ["LANTERN_TIMEOUT"])
     if os.environ.get("LANTERN_ENCRYPT"):
         cfg.encrypt = _flag(os.environ["LANTERN_ENCRYPT"])
     return cfg

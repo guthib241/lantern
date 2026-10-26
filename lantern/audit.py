@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from . import models
-from .scrubber import DEFAULT, Scrubber
+from .scrubber import DEFAULT, Scrubber, scrub_payload
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS audit (
@@ -187,7 +187,7 @@ class GuardedClient:
             models.check_model(str(kw.get("model", "")))
             for name in SCRUBBED_FIELDS:
                 if name in kw:
-                    kw[name], _ = self.scrubber.scrub_obj(_plain(kw[name]), found)
+                    kw[name], _ = scrub_payload(self.scrubber, _plain(kw[name]), found)
         return kw, found
 
     def _send(self, target: Any, endpoint: str, kw: dict):

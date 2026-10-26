@@ -21,6 +21,7 @@
       lastError: 0,
       lastEvent: 0,
       lastCheckin: null,  // {reaction, found, at}
+      lastRetry: null,    // {at, wait_s, error}: the network wobbled and Lantern is retrying
       connected: false,
     };
   }
@@ -154,6 +155,9 @@
         break;
       case 'channel_error':
         s.lastError = at;
+        break;
+      case 'retry':
+        s.lastRetry = { at, wait_s: e.wait_s || 0, error: e.error || '' };
         break;
       case 'checkin':
         s.lastCheckin = { reaction: e.reaction || '', found: e.found || 0, at };

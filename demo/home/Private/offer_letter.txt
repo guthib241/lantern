@@ -1,0 +1,15 @@
+Northwind Robotics Pvt. Ltd.
+Offer of employment (CONFIDENTIAL, sample document for the Lantern demo)
+
+Dear Asha,
+
+We are delighted to offer you the role of Machine Learning Engineer.
+Base salary: INR 24,00,000 per year, paid monthly.
+Joining bonus: INR 1,50,000, paid with the first salary.
+Joining date: 2 January 2027.
+Location: Bengaluru (hybrid, three days a week in the office).
+
+Please sign and return this letter by 15 November 2026.
+
+Warm regards,
+People Team, Northwind Robotics

@@ -415,6 +415,7 @@ class FormService:
 
     def _save_shot(self, d: BrowserDriver) -> str:
         self.settings.media_dir.mkdir(parents=True, exist_ok=True)
-        path = self.settings.media_dir / f"form-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}.jpg"
+        # Underscores keep digit runs short: "20261026-145209-4" can pass Luhn and get redacted as a card.
+        path = self.settings.media_dir / f"form_{time.strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(2)}.jpg"
         path.write_bytes(d.screenshot())
         return str(path)

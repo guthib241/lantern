@@ -97,9 +97,19 @@
         h('div', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`),
         h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))),
         t.reply ? h('p', { class: 'reply' }, t.reply) : null,
+        t.status === 'failed' || t.status === 'cancelled'
+          ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, 'Try again') : null,
         t.status !== 'running' ? h('button', { class: 'forget', onclick: () => forgetTask(t.id) }, 'Forget') : null));
     }
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
+  }
+
+  async function retryTask(id) {
+    try {
+      await api.post(`/tasks/${id}/retry`);
+    } catch (e) {
+      toast(`Couldn't retry: ${e.message}`);
+    }
   }
 
   async function forgetTask(id) {
@@ -321,6 +331,7 @@
     $('conn').className = up ? 'up' : 'down';
     if (up) {
       try { health = await api.get('/health'); } catch (e) { health = {}; }
+      if (health.demo) $('conn').textContent = 'connected · rehearsal (scripted model, nothing sent)';
     }
   });
 

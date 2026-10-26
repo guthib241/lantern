@@ -7,6 +7,7 @@ cd desktop
 npm install          # Electron 44.5.1
 npm run mock         # no Python, no API key: a scripted story (form → approval → verified)
 npm start            # the real thing: needs `python -m lantern --serve` running
+                     # (or `python -m lantern --serve --demo`: real server, scripted model, $0)
 npm test             # logic + mock server tests (node --test)
 ```
 

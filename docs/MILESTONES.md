@@ -19,4 +19,4 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M14 ☁ MCP client (deferred tools + tool_search) and Lantern MCP server
 - [x] M15 ☁ Memory encryption at rest + real "forget"
 - [x] M16 ☁ SAM 3.1 check-in (optional, cut first)
-- [ ] M17 ☁ Reliability: retries, timeouts, offline mode, `--demo` rehearsal mode; README with diagram, model map, WhatsApp scope note, setup in under 5 commands
+- [x] M17 ☁ Reliability: retries, timeouts, offline mode, `--demo` rehearsal mode; README with diagram, model map, WhatsApp scope note, setup in under 5 commands

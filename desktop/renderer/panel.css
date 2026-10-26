@@ -85,6 +85,7 @@ table.rows td:last-child { text-align: right; color: var(--muted); }
 .toast { position: fixed; left: 14px; right: 14px; bottom: 14px; padding: 12px 14px; border-radius: 14px; color: #fff;
          background: #2b2236; box-shadow: 0 10px 26px rgba(0, 0, 0, .25); }
 .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+.task .forget + .forget { margin-left: 12px; }
 .task .forget { margin-top: 8px; border: 0; background: transparent; color: var(--muted); font-size: 12px; padding: 0; text-decoration: underline; }
 button.danger { border: 1px solid #f3c4c4; background: #fff5f5; color: var(--danger); border-radius: 12px; padding: 10px 14px; font-weight: 700; }
 .checkin { display: flex; gap: 8px; margin-top: 8px; align-items: center; }

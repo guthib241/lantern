@@ -26,6 +26,7 @@ from .forms import FormService, FormSettings
 from .mcp_client import MCPHub
 from .memory import Memory
 from .policy import Policy, PolicyError
+from .reliability import RetryingClient
 from .router import Router, RouterConfig, make_backend
 from .sam import CheckIn
 from .tools import Toolbox
@@ -60,8 +61,10 @@ class Core:
         self.bus = bus or ApprovalBus()
         if client is None:
             client = self._default_client()
-        self.client = client if isinstance(client, GuardedClient) else GuardedClient(client, self.audit,
-                                                                                     destination=cfg.base_url)
+        guarded = client if isinstance(client, GuardedClient) else GuardedClient(client, self.audit,
+                                                                                 destination=cfg.base_url)
+        # Retries wrap the audited client, so every attempt that leaves the laptop is audited.
+        self.client = RetryingClient(guarded, on_retry=lambda info: self.emit({"type": "retry", **info}))
         self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
         self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
@@ -88,7 +91,8 @@ class Core:
         if not key:
             return NoModelClient()
         from openai import OpenAI
-        return OpenAI(base_url=self.cfg.base_url, api_key=key, timeout=120, max_retries=2)
+        # The SDK's silent retries are off: RetryingClient retries visibly (events) with a circuit breaker.
+        return OpenAI(base_url=self.cfg.base_url, api_key=key, timeout=self.cfg.timeout, max_retries=0)
 
     # ---- events ----------------------------------------------------------------
     def subscribe(self, sink: EventSink) -> Callable[[], None]:
@@ -154,6 +158,13 @@ class Core:
         denied = self.bus.cancel_all("stopped")
         self.emit({"type": "stopped", "denied_approvals": denied})
         return {"stopped": True, "denied_approvals": denied, "task_id": self.current_task}
+
+    def retry_task(self, task_id: int) -> int:
+        """Run a failed or cancelled task's goal again as a new task."""
+        t = self.memory.get_task(task_id)
+        if t.status in ("active",):
+            raise ValueError("that task is still running")
+        return self.submit(t.goal)
 
     def task_view(self, task_id: int) -> dict:
         t = self.memory.get_task(task_id)

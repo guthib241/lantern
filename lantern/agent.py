@@ -128,10 +128,13 @@ class Agent:
         try:
             return self._run(task.id, goal)
         except Exception as e:
+            from .reliability import explain
+            why = explain(e)  # a sentence the user can act on ("no internet", "check MODEL_API_KEY")
             self.memory.log_step(task.id, "note", f"error: {type(e).__name__}: {e}")
-            self.memory.finish_task(task.id, "failed", f"error: {type(e).__name__}")
-            self.on_event("done", {"id": task.id, "status": "failed", "summary": f"error: {e}",
-                                   "reply": "", "cost_usd": self.memory.task_usage(task.id)["cost_usd"], "steps": 0})
+            self.memory.finish_task(task.id, "failed", why)
+            self.on_event("done", {"id": task.id, "status": "failed", "summary": why,
+                                   "reply": f"I couldn't finish that. {why}",
+                                   "cost_usd": self.memory.task_usage(task.id)["cost_usd"], "steps": 0})
             raise
 
     def _run(self, task_id: int, goal: str) -> Result:

@@ -16,6 +16,7 @@ or reply on WhatsApp); turn them on with Scrubber(emails=True, phones=True).
 """
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -152,6 +153,16 @@ class Scrubber:
         if isinstance(obj, str) and is_data_url(obj):
             return obj, found
         if isinstance(obj, str):
+            decoded = _json_container(obj)
+            if decoded is not None:
+                # Tool results travel as JSON strings: a secret at the start of a line follows a
+                # literal "\n", which defeats \b. Scrub the decoded values; re-encode only if needed,
+                # so clean payloads stay byte-identical (prompt caching).
+                inner: Counter = Counter()
+                cleaned, _ = self.scrub_obj(decoded, inner)
+                if inner:
+                    found.update(inner)
+                    obj = json.dumps(cleaned, ensure_ascii=False)  # then scrubbed as text too (keys)
             r = self.scrub(obj)
             found.update(r.redactions)
             return r.text, found
@@ -160,6 +171,38 @@ class Scrubber:
         if isinstance(obj, (list, tuple)):
             return [self.scrub_obj(v, found)[0] for v in obj], found
         return obj, found
+
+
+# Wire fields of a Responses / Chat input item. They carry ids, never user content, and a
+# "redacted" call_id (a Luhn-valid digit run) would break the function-call chain.
+WIRE_KEYS = frozenset({"id", "call_id", "type", "role", "status"})
+
+
+def scrub_payload(scrubber: "Scrubber", value: Any, found: Counter | None = None) -> tuple[Any, Counter]:
+    """Scrub an `input` / `messages` / `instructions` value: like scrub_obj, except that each
+    top-level item's wire ids (WIRE_KEYS) pass untouched. Everything nested is scrubbed."""
+    found = Counter() if found is None else found
+    if not isinstance(value, list):
+        return scrubber.scrub_obj(value, found)
+    out = []
+    for item in value:
+        if isinstance(item, dict):
+            out.append({k: v if k in WIRE_KEYS and isinstance(v, str) else scrubber.scrub_obj(v, found)[0]
+                        for k, v in item.items()})
+        else:
+            out.append(scrubber.scrub_obj(item, found)[0])
+    return out, found
+
+
+def _json_container(text: str) -> Any:
+    """The decoded value if `text` is a JSON object or array, else None."""
+    if text.lstrip()[:1] not in ("{", "["):
+        return None
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return None
+    return value if isinstance(value, (dict, list)) else None
 
 
 DATA_URL = re.compile(r"^data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]*$")

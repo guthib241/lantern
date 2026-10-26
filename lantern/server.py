@@ -118,7 +118,7 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         return {"ok": True, "version": __version__, "model": core.cfg.model,
                 "badge": models.badge(core.cfg.model), "has_key": bool(os.environ.get(models.API_KEY_ENV)),
                 "private_lane": core.router.backend.name, "busy": core.current_task is not None,
-                "channels": sorted(hub.channels) if hub else []}
+                "channels": sorted(hub.channels) if hub else [], "demo": bool(getattr(core, "demo", False))}
 
     @app.post("/task", dependencies=[Depends(auth)])
     def post_task(body: TaskIn):
@@ -139,6 +139,15 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         view["steps"] = core.memory.steps(task_id)
         return view
+
+    @app.post("/tasks/{task_id}/retry", dependencies=[Depends(auth)])
+    def retry_task(task_id: int):
+        try:
+            return {"task_id": core.retry_task(task_id)}
+        except KeyError:
+            raise HTTPException(404, "no such task")
+        except ValueError as e:
+            raise HTTPException(409, str(e))
 
     @app.get("/approvals", dependencies=[Depends(auth)])
     def approvals():

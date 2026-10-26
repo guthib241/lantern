@@ -119,3 +119,33 @@ def test_planted_key_in_file_never_reaches_cloud(tmp_path):
     rows = audit.entries()
     assert len(rows) == 2 and all(row["task_id"] == r.task_id for row in rows)
     assert audit.summary()["cloud"]["redactions"] == {"stripe_key": 1}
+
+
+def test_secret_at_line_start_inside_json_tool_output_is_caught():
+    # Tool results travel as JSON strings, so a key at the start of a line follows a literal "\n"
+    # and \b never matches on the raw text. The decoded values must be scrubbed.
+    s = Scrubber()
+    output = json.dumps({"content": f"notes:\n{FAKE_AWS}\nend", "path": "n.md"}, ensure_ascii=False)
+    assert s.scrub(output).count == 0  # the gap this guards against
+    obj, found = s.scrub_obj([{"type": "function_call_output", "call_id": "c1", "output": output}])
+    assert FAKE_AWS not in json.dumps(obj) and found["aws_access_key"] == 1
+    assert json.loads(obj[0]["output"])["content"] == "notes:\n[REDACTED:aws_access_key]\nend"
+    clean = json.dumps({"content": "nothing secret\nhere"})
+    assert s.scrub_obj([{"output": clean}])[0][0]["output"] == clean  # untouched, byte for byte
+    assert s.scrub_obj("[not json")[0] == "[not json"
+    keyed = json.dumps({FAKE_GH: "x", "k": f"\n{FAKE_AWS}"})  # a secret used as a key is caught too
+    out, found = s.scrub_obj(keyed)
+    assert FAKE_GH not in out and FAKE_AWS not in out and found == {"aws_access_key": 1, "github_token": 1}
+
+
+def test_wire_ids_are_never_redacted(tmp_path):
+    # A call_id that happens to be a Luhn-valid digit run must survive, or the chain breaks.
+    cid = "call_" + CARD.replace(" ", "")
+    fake = FakeClient([([], "ok")])
+    GuardedClient(fake, AuditLog(tmp_path / "a.db")).responses.create(
+        model="muse-spark-1.3", previous_response_id="resp_1",
+        input=[{"type": "function_call_output", "call_id": cid,
+                "output": json.dumps({"card": CARD, "id": FAKE_AWS})}])
+    item = fake.requests[0]["input"][0]
+    assert item["call_id"] == cid and item["type"] == "function_call_output"
+    assert CARD not in item["output"] and FAKE_AWS not in item["output"]  # nested ids still scrubbed
