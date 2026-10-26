@@ -37,12 +37,12 @@ Finish the 💻 parts of Lantern on this machine: set up Muse Glimmer for my RTX
 
 Continue Lantern, my entry for the Meta Global AI Developer Hackathon. The deadline is Nov 4, 9:00 PM ET; I aim to submit on Nov 4 evening IST. Read CLAUDE.md, docs/NEXT_SESSION.md, README.md, docs/SPEC.md and the last entries of BUILD_LOG.md before anything else.
 
-M0–M17 are built and merged or in review. This phase gets Lantern working against the real Meta API and on my laptop, polishes the demo, and gets it submitted. I'll paste outputs from my laptop (`scripts/smoke.py`, `smoke.py cua`, errors, screenshots) when you need them.
+M0–M22 are built and merged or in review (M18–M22: reminders, tidy a folder, resume after restart, `lantern --doctor`, packaging + CI). This phase gets Lantern working against the real Meta API and on my laptop, polishes the demo, and gets it submitted. I'll paste outputs from my laptop (`lantern --doctor`, `scripts/smoke.py`, `smoke.py cua`, errors, screenshots) when you need them.
 
 HOW TO WORK
 - Work through the plan below in order without stopping, until I say "compact" or everything is done.
 - After each item:
-  1. Get `python -m pytest -q` and `cd desktop && npm test` green.
+  1. Get `python -m pytest -q`, `python -m pyflakes lantern scripts tests` and `cd desktop && npm test` green, and keep CI green on the PR.
   2. Update BUILD_LOG.md and docs/DECISIONS.md.
   3. Commit and push.
   4. Tell me in 3 lines what works, how I try it, and what I must set up.
@@ -64,6 +64,7 @@ HARD RULES
 - Environment: `pip install playwright`, launch Chromium with executable_path="/opt/pw-browsers/chromium", never run `playwright install` in the sandbox. ffmpeg and Node 22 are available.
 
 PLAN
+0. Start from my `lantern --doctor` output: fix anything on the Lantern side, and tell me exactly what I must set up.
 1. Real-API calibration. Use my `scripts/smoke.py` and `smoke.py cua` output to fix any request-shape mismatch (computer use protocol and coordinates, voice, SAM, image, tool search) in the code, with tests updated to the confirmed shapes.
 2. Help me bring it up on the laptop: Glimmer via llama.cpp, WhatsApp test number and tunnel, Gmail app password, the desktop app, Lantern's face (make_avatar.py or a MetaMuse import). Fix whatever breaks.
 3. One real end-to-end run of the demo story with Muse Wonder. Record the real cost in the README.

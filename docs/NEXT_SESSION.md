@@ -1,9 +1,14 @@
 # Handoff: from "all milestones built" to "submitted"
 
-State (Oct 26, end of session 2):
-- **M0–M17 are all done** on branch `claude/determined-gates-ubpm6u`, with the PR into `main` superseding https://github.com/guthib241/lantern/pull/1.
-- Tests: 309 offline Python tests (fake model, real Chromium on `demo/forms/`, real uvicorn) plus 13 desktop node tests.
-- `python -m lantern --demo-run` plays the whole 3-minute story offline for $0.
+State (Oct 26, end of session 3):
+- **M0–M22 are all done** on branch `claude/determined-gates-ubpm6u`, with the PR into `main` superseding https://github.com/guthib241/lantern/pull/1. M18–M22 are the extras added after M17:
+  - reminders
+  - tidying a folder with one approval
+  - resume after restart
+  - the setup doctor
+  - packaging and CI
+- Tests: 348 offline Python tests (fake model, real Chromium on `demo/forms/`, real uvicorn) plus 17 desktop node tests. GitHub Actions runs them, pyflakes, the full rehearsal and the doctor on each PR.
+- `lantern --demo-run` plays the whole 3-minute story offline for $0. `lantern --doctor` lists what the laptop still needs.
 - Nothing has been called against the real Meta API yet ($0 of $150 spent).
 
 The remaining work is **laptop-side bring-up with real keys, calibration against the real API, polish, the video and the submission**. Deadline: Nov 4, 9:00 PM ET (Nov 5, 7:30 AM IST); aim to submit Nov 4 evening IST.
@@ -17,7 +22,7 @@ The remaining work is **laptop-side bring-up with real keys, calibration against
   - no Meta logos, no health or medical advice, never analyze the user's personality
 - All file access goes through `lantern/policy.py`. Every change goes through `self._approve` → `self._commit` right before acting, then is verified (`verified: true/false`). Untrusted content is wrapped with `untrusted.wrap()` and sets `toolbox.tainted = True`. New tools go at the end of `TOOL_SPECS`.
 - After each piece of work:
-  1. `python -m pytest -q` green, and `cd desktop && npm test`.
+  1. `python -m pytest -q` green, `python -m pyflakes lantern scripts tests` clean, and `cd desktop && npm test`. CI must stay green on the PR.
   2. Update `BUILD_LOG.md` and `docs/DECISIONS.md`.
   3. Commit (with the attribution lines) and push to the session's branch.
   4. Post a 3-line note: what works / how to try / what to set up.
@@ -30,11 +35,16 @@ The remaining work is **laptop-side bring-up with real keys, calibration against
 | Models, costs | `lantern/models.py` (IDs, prices, badges, `check_model`) |
 | Privacy | `policy.py` (zones; the only file I/O), `scrubber.py` (now also scrubs decoded JSON tool outputs; wire ids untouched), `audit.py` (`GuardedClient`, `AuditLog`), `crypto.py` (Fernet, keychain or key file), `untrusted.py` |
 | Agent | `agent.py` (Responses loop, `previous_response_id`, events), `tools.py` (`Toolbox`, `TOOL_SPECS`), `memory.py` (encrypted, real forget), `approvals.py` (bus, nonce, hash, expiry) |
-| Runtime | `core.py` (worker, events, STOP, retry_task), `server.py` (FastAPI 127.0.0.1 + token + websocket), `reliability.py` (`RetryingClient`, breaker, `explain`), `cli.py` |
+| Runtime | `core.py` (worker, events, STOP, retry_task, reminder scheduler, `recover_interrupted` / `resume`), `server.py` (FastAPI 127.0.0.1 + token + websocket), `reliability.py` (`RetryingClient`, breaker, `explain`), `cli.py` (`--doctor`, `--resume`, refuses a second server) |
 | Features | `forms/` (Playwright driver, computer-use loop with native + function protocols, guards, vault, filler), `channels/` (WhatsApp, Telegram, fake phone, hub), `email_tool.py`, `router.py` (private lane: Glimmer), `envmap.py`, `widgets.py`, `mcp_client.py` + `mcp_server.py`, `sam.py`, `avatar.py`, `voice.py` |
+| Extras | `reminders.py` (time parsing, repeats; storage in `memory.py`), `organize_files` in `tools.py` (one plan-bound approval), `doctor.py` (read-only setup checks) |
+| Packaging | `pyproject.toml` (`pip install -e .` → `lantern`), `.github/workflows/ci.yml` |
 | Rehearsal | `demo.py` (`DemoModel`, `prepare`, `build`, `run_story`), `demo/home/`, `demo/forms/`, `demo/profile.example.json` |
 | Desktop | `desktop/` (Electron 44.5.1; `renderer/lib/*.js` are pure, tested modules; `mock/server.js` for UI-only rehearsal) |
 | Scripts | `scripts/smoke.py` (one real call per model; `cua` calibrates computer use), `make_avatar.py`, `import_avatar.py` |
+
+## First thing on the laptop
+`pip install -e ".[dev]"`, then `lantern --doctor`. It lists every missing piece with the exact fix. Paste its output into the session.
 
 ## Not yet verified against the real API (do these first, with the key)
 1. `python scripts/smoke.py`: Spark, Wonder, Image, Voice and SAM each make one call. Fix any request-shape mismatch where it lives (`computer.py`, `voice.py`, `sam.py`, `avatar.py`), never in tests.
