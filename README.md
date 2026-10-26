@@ -84,6 +84,15 @@ python -m lantern --projects
 ```
 Lantern can also run a project's tests or `pip install` one package, always inside that project's own virtual env and only after you approve.
 
+## MCP (ready for Meta AI Connectors)
+
+- **Lantern as a server:** `python -m lantern --mcp` speaks MCP on stdio. Another AI app gets Lantern's read-only tools (folders, search, read open files, ask about private files via the local model, projects) plus `submit_task`. Every change is still approved by you, on the desktop or WhatsApp, and everything it hands out is scrubbed and shows up in "What left my laptop today".
+- **Lantern as a client:** list servers in `~/.lantern/mcp.json`. Their tools are offered to Muse Spark as **deferred tools** found through **tool search**, so a big catalog costs nothing until it's used. Each call asks you first, unless you mark the tool read-only:
+
+```json
+{"servers": {"notes": {"command": "python", "args": ["-m", "my_notes_mcp"], "read_only": ["search"]}}}
+```
+
 ## Tests
 
 ```bash

@@ -45,10 +45,11 @@ class Config:
     media_dir: str = str(HOME / "media")
     envmap_path: str = str(HOME / "envmap.db")
     widgets_dir: str = str(HOME / "widgets")
+    mcp_config: str = str(HOME / "mcp.json")
 
 
 PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
-               "envmap_path", "widgets_dir")
+               "envmap_path", "widgets_dir", "mcp_config")
 
 
 def _flag(value: str) -> bool:

@@ -22,6 +22,7 @@ from .audit import AuditLog, GuardedClient
 from .email_tool import EmailService, EmailSettings
 from .envmap import EnvMap
 from .forms import FormService, FormSettings
+from .mcp_client import MCPHub
 from .memory import Memory
 from .policy import Policy
 from .router import Router, RouterConfig, make_backend
@@ -46,7 +47,8 @@ class Core:
     def __init__(self, cfg: config_mod.Config, client: Any = None, *, memory: Memory | None = None,
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
                  bus: ApprovalBus | None = None, approval_timeout: float | None = None,
-                 forms: FormService | None = None, email: EmailService | None = None):
+                 forms: FormService | None = None, email: EmailService | None = None,
+                 mcp: MCPHub | None = None):
         self.cfg = cfg
         self.memory = memory or Memory(cfg.db_path)
         self.audit = audit or AuditLog(cfg.audit_path)
@@ -62,8 +64,10 @@ class Core:
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
         self.envmap = EnvMap(self.policy, cfg.envmap_path)
         self.widgets = Widgets(Path(cfg.widgets_dir))
+        self.mcp = mcp if mcp is not None else MCPHub.from_file(cfg.mcp_config).start()
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
-                               forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets)
+                               forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
+                               mcp=self.mcp)
         self.toolbox.client = self.client
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
@@ -155,6 +159,7 @@ class Core:
 
     def shutdown(self) -> None:
         self.stop()
+        self.mcp.close()
         self._queue.put((None, None))
 
 

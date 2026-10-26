@@ -131,6 +131,7 @@ def main(argv=None) -> None:
     p.add_argument("--serve", action="store_true", help="run the local API server for the desktop app and channels")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--channel-test", metavar="TEXT", help="send TEXT through the configured channels and exit")
+    p.add_argument("--mcp", action="store_true", help="run Lantern as an MCP server on stdio")
     a = p.parse_args(argv)
 
     cfg = config_mod.load()
@@ -188,6 +189,15 @@ def main(argv=None) -> None:
         print("\n".join(f"- {k}: {v}" for k, v in facts.items()) or "Nothing remembered yet.")
         return
 
+    if a.mcp:  # stdout belongs to the MCP protocol from here on: no prints
+        from .mcp_server import LocalLantern, build_server
+        from .server import load_token
+        policy = Policy.load(cfg.zones_file, cfg.roots)
+        audit = AuditLog(cfg.audit_path)
+        router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
+        tools = Toolbox(policy, mem, lambda s: False, router=router, envmap=EnvMap(policy, cfg.envmap_path))
+        local = LocalLantern(os.environ.get("LANTERN_API", "http://127.0.0.1:8765"), load_token(config_mod.HOME))
+        return build_server(tools, audit=audit, forward=local.request).run("stdio")
     if a.serve or a.channel_test:
         from .channels import ChannelHub, channels_from_env
         from .core import Core

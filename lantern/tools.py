@@ -41,7 +41,7 @@ class ToolError(Exception):
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None, forms=None, email=None, envmap=None, widgets=None):
+                 router=None, forms=None, email=None, envmap=None, widgets=None, mcp=None):
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -56,6 +56,7 @@ class Toolbox:
         self.command_runner = None  # (argv, cwd, env, timeout) -> (exit code, output); default envmap.run_command
         self.widgets = widgets  # widgets.Widgets
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
+        self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
@@ -359,6 +360,36 @@ class Toolbox:
             raise ToolError(str(e)) from e
         return {**result, "attempts": attempts, "model": models.badge(models.SPARK)}
 
+    # ---- MCP tools (deferred) -----------------------------------------------------
+    def deferred_specs(self) -> list[dict]:
+        return self.mcp.function_specs() if self.mcp is not None else []
+
+    def mcp_call(self, function: str, args: dict) -> dict:
+        """Call another program's tool. Needs approval unless the user allowlisted it as read-only."""
+        import json as _json
+
+        from .mcp_client import MCPError
+        ref = self.mcp.tools[function]
+        if not ref.read_only:
+            shown = _json.dumps(args, ensure_ascii=False, default=str)
+            payload = {"tool": function, "args_sha256": hashlib.sha256(shown.encode()).hexdigest()}
+            commit = self._approve("mcp_call", f"Use {ref.server}'s tool '{ref.tool}' with {shown[:300]}", payload)
+            if commit is None:
+                return {"done": False, "reason": "user declined"}
+            if refused := self._commit(commit, payload):
+                return refused
+        try:
+            out = self.mcp.call(function, args)
+        except MCPError as e:
+            raise ToolError(str(e)) from e
+        self._saw_untrusted(out["text"])
+        result = {"server": ref.server, "tool": ref.tool, **wrap(out["text"], function, kind="mcp")}
+        if out["is_error"]:
+            result["error"] = "the tool reported an error"
+        if out["structured"] is not None:
+            result["structured"] = out["structured"]
+        return result
+
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
         if self.tainted:  # untrusted text must not be able to plant "facts" silently
@@ -382,6 +413,8 @@ class Toolbox:
 
     # ---- dispatch ----------------------------------------------------------
     def call(self, name: str, args: dict) -> dict:
+        if self.mcp is not None and name in self.mcp.tools:
+            return self.mcp_call(name, args)
         fn = getattr(self, name, None)
         if name.startswith("_") or name not in TOOL_NAMES or fn is None:
             raise ToolError(f"unknown tool {name}")
