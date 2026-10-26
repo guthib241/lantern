@@ -27,6 +27,7 @@ from .mcp_client import MCPHub
 from .memory import Memory
 from .policy import Policy, PolicyError
 from .router import Router, RouterConfig, make_backend
+from .sam import CheckIn
 from .tools import Toolbox
 from .widgets import Widgets
 
@@ -71,6 +72,7 @@ class Core:
                                forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
                                mcp=self.mcp)
         self.toolbox.client = self.client
+        self.checkin = CheckIn(self.client, self.memory, self.emit)
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
                            on_event=self._agent_event)

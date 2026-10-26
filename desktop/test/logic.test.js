@@ -135,3 +135,10 @@ test('forget removes a task, or everything', () => {
   assert.deepEqual(s.order, []);
   assert.equal(s.usage.total, 0);
 });
+
+test('a camera check-in shows its reaction for a few seconds', () => {
+  const s = run([{ type: 'checkin', concept: 'coffee mug', found: 1, reaction: 'Ah, coffee. Good.', ts: 10 }]);
+  assert.equal(X.bubble(s, 12), 'Ah, coffee. Good.');
+  assert.equal(X.pick(s, 12), 'smug');
+  assert.equal(X.bubble(s, 30), '');
+});

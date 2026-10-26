@@ -10,4 +10,5 @@ contextBridge.exposeInMainWorld('lantern', {
   togglePanel: () => ipcRenderer.send('panel:toggle'),
   showPanel: () => ipcRenderer.send('panel:show'),
   avatarMenu: () => ipcRenderer.send('avatar:menu'),
+  allowCameraOnce: () => ipcRenderer.invoke('camera:allow-once'),   // one check-in snapshot, after a click
 });

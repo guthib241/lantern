@@ -127,6 +127,37 @@
     }
   });
 
+  // ---- SAM 3.1 check-in: one snapshot on click, objects only, never stored -------------------------
+  (async () => {
+    let ideas = ['coffee mug', 'water glass', 'plant'];
+    try { ideas = (await api.get('/checkin/ideas')).ideas; } catch (e) { /* older server */ }
+    $('checkin-concept').replaceChildren(...ideas.map((i) => h('option', {}, i)));
+  })();
+
+  async function snapshot() {
+    await window.lantern.allowCameraOnce();
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+    try {
+      const video = h('video', { muted: true, playsinline: true });
+      video.srcObject = stream;
+      await video.play();
+      const canvas = h('canvas', { width: 640, height: 480 });
+      canvas.getContext('2d').drawImage(video, 0, 0, 640, 480);
+      return canvas.toDataURL('image/jpeg', 0.8);
+    } finally {
+      stream.getTracks().forEach((t) => t.stop());   // camera off right away
+    }
+  }
+
+  $('checkin').addEventListener('click', async () => {
+    try {
+      const r = await api.post('/checkin', { image: await snapshot(), concept: $('checkin-concept').value });
+      toast(r.reaction);
+    } catch (e) {
+      toast(`Check-in: ${e.message}`);
+    }
+  });
+
   $('ask').addEventListener('submit', async (e) => {
     e.preventDefault();
     const goal = $('goal').value.trim();

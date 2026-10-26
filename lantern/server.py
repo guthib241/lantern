@@ -20,6 +20,7 @@ in the browser can't drive Lantern through localhost.
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
+  POST /checkin {image: data URL, concept}   SAM 3.1 camera check-in (objects only, nothing stored)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
@@ -43,6 +44,7 @@ from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake
 from .core import Core
 from .forms import Vault, VaultError
 from .policy import ZONES
+from .sam import IDEAS, CheckInError
 from .widgets import WidgetError
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
@@ -73,6 +75,11 @@ class DecisionIn(BaseModel):
 class ZoneIn(BaseModel):
     path: str
     zone: str
+
+
+class CheckInIn(BaseModel):
+    image: str
+    concept: str
 
 
 class FactIn(BaseModel):
@@ -187,6 +194,19 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except VaultError as e:
             raise HTTPException(400, str(e))
         return vault.load()
+
+    @app.get("/checkin/ideas", dependencies=[Depends(auth)])
+    def checkin_ideas():
+        return {"ideas": IDEAS}
+
+    @app.post("/checkin", dependencies=[Depends(auth)])
+    def checkin(body: CheckInIn):
+        try:
+            return core.checkin.run(body.image, body.concept)
+        except CheckInError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # no key, network: say so plainly
+            raise HTTPException(502, f"check-in failed: {type(e).__name__}: {str(e)[:120]}")
 
     @app.post("/forget/task/{task_id}", dependencies=[Depends(auth)])
     def forget_task(task_id: int):

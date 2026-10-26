@@ -20,6 +20,7 @@
       lastStop: 0,
       lastError: 0,
       lastEvent: 0,
+      lastCheckin: null,  // {reaction, found, at}
       connected: false,
     };
   }
@@ -153,6 +154,9 @@
         break;
       case 'channel_error':
         s.lastError = at;
+        break;
+      case 'checkin':
+        s.lastCheckin = { reaction: e.reaction || '', found: e.found || 0, at };
         break;
       case 'forgot':
         if (e.everything) {

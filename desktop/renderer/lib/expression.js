@@ -18,6 +18,7 @@
     const done = state.lastDone;
     if (done && since(done.at) < ANNOYED_FOR && done.status === 'failed') return 'annoyed';
     if (since(state.lastError) < ANNOYED_FOR) return 'annoyed';
+    if (state.lastCheckin && since(state.lastCheckin.at) < SMUG_FOR) return state.lastCheckin.found ? 'smug' : 'annoyed';
     if (done && done.verified && since(done.at) < CELEBRATE_FOR) return 'celebrating';
     if (done && done.status === 'done' && since(done.at) < SMUG_FOR) return 'smug';
     if (state.current != null) return 'thinking';
@@ -28,6 +29,8 @@
   /** A short line for the speech bubble. */
   function bubble(state, now, persona) {
     const face = pick(state, now);
+    const c = state.lastCheckin;
+    if (c && now - c.at < 8 && face !== 'needs-approval') return c.reaction;
     const n = Object.keys(state.approvals || {}).length;
     const lines = {
       'needs-approval': n > 1 ? `${n} things need your OK.` : 'I need your OK for this one.',

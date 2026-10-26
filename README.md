@@ -97,6 +97,10 @@ Lantern can also run a project's tests or `pip install` one package, always insi
 
 Lantern's memory and audit log are encrypted on disk, with the key in your OS keychain. "Forget" means gone: the rows are overwritten and the database file rebuilt. Use `python -m lantern --forget-task 12`, `--forget-everything`, or the buttons on the desktop.
 
+## Camera check-in (SAM 3.1, optional)
+
+Click 📷 in the panel and Lantern takes one snapshot, asks SAM 3.1 whether your coffee mug (or plant, or cat) is there, and reacts with one line. It looks for objects only, never faces, people or moods, and stores nothing.
+
 ## Tests
 
 ```bash

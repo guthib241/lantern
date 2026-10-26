@@ -14,6 +14,7 @@ let config = { apiBase: process.env.LANTERN_API || 'http://127.0.0.1:8765', toke
 let avatar = null;
 let panel = null;
 let quitting = false;
+let cameraUntil = 0;   // the camera is allowed for one check-in right after the user clicks
 
 function readToken() {
   const home = process.env.LANTERN_HOME || path.join(os.homedir(), '.lantern');
@@ -91,11 +92,16 @@ function lockDown() {
     });
     contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   });
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
+  // No device permissions, except the camera for a few seconds after a click on "Check-in" in the panel.
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
+    const video = permission === 'media' && (details.mediaTypes || []).every((t) => t === 'video');
+    cb(Boolean(video && panel && wc === panel.webContents && Date.now() < cameraUntil));
+  });
 }
 
 ipcMain.handle('config', () => config);
 ipcMain.handle('stop', () => stopEverything());
+ipcMain.handle('camera:allow-once', () => { cameraUntil = Date.now() + 5000; return true; });
 ipcMain.on('avatar:hover', (_e, over) => {
   if (avatar) avatar.setIgnoreMouseEvents(!over, { forward: true });
 });
