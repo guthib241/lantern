@@ -12,11 +12,13 @@ import argparse
 import datetime as dt
 import os
 import sys
+from pathlib import Path
 
 from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
 from .email_tool import EmailService, EmailSettings
+from .envmap import EnvMap
 from .forms import FormService, FormSettings, Vault, VaultError
 from .memory import Memory
 from .policy import ZONES, Policy
@@ -102,7 +104,8 @@ def build_agent(cfg, mem: Memory) -> Agent:
     forms = FormService(FormSettings.from_config(cfg), client, policy, mem)
     email = EmailService(EmailSettings.from_env(dict(os.environ)), policy, audit,
                          outbox_dir=os.path.join(cfg.media_dir, "outbox"))
-    tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms, email=email)
+    tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms, email=email,
+                    envmap=EnvMap(policy, cfg.envmap_path))
     tools.on_event = show_event
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 
@@ -120,6 +123,8 @@ def main(argv=None) -> None:
     p.add_argument("--profile", action="store_true", help="show the form profile vault")
     p.add_argument("--profile-set", nargs=2, metavar=("KEY", "VALUE"), help="save a profile answer for forms")
     p.add_argument("--form-bookmark", nargs=2, metavar=("NAME", "URL"), help="save a form's URL under a name")
+    p.add_argument("--projects", action="store_true", help="list the projects Lantern found")
+    p.add_argument("--which", metavar="PACKAGE", help="which projects use PACKAGE (no model call)")
     p.add_argument("--persona", choices=sorted(PERSONAS))
     p.add_argument("--serve", action="store_true", help="run the local API server for the desktop app and channels")
     p.add_argument("--port", type=int, default=8765)
@@ -146,6 +151,21 @@ def main(argv=None) -> None:
             policy.save(cfg.zones_file)
         for z in policy.describe():
             print(f"{z['zone']:<9} {z['path']}")
+        return
+    if a.projects or a.which:
+        em = EnvMap(Policy.load(cfg.zones_file, cfg.roots), cfg.envmap_path)
+        if a.which:
+            r = em.which_use(a.which)
+            for h in r["projects"]:
+                inst = ", ".join(f"{v} in {Path(k).name}" for k, v in (h["installed"] or {}).items())
+                print(f"• {h['project']:<24} declared {h['declared'] or '-':<12} installed {inst or '-'}  ({h['path']})")
+            for c in r["conda_envs"]:
+                print(f"• conda env {c['env']}: {c['version']}")
+            print(f"{len(r['projects'])} of {r['scanned_projects']} projects use {a.which}")
+        else:
+            for p_ in em.projects(refresh=True):
+                print(f"• {p_.name:<24} {'/'.join(p_.kinds) or '?':<14} {len(p_.declared):>3} deps  {p_.path}")
+            print(f"({em.parsed} re-read, the rest from cache)")
         return
     if a.profile or a.profile_set or a.form_bookmark:
         vault = Vault(cfg.profile_path)

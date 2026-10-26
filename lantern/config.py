@@ -43,9 +43,11 @@ class Config:
     profile_path: str = str(HOME / "profile.json")
     browser_profile_dir: str = str(HOME / "browser-profile")
     media_dir: str = str(HOME / "media")
+    envmap_path: str = str(HOME / "envmap.db")
 
 
-PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir")
+PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
+               "envmap_path")
 
 
 def _flag(value: str) -> bool:

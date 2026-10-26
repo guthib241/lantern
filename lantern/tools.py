@@ -21,7 +21,7 @@ from typing import Callable
 
 from .approvals import ApprovalError, Gate, as_gate
 from .memory import Memory
-from .policy import PRIVATE, Policy, PolicyError
+from .policy import PRIVATE, WRITABLE, Policy, PolicyError
 from .untrusted import wrap
 
 Approver = Callable[[str], bool]  # gets a plain-English description, returns yes/no
@@ -41,7 +41,7 @@ class ToolError(Exception):
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None, forms=None, email=None):
+                 router=None, forms=None, email=None, envmap=None):
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -52,6 +52,8 @@ class Toolbox:
         self.router = router  # router.Router: the private lane (Muse Glimmer)
         self.forms = forms    # forms.FormService: Lantern's browser for form filling
         self.email = email    # email_tool.EmailService
+        self.envmap = envmap  # envmap.EnvMap: projects, their envs and packages
+        self.command_runner = None  # (argv, cwd, env, timeout) -> (exit code, output); default envmap.run_command
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
@@ -257,6 +259,84 @@ class Toolbox:
         except EmailError as e:
             raise ToolError(str(e)) from e
 
+    # ---- projects (environment map) ------------------------------------------
+    def _envmap(self):
+        if self.envmap is None:
+            raise ToolError("the project map isn't set up")
+        return self.envmap
+
+    def _project(self, path: str):
+        em = self._envmap()
+        try:
+            project = em.get(path)
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
+        if project is None:
+            matches = em.find(path)
+            if len(matches) == 1:
+                project = matches[0]
+            elif matches:
+                raise ToolError("several projects match: " + ", ".join(p.path for p in matches[:10]))
+        if project is None:
+            raise ToolError(f"no project found for '{path}'; try find_project")
+        return project
+
+    def find_project(self, name: str) -> dict:
+        hits = self._envmap().find(name)
+        return {"query": name, "count": len(hits), "projects": [p.summary() for p in hits[:30]]}
+
+    def project_info(self, path: str) -> dict:
+        p = self._project(path)
+        info = p.summary()
+        info["sources"] = p.sources
+        info["declared"] = dict(list(p.declared.items())[:150])
+        info["scripts"] = p.scripts
+        envs = []
+        for e in p.envs:
+            missing = [n for n in p.declared if not n.startswith("npm:") and n not in e["packages"]]
+            envs.append({"path": e["path"], "python": e["python"], "installed": len(e["packages"]),
+                         "declared_but_missing": missing[:50]})
+        info["envs"] = envs
+        return info
+
+    def which_projects_use(self, package: str) -> dict:
+        if not package.strip():
+            raise ToolError("package name is empty")
+        return self._envmap().which_use(package)
+
+    def run_in_project(self, path: str, command: str) -> dict:
+        """Run an allowlisted command in a project's own env, after approval."""
+        from .envmap import CommandError, plan_command, run_command, safe_env
+        project = self._project(path)
+        if project.private:
+            raise ToolError("that project is in a private zone; run commands there yourself")
+        if self.policy.zone_of(project.path) != WRITABLE:
+            raise ToolError(f"{project.name} is not in a writable zone, and commands can change files there")
+        try:
+            plan = plan_command(project, command)
+        except CommandError as e:
+            raise ToolError(str(e)) from e
+        payload = {"cwd": plan["cwd"], "argv": plan["argv"]}
+        where = f" using {plan['env']}" if plan["env"] else ""
+        commit = self._approve("run_in_project", f"Run `{plan['display']}` in {project.name} ({plan['cwd']}){where}", payload)
+        if commit is None:
+            return {"done": False, "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return refused
+        runner = self.command_runner or run_command
+        code, out = runner(plan["argv"], plan["cwd"], safe_env(plan["env"]), 600 if plan["kind"] == "pip_install" else 300)
+        tail = out[-4000:]
+        self._saw_untrusted(tail)
+        lines = [ln.strip() for ln in tail.splitlines() if ln.strip()]
+        result = {"project": project.name, "command": plan["display"], "exit_code": code, "ok": code == 0,
+                  "summary": lines[-1][:200] if lines else "", **wrap(tail, f"{project.name}: {plan['display']}", kind="command")}
+        if plan["kind"] == "pip_install":  # verify in the env itself, not from pip's output
+            self._envmap().projects(refresh=True)
+            fresh = self._envmap().get(project.path)
+            installed = bool(fresh) and any(plan["package"] in e["packages"] for e in fresh.envs)
+            result.update(done=installed, verified=installed, package=plan["package"])
+        return result
+
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
         if self.tainted:  # untrusted text must not be able to plant "facts" silently
@@ -338,5 +418,14 @@ TOOL_SPECS = [
          "attachments": {"type": "array", "items": S, "description": "File paths to attach"},
          "cc": {"type": "array", "items": S}},
         ["to", "subject", "body"]),
+    _fn("find_project", "Find software projects on this computer by name. Uses Lantern's local project map.",
+        {"name": S}, ["name"]),
+    _fn("project_info", "One project's languages, declared dependencies, virtual envs, installed package counts "
+        "and declared-but-missing packages.", {"path": {**S, "description": "Project folder or name"}}, ["path"]),
+    _fn("which_projects_use", "Which projects declare or have installed a package, e.g. 'torch' (prefix npm: for Node "
+        "packages). Answered from the local project map; no files are read.", {"package": S}, ["package"]),
+    _fn("run_in_project", "Run an allowlisted command inside a project's own environment (never the global Python): "
+        "pytest / python -m pytest [-q -x -k EXPR paths], npm test, or pip install <one package>. The user approves first.",
+        {"path": {**S, "description": "Project folder or name"}, "command": S}, ["path", "command"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

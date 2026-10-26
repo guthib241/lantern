@@ -76,6 +76,14 @@ python scripts/make_avatar.py --canonical my_art.png  # start from a character y
 python scripts/import_avatar.py ~/Downloads/muse/     # use MetaMuse / Vibes exports (idle.png, celebrating.mp4, ...)
 ```
 
+## Your projects
+
+```bash
+python -m lantern --which torch      # which projects use torch? answered from the local map, no model call
+python -m lantern --projects
+```
+Lantern can also run a project's tests or `pip install` one package, always inside that project's own virtual env and only after you approve.
+
 ## Tests
 
 ```bash

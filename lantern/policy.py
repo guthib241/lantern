@@ -190,6 +190,22 @@ class Policy:
                 if zone != HIDDEN:
                     yield f, zone
 
+    def walk_dirs(self, root: str | Path, skip_dirs: set[str] = frozenset(),
+                  max_depth: int = 6) -> Iterator[tuple[Path, list[str], list[str]]]:
+        """Yield (folder, file names, subfolder names) for visible folders under root.
+        Subfolder names include dot-folders like .git/.venv (so callers can spot them), but the
+        walk never descends into dot-folders, skip_dirs, or hidden zones."""
+        base, _ = self.check_visible(root)
+        start = len(base.parts)
+        for dirpath, dirnames, filenames in os.walk(base):
+            d = Path(dirpath)
+            visible = [n for n in dirnames if self.zone_of(d / n) != HIDDEN]
+            files = [n for n in filenames if self.zone_of(d / n) != HIDDEN]
+            yield d, files, visible
+            depth = len(d.parts) - start
+            dirnames[:] = [] if depth >= max_depth else [
+                n for n in visible if n not in skip_dirs and not n.startswith(".")]
+
     def stat(self, path: str | Path) -> os.stat_result:
         p, _ = self.check_visible(path)
         return p.stat()

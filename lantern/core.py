@@ -20,6 +20,7 @@ from .agent import Agent
 from .approvals import ApprovalBus, BusGate
 from .audit import AuditLog, GuardedClient
 from .email_tool import EmailService, EmailSettings
+from .envmap import EnvMap
 from .forms import FormService, FormSettings
 from .memory import Memory
 from .policy import Policy
@@ -58,8 +59,9 @@ class Core:
         self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
         self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
+        self.envmap = EnvMap(self.policy, cfg.envmap_path)
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
-                               forms=self.forms, email=self.email)
+                               forms=self.forms, email=self.email, envmap=self.envmap)
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
                            on_event=self._agent_event)
