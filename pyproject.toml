@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lantern"
+dynamic = ["version"]
+description = "A private AI companion that lives on your laptop and gets real work done, built on Meta's Muse models."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "openai>=1.50",
+  "python-dotenv>=1.0",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "websockets>=12",
+  "httpx>=0.27",
+  "playwright>=1.45",
+  "mcp>=2.0",
+  "cryptography>=42",
+  "keyring>=24",
+  "meta_sam_parser>=0.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyflakes>=3"]
+
+[project.scripts]
+lantern = "lantern.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "lantern.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["lantern*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

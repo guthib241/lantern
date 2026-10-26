@@ -81,3 +81,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **How it reports:** each problem comes with its exact fix. A summary says whether the rehearsal and the real demo are ready, what blocks them and what's still to do.
   - **Read-only:** no keys created, no Meta calls.
   - 4 new tests plus 1 desktop test; 348 passing.
+- M22: Packaging and CI.
+  - **Packaging:** `pyproject.toml` makes Lantern an installable package with a `lantern` command (`pip install -e .`; `pip install -e ".[dev]"` adds pytest and pyflakes). The version comes from `lantern/__init__.py`.
+  - **CI:** `.github/workflows/ci.yml` runs on each pull request and on pushes to main: pyflakes, the whole test suite (real Chromium, real uvicorn, the desktop's node tests), the full offline rehearsal (`lantern --demo-run`, which fails the build if any beat fails) and the doctor.
+  - **Lint:** fixed the two unused imports pyflakes found.
+  - 348 passing.

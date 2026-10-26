@@ -9,7 +9,7 @@ pytest.importorskip("mcp")
 from mcp import Client  # noqa: E402
 from mcp.server.mcpserver import MCPServer  # noqa: E402
 
-from fakes import FakeClient, call  # noqa: E402
+from fakes import FakeClient  # noqa: E402
 from lantern.agent import Agent  # noqa: E402
 from lantern.approvals import ApprovalBus, CallbackGate  # noqa: E402
 from lantern.audit import AuditLog  # noqa: E402

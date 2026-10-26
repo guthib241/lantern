@@ -1,5 +1,7 @@
 # 🏮 Lantern
 
+[![tests](https://github.com/guthib241/lantern/actions/workflows/ci.yml/badge.svg)](https://github.com/guthib241/lantern/actions/workflows/ci.yml)
+
 **I hate forms. Lantern is an AI that lives on my laptop, does the boring computer work for me (forms, email, files), asks before anything leaves the machine, and never reads my private folder in the cloud.**
 
 Built on Meta's Muse models for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026).
@@ -8,10 +10,10 @@ Built on Meta's Muse models for the Meta Global AI Developer Hackathon (Oct 26 �
 
 ```bash
 git clone https://github.com/guthib241/lantern && cd lantern
-pip install -r requirements.txt && python -m playwright install chromium
-python -m lantern --demo-run                       # the whole 3-minute story, offline, no key, $0
+pip install -e . && python -m playwright install chromium   # gives you the `lantern` command
+lantern --demo-run                                 # the whole 3-minute story, offline, no key, $0
 echo "MODEL_API_KEY=your-key-from-dev.meta.ai" > .env && python scripts/smoke.py
-python -m lantern --serve                           # then, in a 2nd terminal: cd desktop && npm install && npm start
+lantern --serve                                    # then, in a 2nd terminal: cd desktop && npm install && npm start
 ```
 
 `--demo-run` is a rehearsal. A scripted stand-in plays Muse Spark and Muse Wonder (zero tokens). Everything else runs for real on a fresh copy of [`demo/home/`](demo/home):
@@ -165,9 +167,13 @@ Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's 
 ## Tests
 
 ```bash
-python -m pytest -q          # ~310 tests, offline: fake model, real Chromium on demo/forms, real uvicorn
-cd desktop && npm test       # the panel's logic and the mock server
+pip install -e ".[dev]"
+python -m pytest -q          # ~350 tests, offline: fake model, real Chromium on demo/forms, real uvicorn, desktop node tests
+python -m pyflakes lantern scripts tests
+cd desktop && npm test       # the panel's logic and the mock server on their own
 ```
+
+GitHub Actions runs the lint, every test, the full offline rehearsal and the doctor on each pull request (`.github/workflows/ci.yml`). `python -m lantern …` and `lantern …` are the same command.
 
 ## What you need to set up on your laptop
 
