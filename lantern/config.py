@@ -29,6 +29,7 @@ class Config:
     model: str = models.SPARK
     base_url: str = models.BASE_URL
     db_path: str = str(HOME / "memory.db")
+    zones_file: str = str(HOME / "zones.json")
 
 
 def load() -> Config:
@@ -42,7 +43,7 @@ def load() -> Config:
     if path.exists():
         data = json.loads(path.read_text())
         for k, v in data.items():
-            if hasattr(cfg, k) and k != "db_path":
+            if hasattr(cfg, k) and k not in ("db_path", "zones_file"):
                 setattr(cfg, k, v)
     if os.environ.get("LANTERN_ROOTS"):
         cfg.roots = [r for r in os.environ["LANTERN_ROOTS"].split(os.pathsep) if r]

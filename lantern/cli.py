@@ -16,6 +16,7 @@ import sys
 from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .memory import Memory
+from .policy import ZONES, Policy
 from .tools import Toolbox
 
 
@@ -76,7 +77,7 @@ def build_agent(cfg, mem: Memory) -> Agent:
     if not key:
         sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
     client = OpenAI(base_url=cfg.base_url, api_key=key)
-    tools = Toolbox(cfg.roots, mem, ask_approval)
+    tools = Toolbox(Policy.load(cfg.zones_file, cfg.roots), mem, ask_approval)
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 
 
@@ -87,6 +88,8 @@ def main(argv=None) -> None:
     p.add_argument("--task", type=int, help="show one task's full timeline")
     p.add_argument("--memory", action="store_true", help="show remembered facts")
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
+    p.add_argument("--zones", action="store_true", help="show privacy zones")
+    p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
     p.add_argument("--persona", choices=sorted(PERSONAS))
     a = p.parse_args(argv)
 
@@ -101,6 +104,14 @@ def main(argv=None) -> None:
         return print_task(mem, a.task)
     if a.usage:
         return print_usage(mem)
+    if a.zones or a.set_zone:
+        policy = Policy.load(cfg.zones_file, cfg.roots)
+        if a.set_zone:
+            policy.set_zone(*a.set_zone)
+            policy.save(cfg.zones_file)
+        for z in policy.describe():
+            print(f"{z['zone']:<9} {z['path']}")
+        return
     if a.memory:
         facts = mem.facts()
         print("\n".join(f"- {k}: {v}" for k, v in facts.items()) or "Nothing remembered yet.")

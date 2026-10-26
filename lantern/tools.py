@@ -1,7 +1,8 @@
 """Lantern's hands: the actions it can take on your computer.
 
 Safety rules baked in here, not left to the model:
-  1. Every path must sit inside a folder you allowed (config.roots). No escaping with ../ or symlinks.
+  1. Every file access goes through policy.py (privacy zones). Hidden paths are never
+     listed, private files are described instead of read, and only writable zones change.
   2. Anything that changes your files (write, move) asks for approval first.
   3. Lantern never deletes. The worst it can do is move a file, and it asks first.
   4. After every change, the tool checks the result on disk and reports what it saw,
@@ -10,12 +11,11 @@ Safety rules baked in here, not left to the model:
 from __future__ import annotations
 
 import fnmatch
-import os
-import shutil
 from pathlib import Path
 from typing import Callable
 
 from .memory import Memory
+from .policy import PRIVATE, Policy, PolicyError
 
 Approver = Callable[[str], bool]  # gets a plain-English description, returns yes/no
 
@@ -33,55 +33,53 @@ class ToolError(Exception):
 
 
 class Toolbox:
-    def __init__(self, roots: list[str | Path], memory: Memory, approve: Approver):
-        if not roots:
-            raise ValueError("Lantern needs at least one allowed folder")
-        self.roots = [Path(r).expanduser().resolve() for r in roots]
+    def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver):
+        if not isinstance(policy, Policy):
+            if not policy:
+                raise ValueError("Lantern needs at least one allowed folder")
+            policy = Policy.from_roots(policy)
+        self.policy = policy
         self.memory = memory
         self.approve = approve
 
-    # ---- path safety -------------------------------------------------------
-    def _resolve(self, path: str) -> Path:
-        p = Path(path).expanduser()
-        if not p.is_absolute():
-            p = self.roots[0] / p
-        p = p.resolve()
-        for root in self.roots:
-            if p == root or root in p.parents:
-                return p
-        raise ToolError(
-            f"'{path}' is outside the folders I'm allowed to touch: "
-            + ", ".join(str(r) for r in self.roots)
-        )
+    @property
+    def roots(self) -> list[Path]:
+        return self.policy.roots
 
-    def _show(self, p: Path) -> str:
-        for root in self.roots:
-            if p == root or root in p.parents:
-                return str(p)
-        return str(p)
+    # ---- path safety -------------------------------------------------------
+    def _visible(self, path: str) -> tuple[Path, str]:
+        try:
+            return self.policy.check_visible(path or str(self.roots[0]))
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
 
     # ---- read-only tools ---------------------------------------------------
     def list_folders(self) -> dict:
-        return {"allowed_folders": [str(r) for r in self.roots]}
+        return {"allowed_folders": [{"path": z["path"], "zone": z["zone"]}
+                                    for z in self.policy.describe() if z["zone"] != "hidden"]}
 
     def list_dir(self, path: str = "") -> dict:
-        p = self._resolve(path or str(self.roots[0]))
-        if not p.is_dir():
-            raise ToolError(f"{p} is not a folder")
+        p, zone = self._visible(path)
+        try:
+            children = self.policy.list_dir(p)
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
         entries = []
-        for child in sorted(p.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower())):
+        for child in children:
             if child.name.startswith("."):
                 continue
             entries.append({
                 "name": child.name + ("/" if child.is_dir() else ""),
                 "size": child.stat().st_size if child.is_file() else None,
+                "zone": self.policy.zone_of(child),
             })
             if len(entries) >= 200:
                 break
-        return {"path": str(p), "entries": entries}
+        return {"path": str(p), "zone": zone, "entries": entries}
 
     def search_files(self, query: str, in_content: bool = False) -> dict:
-        """Find files by name (glob or words), optionally inside text files too."""
+        """Find files by name (glob or words), optionally inside text files too.
+        Private files match by name only; their contents are never searched for the cloud."""
         q = query.strip()
         if not q:
             raise ToolError("search query is empty")
@@ -89,55 +87,61 @@ class Toolbox:
         is_glob = any(c in q for c in "*?[")
         hits = []
         for root in self.roots:
-            for dirpath, dirnames, filenames in os.walk(root):
-                dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-                for name in filenames:
-                    full = Path(dirpath) / name
-                    lname = name.lower()
-                    matched = (
-                        fnmatch.fnmatch(lname, q.lower()) if is_glob
-                        else all(w in lname for w in words)
-                    )
-                    where = "name"
-                    if not matched and in_content and full.suffix.lower() in TEXT_EXTS:
-                        try:
-                            text = full.read_text(errors="ignore")[:200_000].lower()
-                            matched = all(w in text for w in words)
-                            where = "content"
-                        except OSError:
-                            pass
-                    if matched:
-                        st = full.stat()
-                        hits.append({"path": str(full), "matched_in": where,
-                                     "size": st.st_size, "modified": st.st_mtime})
+            for full, zone in self.policy.walk(root, SKIP_DIRS):
+                lname = full.name.lower()
+                matched = (
+                    fnmatch.fnmatch(lname, q.lower()) if is_glob
+                    else all(w in lname for w in words)
+                )
+                where = "name"
+                if not matched and in_content and zone != PRIVATE and full.suffix.lower() in TEXT_EXTS:
+                    try:
+                        text = self.policy.read_text(full, limit=200_000).lower()
+                        matched = all(w in text for w in words)
+                        where = "content"
+                    except (OSError, PolicyError):
+                        pass
+                if matched:
+                    st = full.stat()
+                    hits.append({"path": str(full), "matched_in": where, "zone": zone,
+                                 "size": st.st_size, "modified": st.st_mtime})
         hits.sort(key=lambda h: h["modified"], reverse=True)
         return {"query": q, "count": len(hits), "results": hits[:MAX_RESULTS]}
 
     def read_file(self, path: str) -> dict:
-        p = self._resolve(path)
+        p, zone = self._visible(path)
         if not p.is_file():
             raise ToolError(f"{p} is not a file")
+        if zone == PRIVATE:
+            return {"path": str(p), "private": True, "description": self.policy.describe_file(p),
+                    "note": "This file is in a private zone. Its contents stay on this computer; "
+                            "use ask_private to have the local model answer about it."}
         if p.suffix.lower() not in TEXT_EXTS:
             return {"path": str(p), "note": f"binary file ({p.suffix}), {p.stat().st_size} bytes; cannot show text"}
-        text = p.read_text(errors="replace")
+        text = self.policy.read_text(p, limit=MAX_READ_CHARS + 1)
         return {"path": str(p), "truncated": len(text) > MAX_READ_CHARS, "text": text[:MAX_READ_CHARS]}
 
     # ---- tools that change things (approval + verify) ----------------------
     def write_file(self, path: str, content: str, overwrite: bool = False) -> dict:
-        p = self._resolve(path)
+        try:
+            p = self.policy.check_writable(path)
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
         if p.exists() and not overwrite:
             raise ToolError(f"{p} already exists; set overwrite=true if you mean to replace it")
         verb = "Replace" if p.exists() else "Create"
         if not self.approve(f"{verb} file {p} ({len(content)} characters)"):
             return {"done": False, "reason": "user declined"}
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-        ok = p.is_file() and p.read_text() == content  # verify on disk
+        self.policy.write_text(p, content)
+        ok = p.is_file() and self.policy.read_text(p) == content  # verify on disk
         return {"done": ok, "path": str(p), "verified": ok}
 
     def move_file(self, source: str, destination: str) -> dict:
-        src = self._resolve(source)
-        dst = self._resolve(destination)
+        try:
+            src = self.policy.check_writable(source)
+            dst = self.policy.check_writable(destination)
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
         if not src.exists():
             raise ToolError(f"{src} does not exist")
         if dst.is_dir():
@@ -146,8 +150,7 @@ class Toolbox:
             raise ToolError(f"{dst} already exists; pick another name")
         if not self.approve(f"Move {src} -> {dst}"):
             return {"done": False, "reason": "user declined"}
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dst))
+        self.policy.move(src, dst)
         ok = dst.exists() and not src.exists()  # verify on disk
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
 
@@ -168,6 +171,8 @@ class Toolbox:
             return fn(**args)
         except TypeError as e:
             raise ToolError(f"bad arguments for {name}: {e}") from e
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
         except OSError as e:
             raise ToolError(f"{name} failed: {e}") from e
 
@@ -184,7 +189,7 @@ def _fn(name: str, description: str, props: dict, required: list[str]) -> dict:
 
 S = {"type": "string"}
 TOOL_SPECS = [
-    _fn("list_folders", "List the folders Lantern is allowed to work in.", {}, []),
+    _fn("list_folders", "List the folders Lantern may see and their privacy zone (private / open / writable).", {}, []),
     _fn("list_dir", "List files and subfolders in a folder.", {"path": {**S, "description": "Folder path; empty for the main folder"}}, []),
     _fn("search_files",
         "Find files by name words or a glob like '*.pdf'. Set in_content to also search inside text files. Results are newest first.",

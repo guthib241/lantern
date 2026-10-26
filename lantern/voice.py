@@ -9,6 +9,8 @@ Auth: `Authorization: Bearer $MODEL_API_KEY`. Limit: 10 minutes or 32 MB.
 Response JSON: {"sessionId", "transcript", "audioDurationMs", "turns"?}.
 
 Only the standard library is used; `post` can be swapped out in tests.
+Audio files passed here are Lantern's own downloads (voice notes from channels,
+kept under ~/.lantern/media), not user files, so they are read directly.
 """
 from __future__ import annotations
 
