@@ -136,7 +136,7 @@ def run_demo(a) -> None:
             sys.exit("✗ some beats did not finish; see above")
         return
     from .server import serve
-    print("   Try: " + " · ".join(b.goal for b in demo.STORY))
+    print("   Try: " + " · ".join(b.goal for b in demo.STORY + demo.EXTRAS))
     return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
 
 

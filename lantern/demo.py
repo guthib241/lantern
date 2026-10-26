@@ -57,7 +57,9 @@ STORY = [
 
 HELP = ("This is rehearsal mode, so I only know the demo script. Try: fill the hackathon reimbursement "
         "form and email it to the organiser · what does my offer letter say? · anything I forgot in my "
-        "project notes? · which projects use torch? · make me a water timer.")
+        "project notes? · which projects use torch? · make me a water timer · remind me in 20 minutes to "
+        "record the video.")
+EXTRAS = [Beat("Remind me in 20 minutes to record the demo video.")]   # served by --serve --demo, not --demo-run
 
 
 class DemoError(RuntimeError):
@@ -216,6 +218,8 @@ def measure_form(chromium: str = "") -> dict:
 
 def pick_story(goal: str, instructions: str = "") -> Story:
     g = goal.lower()
+    if "remind" in g:
+        return _reminder_story(goal)
     if "form" in g or "reimburse" in g:
         m = re.search(r"organi[sz]er[^\n]*?([\w.+-]+@[\w-]+(?:\.[\w-]+)+)", instructions, re.I)
         return _forms_story(m.group(1) if m else ORGANISER)
@@ -229,6 +233,16 @@ def pick_story(goal: str, instructions: str = "") -> Story:
     if "water" in g or "timer" in g or "widget" in g:
         return _widget_story()
     return _say_story(HELP)
+
+
+def _reminder_story(goal: str) -> Story:
+    when = re.search(r"\b(in \d+ (?:minutes?|hours?|days?)|at \d{1,2}(?::\d{2})?\s*(?:am|pm)?)", goal, re.I)
+    what = re.search(r"\bto (.+?)[.!?]?$", goal)
+    [r] = yield _call("set_reminder", text=what.group(1) if what else goal, when=when.group(1) if when else "in 20 minutes")
+    if r.get("verified"):
+        yield _Say(f"Set for {r['due']}: “{r['text']}”. Your phone and the desktop will hear about it.")
+    else:
+        yield _Say(f"No reminder: {r.get('error') or r.get('reason', 'not set')}.")
 
 
 def _say_story(text: str) -> Story:

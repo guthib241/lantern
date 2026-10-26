@@ -148,3 +148,12 @@ test('retries show in the bubble while a task runs', () => {
   assert.match(X.bubble(s, 3), /wobbly/);
   assert.equal(X.bubble(s, 10), 'Working on it…');
 });
+
+test('a reminder shows in the bubble, then fades; tool steps read plainly', () => {
+  const s = run([{ type: 'reminder', id: 3, text: 'submit the video', late: false, ts: 100 }]);
+  assert.equal(X.bubble(s, 105), '⏰ submit the video');
+  assert.equal(X.bubble(s, 200), '');
+  const t = run([{ type: 'tool', name: 'set_reminder', args: {}, result: { verified: true, due: 'today 18:00' }, task_id: 1, ts: 1 }]);
+  assert.equal(t.tasks[1].steps[0].label, 'Reminder set for today 18:00 ✓');
+  assert.equal(t.tasks[1].verified, true);
+});

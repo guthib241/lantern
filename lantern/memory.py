@@ -5,11 +5,12 @@ With a Cipher (crypto.py), task goals and summaries, step contents and fact valu
 at rest; old plaintext rows are encrypted on first open. Deleting is real: secure_delete overwrites
 freed pages and VACUUM rebuilds the file after a forget.
 
-Three tables:
-  tasks  - every goal you give Lantern, with status and a final summary
-  steps  - the timeline inside a task (plan, tool calls, results, checks)
-  facts  - long-lived things Lantern learned ("manager's email is priya@...")
-  usage  - tokens and USD cost of every model call, per task
+Tables:
+  tasks      - every goal you give Lantern, with status and a final summary
+  steps      - the timeline inside a task (plan, tool calls, results, checks)
+  facts      - long-lived things Lantern learned ("manager's email is priya@...")
+  usage      - tokens and USD cost of every model call, per task
+  reminders  - plain timers that ping the phone and the desktop (reminders.py)
 """
 from __future__ import annotations
 
@@ -52,9 +53,36 @@ CREATE TABLE IF NOT EXISTS facts (
     value TEXT NOT NULL,
     updated_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    due_at REAL NOT NULL,
+    repeat TEXT NOT NULL DEFAULT '',           -- '' | daily | weekly
+    status TEXT NOT NULL DEFAULT 'pending',    -- pending | delivered | cancelled
+    task_id INTEGER,
+    created_at REAL NOT NULL,
+    delivered_at REAL
+);
 """
 
 TASK_STATUSES = {"active", "done", "failed", "cancelled"}
+
+
+@dataclass
+class Reminder:
+    id: int
+    text: str
+    due_at: float
+    repeat: str
+    status: str
+    task_id: int | None
+    created_at: float
+    delivered_at: float | None
+
+    def public(self) -> dict:
+        from .reminders import describe
+        return {"id": self.id, "text": self.text, "due_at": self.due_at, "due": describe(self.due_at),
+                "repeat": self.repeat, "status": self.status}
 
 
 @dataclass
@@ -76,7 +104,8 @@ def _locked(fn):
     return wrapper
 
 
-ENCRYPTED = (("tasks", "goal"), ("tasks", "summary"), ("steps", "content"), ("facts", "value"))
+ENCRYPTED = (("tasks", "goal"), ("tasks", "summary"), ("steps", "content"), ("facts", "value"),
+             ("reminders", "text"))
 
 
 class Memory:
@@ -110,7 +139,7 @@ class Memory:
         """One-time migration: encrypt rows written before encryption was on."""
         from .crypto import PREFIX
         n = 0
-        key_col = {"tasks": "id", "steps": "id", "facts": "key"}
+        key_col = {"tasks": "id", "steps": "id", "facts": "key", "reminders": "id"}
         for table, col in ENCRYPTED:
             rows = self.db.execute(f"SELECT {key_col[table]} AS k, {col} AS v FROM {table} "
                                    f"WHERE {col} IS NOT NULL AND {col} NOT LIKE ?", (PREFIX + "%",)).fetchall()
@@ -255,17 +284,69 @@ class Memory:
     def forget_task(self, task_id: int) -> dict:
         """Delete a task with its timeline and usage rows, then rebuild the file."""
         counts = {table: self.db.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,)).rowcount
-                  for table in ("steps", "usage")}
+                  for table in ("steps", "usage", "reminders")}
         counts["tasks"] = self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount
         self._vacuum()
         return counts
 
     @_locked
     def forget_everything(self) -> dict:
-        counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount for table in ("steps", "usage", "tasks", "facts")}
+        counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount
+                  for table in ("steps", "usage", "tasks", "facts", "reminders")}
         self.db.execute("DELETE FROM sqlite_sequence")
         self._vacuum()
         return counts
+
+    # ---- reminders -----------------------------------------------------------
+    def _reminder(self, row) -> Reminder:
+        d = dict(row)
+        d["text"] = self._dec(d["text"])
+        return Reminder(**d)
+
+    @_locked
+    def add_reminder(self, text: str, due_at: float, repeat: str = "", task_id: int | None = None) -> Reminder:
+        cur = self.db.execute(
+            "INSERT INTO reminders (text, due_at, repeat, status, task_id, created_at) VALUES (?, ?, ?, 'pending', ?, ?)",
+            (self._enc(text), due_at, repeat, task_id, time.time()))
+        self.db.commit()
+        return self.get_reminder(cur.lastrowid)
+
+    @_locked
+    def get_reminder(self, reminder_id: int) -> Reminder:
+        row = self.db.execute("SELECT * FROM reminders WHERE id = ?", (reminder_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"no reminder {reminder_id}")
+        return self._reminder(row)
+
+    @_locked
+    def reminders(self, status: str = "pending", limit: int = 50) -> list[Reminder]:
+        rows = self.db.execute("SELECT * FROM reminders WHERE status = ? ORDER BY due_at LIMIT ?",
+                               (status, limit)).fetchall()
+        return [self._reminder(r) for r in rows]
+
+    @_locked
+    def due_reminders(self, now: float) -> list[Reminder]:
+        rows = self.db.execute("SELECT * FROM reminders WHERE status = 'pending' AND due_at <= ? ORDER BY due_at",
+                               (now,)).fetchall()
+        return [self._reminder(r) for r in rows]
+
+    @_locked
+    def reminder_fired(self, reminder_id: int, at: float, next_due: float | None = None) -> None:
+        """Delivered: done, or (repeating) moved to its next time."""
+        if next_due is None:
+            self.db.execute("UPDATE reminders SET status = 'delivered', delivered_at = ? WHERE id = ?",
+                            (at, reminder_id))
+        else:
+            self.db.execute("UPDATE reminders SET due_at = ?, delivered_at = ? WHERE id = ?",
+                            (next_due, at, reminder_id))
+        self.db.commit()
+
+    @_locked
+    def cancel_reminder(self, reminder_id: int) -> bool:
+        n = self.db.execute("UPDATE reminders SET status = 'cancelled' WHERE id = ? AND status = 'pending'",
+                            (reminder_id,)).rowcount
+        self.db.commit()
+        return n == 1
 
     # ---- context for the model ----------------------------------------------
     @_locked
@@ -279,6 +360,12 @@ class Memory:
         lines.append("\n## Tasks still in progress")
         active = self.active_tasks()
         lines += [f"- #{t.id}: {t.goal}" for t in active] or ["- (none)"]
+
+        upcoming = self.reminders()[:5]
+        if upcoming:
+            lines.append("\n## Upcoming reminders")
+            lines += [f"- #{r.id} {r.public()['due']}{' (' + r.repeat + ')' if r.repeat else ''}: {r.text}"
+                      for r in upcoming]
 
         lines.append("\n## Recently finished")
         finished = [t for t in self.recent_tasks(task_limit) if t.status != "active"]

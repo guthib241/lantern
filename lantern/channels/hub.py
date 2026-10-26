@@ -184,6 +184,9 @@ class ChannelHub:
         pending = self.core.bus.pending()
         if pending:
             lines.append(f"{len(pending)} approval(s) waiting: " + "; ".join(a.summary[:60] for a in pending))
+        upcoming = self.core.memory.reminders()[:3]
+        if upcoming:
+            lines.append("Reminders: " + "; ".join(f"{r.public()['due']} {r.text[:40]}" for r in upcoming))
         for t in self.core.memory.recent_tasks(3):
             if t.status != "active":
                 lines.append(f"#{t.id} {t.status}: {(t.summary or t.goal)[:80]}")
@@ -277,6 +280,9 @@ class ChannelHub:
                        (f"deny:{a['id']}:{a['nonce']}:{h8}", "❌ Deny"),
                        (f"show:{a['id']}", "🔎 Show")]
             self._outbox.put((None, "buttons", (text, buttons)))
+        elif kind == "reminder":
+            note = " (it was due while Lantern was off)" if event.get("late") else ""
+            self._outbox.put((None, "text", (f"⏰ Reminder: {event.get('text', '')}{note}",)))
         elif kind == "done":
             name = self.origin.pop(event.get("id"), None)
             if name and event.get("status") != "cancelled":  # STOP already got its own reply

@@ -9,6 +9,7 @@
   const CELEBRATE_FOR = 8;
   const SMUG_FOR = 6;
   const ANNOYED_FOR = 8;
+  const REMIND_FOR = 15;
 
   /** now: seconds since epoch (same clock as event.ts). */
   function pick(state, now) {
@@ -29,6 +30,8 @@
   /** A short line for the speech bubble. */
   function bubble(state, now, persona) {
     const face = pick(state, now);
+    const rem = state.lastReminder;
+    if (rem && now - rem.at < REMIND_FOR && face !== 'needs-approval') return `⏰ ${rem.text}`;
     const c = state.lastCheckin;
     if (c && now - c.at < 8 && face !== 'needs-approval') return c.reaction;
     const r = state.lastRetry;

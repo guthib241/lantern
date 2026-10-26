@@ -51,7 +51,7 @@ class Core:
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
                  bus: ApprovalBus | None = None, approval_timeout: float | None = None,
                  forms: FormService | None = None, email: EmailService | None = None,
-                 mcp: MCPHub | None = None):
+                 mcp: MCPHub | None = None, reminder_tick: float = 1.0):
         self.cfg = cfg
         cipher = None if (memory and audit) else cipher_for(cfg)
         self.memory = memory or Memory(cfg.db_path, cipher)
@@ -85,6 +85,10 @@ class Core:
         self.bus.subscribe(self._approval_event)
         self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
         self._worker.start()
+        self._closing = threading.Event()
+        self.reminder_tick = reminder_tick
+        if reminder_tick > 0:
+            threading.Thread(target=self._remind_loop, name="lantern-reminders", daemon=True).start()
 
     def _default_client(self):
         key = os.environ.get(models.API_KEY_ENV)
@@ -196,7 +200,36 @@ class Core:
         self.emit({"type": "forgot", "everything": True})
         return result
 
+    # ---- reminders ---------------------------------------------------------------
+    def _remind_loop(self) -> None:
+        while not self._closing.wait(self.reminder_tick):
+            try:
+                self.check_reminders()
+            except Exception:  # a bad row must never stop the timer
+                pass
+
+    def check_reminders(self, now: float | None = None) -> list[dict]:
+        """Deliver every due reminder (late ones say so); repeating ones move to their next time."""
+        from .reminders import LATE_AFTER, next_due
+        now = time.time() if now is None else now
+        fired = []
+        for r in self.memory.due_reminders(now):
+            nxt = next_due(r.due_at, r.repeat, now)
+            self.memory.reminder_fired(r.id, now, nxt)
+            event = {"type": "reminder", "id": r.id, "text": r.text, "repeat": r.repeat,
+                     "late": now - r.due_at > LATE_AFTER, "next_due": nxt}
+            self.emit(event)
+            fired.append(event)
+        return fired
+
+    def cancel_reminder(self, reminder_id: int) -> bool:
+        ok = self.memory.cancel_reminder(reminder_id)
+        if ok:
+            self.emit({"type": "reminders", "changed": "cancelled", "id": reminder_id})
+        return ok
+
     def shutdown(self) -> None:
+        self._closing.set()
         self.stop()
         self.mcp.close()
         self._queue.put((None, None))

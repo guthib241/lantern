@@ -22,6 +22,7 @@
       lastEvent: 0,
       lastCheckin: null,  // {reaction, found, at}
       lastRetry: null,    // {at, wait_s, error}: the network wobbled and Lantern is retrying
+      lastReminder: null, // {text, late, at}: a reminder just went off
       connected: false,
     };
   }
@@ -63,6 +64,9 @@
       case 'search_files': return `Searched “${a.query || ''}” (${r.count != null ? r.count : '?'} found)`;
       case 'list_dir': return 'Looked in ' + (baseName(a.path) || 'your folder');
       case 'remember': return 'Remembered ' + (a.key || '');
+      case 'set_reminder': return r.verified ? `Reminder set for ${r.due || 'later'} ✓` : 'Reminder: ' + (r.reason || 'not set');
+      case 'cancel_reminder': return r.verified ? `Reminder #${r.id} cancelled ✓` : 'Reminder: ' + (r.reason || 'not cancelled');
+      case 'list_reminders': return `Checked reminders (${r.count != null ? r.count : '?'})`;
       case 'finish': return 'Finished';
       default: return e.name;
     }
@@ -158,6 +162,9 @@
         break;
       case 'retry':
         s.lastRetry = { at, wait_s: e.wait_s || 0, error: e.error || '' };
+        break;
+      case 'reminder':
+        s.lastReminder = { text: e.text || '', late: !!e.late, at };
         break;
       case 'checkin':
         s.lastCheckin = { reaction: e.reaction || '', found: e.found || 0, at };

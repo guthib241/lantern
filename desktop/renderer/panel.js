@@ -104,6 +104,33 @@
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
   }
 
+  // ---- reminders ----------------------------------------------------------------------------------
+  async function loadReminders() {
+    let items = [];
+    try { items = await api.get('/reminders'); } catch (e) { items = []; }
+    const box = $('reminders');
+    box.textContent = '';
+    box.hidden = !items.length;
+    if (!items.length) return;
+    box.append(h('h3', {}, '⏰ Reminders'));
+    for (const r of items) {
+      box.append(h('div', { class: 'reminder' },
+        h('span', { class: 'when' }, r.due + (r.repeat ? ` · ${r.repeat}` : '')),
+        h('span', { class: 'what' }, r.text),
+        h('button', { class: 'forget', onclick: () => cancelReminder(r) }, 'Cancel')));
+    }
+  }
+
+  async function cancelReminder(r) {
+    try {
+      await api.post(`/reminders/${r.id}/cancel`);
+      toast(`Reminder cancelled: ${r.text}`);
+    } catch (e) {
+      toast(`Couldn't cancel it: ${e.message}`);
+    }
+    loadReminders();
+  }
+
   async function retryTask(id) {
     try {
       await api.post(`/tasks/${id}/retry`);
@@ -325,13 +352,16 @@
     renderAll();
     if (e.type === 'approval' && e.event === 'requested') window.lantern.showPanel();
     if (e.type === 'done' && tab === 'privacy') loadPrivacy();
-    if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued')) setTimeout(loadPhone, 300);
+    if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);
+    if (e.type === 'reminder') toast(`⏰ ${e.text}`);
+    if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'connected (mock)' : 'connected') : 'offline: is `python -m lantern --serve` running?';
     $('conn').className = up ? 'up' : 'down';
     if (up) {
       try { health = await api.get('/health'); } catch (e) { health = {}; }
       if (health.demo) $('conn').textContent = 'connected · rehearsal (scripted model, nothing sent)';
+      loadReminders();
     }
   });
 

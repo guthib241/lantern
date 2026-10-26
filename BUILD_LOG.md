@@ -54,3 +54,14 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - (3) Screenshot and voice-note filenames used dash-separated timestamps that could pass Luhn and get mangled in payloads; they now use underscores.
   - **README** rewritten: pitch, 5-command setup, the demo script, a mermaid architecture diagram, the Meta model map, the safety model, reliability, the WhatsApp scope note, cost so far and what to set up.
   - 24 new tests; 309 passing.
+
+## Oct 26 (session 3: extras after M17)
+- M18: Reminders (in the spec's WhatsApp scope, not built until now).
+  - **Tools** (appended): `set_reminder`, `list_reminders` and `cancel_reminder`.
+  - **Times:** `lantern/reminders.py` parses ISO times, "in 20 minutes" and "18:30"/"6pm" in code, refuses past times or anything over a year away, and repeats daily or weekly at the same wall-clock time.
+  - **Storage:** a `reminders` table in memory, text encrypted, removed by forget-task and forget-everything. Upcoming reminders are in the model's briefing.
+  - **Approval:** needed only after untrusted content has entered the task, so a web page can't schedule messages to your phone.
+  - **Delivery:** a scheduler thread in Core delivers due reminders as `reminder` events. The hub sends "⏰ Reminder: …" to every phone channel, and late ones say so. `status` lists upcoming reminders.
+  - **Panel and API:** a Reminders card with Cancel, a toast and the avatar's bubble; `GET /reminders` and `POST /reminders/{id}/cancel`.
+  - **Mocks:** the desktop mock and the rehearsal model support it.
+  - 16 new tests plus 2 desktop tests; 325 passing.

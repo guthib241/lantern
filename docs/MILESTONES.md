@@ -20,3 +20,10 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M15 ☁ Memory encryption at rest + real "forget"
 - [x] M16 ☁ SAM 3.1 check-in (optional, cut first)
 - [x] M17 ☁ Reliability: retries, timeouts, offline mode, `--demo` rehearsal mode; README with diagram, model map, WhatsApp scope note, setup in under 5 commands
+
+## Extras after M17 (requested: "complete it end to end, add features")
+- [x] M18 ☁ Reminders: `set_reminder` / `list_reminders` / `cancel_reminder`, encrypted storage, a scheduler that pings every phone channel and the desktop (late ones say so), daily/weekly repeats
+- [ ] M19 ☁ Tidy a folder: `organize_files` moves many files under one approval bound to the whole plan, each move verified
+- [ ] M20 ☁ Resume after restart: tasks cut off by a crash or restart are marked interrupted, reported, and can be resumed
+- [ ] M21 ☁/💻 `lantern --doctor`: one checklist of everything the laptop needs, with the exact fix for each item (CLI, API, desktop)
+- [ ] M22 ☁ Packaging and CI: `pyproject.toml` with a `lantern` command, GitHub Actions running every test

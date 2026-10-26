@@ -46,3 +46,9 @@
 - Oct 26 (M17): Two scrubber fixes the rehearsal surfaced:
   - **JSON tool output:** JSON-looking strings (tool outputs) are decoded and their values scrubbed. Before, `\nAKIA…` in a JSON string had no word boundary before the key, so a key at the start of a line in a file reached the cloud model. The JSON is re-encoded only when something was redacted, so clean payloads stay byte-identical for prompt caching.
   - **Wire ids:** the top-level wire ids of Responses input items are never scrubbed, because a "redacted" `call_id` breaks the chain. Values nested under the same key names (e.g. inside a file's JSON) are still scrubbed.
+- Oct 26 (M18): Reminders are a plain timer in code, not a model feature.
+  - **Times:** the model turns "at 6" into `when` (it sees Now), and Lantern parses and validates it: ISO 8601, "in N minutes/hours/days" or a clock time; naive times are local, and a clock time already past means tomorrow.
+  - **Repeats:** daily or weekly, stepped in local wall-clock time so DST doesn't shift them.
+  - **Late delivery:** a reminder that fell due while Lantern was off is delivered at the next start with a note, never silently dropped.
+  - **Approval tier:** same as `remember`. Automatic in a trusted task, approval once untrusted content is in context, because a reminder's text goes to the user's phone and must not be plantable by a web page or file.
+  - **No advice:** the text is the user's own words; the agent rules say never to add advice.

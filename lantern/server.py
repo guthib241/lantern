@@ -21,6 +21,8 @@ in the browser can't drive Lantern through localhost.
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
   POST /checkin {image: data URL, concept}   SAM 3.1 camera check-in (objects only, nothing stored)
+  POST /tasks/{id}/retry            run a failed task's goal again
+  GET  /reminders, POST /reminders/{id}/cancel   upcoming reminders (M18)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
@@ -148,6 +150,20 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    @app.get("/reminders", dependencies=[Depends(auth)])
+    def reminders():
+        return [r.public() for r in core.memory.reminders()]
+
+    @app.post("/reminders/{reminder_id}/cancel", dependencies=[Depends(auth)])
+    def cancel_reminder(reminder_id: int):
+        try:
+            core.memory.get_reminder(reminder_id)
+        except KeyError:
+            raise HTTPException(404, "no such reminder")
+        if not core.cancel_reminder(reminder_id):
+            raise HTTPException(409, "that reminder isn't pending")
+        return {"cancelled": reminder_id}
 
     @app.get("/approvals", dependencies=[Depends(auth)])
     def approvals():

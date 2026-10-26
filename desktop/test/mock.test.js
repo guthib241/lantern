@@ -56,3 +56,16 @@ test('mock phone: STOP denies pending approvals', async (t) => {
   const texts = (await api.get('/channel/messages')).messages.map((x) => x.text);
   assert.ok(texts.some((x) => x.startsWith('🛑 Stopped')));
 });
+
+test('mock reminders: set, listed, cancel', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  await api.post('/task', { goal: 'remind me to send the video' });
+  let list = [];
+  for (let i = 0; i < 40 && !list.length; i++) { await new Promise((r) => setTimeout(r, 50)); list = await api.get('/reminders'); }
+  assert.equal(list[0].text, 'send the video');
+  assert.deepEqual(await api.post(`/reminders/${list[0].id}/cancel`), { cancelled: list[0].id });
+  assert.equal((await api.get('/reminders')).length, 0);
+  await assert.rejects(api.post(`/reminders/${list[0].id}/cancel`), /pending/);
+});

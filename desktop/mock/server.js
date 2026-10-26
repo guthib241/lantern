@@ -23,6 +23,8 @@ function createMock() {
     { path: '/home/you/.ssh', zone: 'hidden' },
   ];
   let nextTask = 1;
+  const reminders = [];   // {id, text, due_at, due, repeat, status}
+  let nextReminder = 1;
 
   const now = () => Date.now() / 1000;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -110,6 +112,20 @@ function createMock() {
       emit({ type: 'tool', name: 'which_projects_use', args: { package: 'torch' }, result: { projects: ['lantern-vision', 'thesis'] },
              badge: 'on this computer', task_id: taskId });
       reply = 'Two projects use torch: lantern-vision and thesis. No model call needed for that one.';
+    } else if (/remind/.test(g)) {
+      const text = (goal.match(/remind me (?:in \S+ \S+ )?to (.+)$/i) || [null, 'the thing'])[1];
+      const r = { id: nextReminder++, text, due_at: now() + 5, due: 'in a few seconds', repeat: '', status: 'pending' };
+      reminders.push(r);
+      emit({ type: 'tool', name: 'set_reminder', args: { text, when: 'in 5 seconds' },
+             result: { done: true, verified: true, id: r.id, due: r.due }, badge: 'on this computer', task_id: taskId });
+      emit({ type: 'reminders', changed: 'set', id: r.id });
+      setTimeout(() => {
+        if (r.status !== 'pending') return;
+        r.status = 'delivered';
+        emit({ type: 'reminder', id: r.id, text: r.text, late: false });
+        phoneSay(`⏰ Reminder: ${r.text}`);
+      }, 5000);
+      reply = `Set. I'll ping your phone and the desktop in a few seconds: “${text}”.`;
     } else if (/key|secret/.test(g)) {
       audit.cloud.redactions.stripe_key = (audit.cloud.redactions.stripe_key || 0) + 1;
       reply = 'Found config.env. I redacted the Stripe key before anything left this laptop.';
@@ -181,6 +197,7 @@ function createMock() {
       return { memory: {}, audit: 0 };
     },
     'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
+    'GET /reminders': () => reminders.filter((r) => r.status === 'pending'),
   };
 
   const server = http.createServer((req, res) => {
@@ -207,6 +224,15 @@ function createMock() {
         tasks.splice(i, 1);
         emit({ type: 'forgot', task_id: Number(f[1]) });
         return send(200, { forgot_task: Number(f[1]) });
+      }
+      const rc = url.pathname.match(/^\/reminders\/(\d+)\/cancel$/);
+      if (rc && req.method === 'POST' && req.headers['x-lantern-token'] === TOKEN) {
+        const r = reminders.find((x) => x.id === Number(rc[1]));
+        if (!r) return send(404, { detail: 'no such reminder' });
+        if (r.status !== 'pending') return send(409, { detail: "that reminder isn't pending" });
+        r.status = 'cancelled';
+        emit({ type: 'reminders', changed: 'cancelled', id: r.id });
+        return send(200, { cancelled: r.id });
       }
       const m = url.pathname.match(/^\/approvals\/([\w-]+)$/);
       const key = m ? `${req.method} /approvals/:id` : `${req.method} ${url.pathname}`;

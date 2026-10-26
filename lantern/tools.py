@@ -360,6 +360,55 @@ class Toolbox:
             raise ToolError(str(e)) from e
         return {**result, "attempts": attempts, "model": models.badge(models.SPARK)}
 
+    # ---- reminders ---------------------------------------------------------------
+    def set_reminder(self, text: str, when: str, repeat: str = "") -> dict:
+        """A plain timer: at `when`, the user's own words go to their phone and the desktop."""
+        from .reminders import REPEATS, ReminderError, check_text, describe, parse_when
+        try:
+            text, due = check_text(text), parse_when(when)
+        except ReminderError as e:
+            raise ToolError(str(e)) from e
+        repeat = (repeat or "").strip().lower()
+        if repeat not in REPEATS:
+            raise ToolError("repeat must be '', 'daily' or 'weekly'")
+        payload = {"text": text, "due_at": round(due.timestamp()), "repeat": repeat}
+        if self.tainted:  # untrusted text must not be able to schedule messages to the phone silently
+            commit = self._approve("set_reminder", f"Remind you {describe(due.timestamp())}"
+                                   f"{' (' + repeat + ')' if repeat else ''}: “{text}”", payload)
+            if commit is None:
+                return {"done": False, "reason": "user declined"}
+            if refused := self._commit(commit, payload):
+                return refused
+        r = self.memory.add_reminder(text, float(payload["due_at"]), repeat, task_id=self.task_id)
+        stored = self.memory.get_reminder(r.id)   # verify: read it back
+        ok = stored.status == "pending" and stored.text == text and abs(stored.due_at - payload["due_at"]) < 1
+        self.on_event("reminders", {"changed": "set", "id": r.id})
+        return {"done": ok, "verified": ok, "id": r.id, "due": describe(stored.due_at),
+                "due_iso": due.isoformat(timespec="minutes"), "repeat": repeat, "text": text}
+
+    def list_reminders(self) -> dict:
+        items = [r.public() for r in self.memory.reminders()]
+        return {"count": len(items), "reminders": items}
+
+    def cancel_reminder(self, id: int) -> dict:
+        try:
+            r = self.memory.get_reminder(int(id))
+        except (KeyError, ValueError, TypeError):
+            raise ToolError(f"no reminder #{id}") from None
+        if r.status != "pending":
+            return {"done": False, "reason": f"reminder #{r.id} is already {r.status}"}
+        if self.tainted:
+            payload = {"id": r.id}
+            commit = self._approve("cancel_reminder", f"Cancel reminder #{r.id}: “{r.text}”", payload)
+            if commit is None:
+                return {"done": False, "reason": "user declined"}
+            if refused := self._commit(commit, payload):
+                return refused
+        self.memory.cancel_reminder(r.id)
+        ok = self.memory.get_reminder(r.id).status == "cancelled"
+        self.on_event("reminders", {"changed": "cancelled", "id": r.id})
+        return {"done": ok, "verified": ok, "id": r.id}
+
     # ---- MCP tools (deferred) -----------------------------------------------------
     def deferred_specs(self) -> list[dict]:
         return self.mcp.function_specs() if self.mcp is not None else []
@@ -486,5 +535,13 @@ TOOL_SPECS = [
         "with no network; the user approves saving it.",
         {"name": {**S, "description": "Short name, e.g. 'water-timer'"},
          "description": {**S, "description": "What it should do and look like"}}, ["name", "description"]),
+    _fn("set_reminder", "Remind the user at a time: their phone and the desktop get the text. A plain timer; "
+        "repeat the user's words, never add advice.",
+        {"text": {**S, "description": "What to remind them of, in their words"},
+         "when": {**S, "description": "ISO 8601 local time (e.g. 2026-10-27T18:00), 'in 20 minutes', or '18:30'"},
+         "repeat": {"type": "string", "enum": ["", "daily", "weekly"]}},
+        ["text", "when"]),
+    _fn("list_reminders", "List upcoming reminders.", {}, []),
+    _fn("cancel_reminder", "Cancel an upcoming reminder by its number.", {"id": {"type": "integer"}}, ["id"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

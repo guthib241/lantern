@@ -50,6 +50,8 @@ def test_model_recognises_callers_and_chains_by_response_id():
     assert [c.output[0].actions[0]["y"] for c in (c1, c2)] == [20, 60] and "Travel" in c3.output_text
     with pytest.raises(demo.DemoError):
         m.create(model=models.SAM, input="x", stream=True)
+    r = m.create(model=models.SPARK, input="Remind me in 20 minutes to record the demo video.", tools=agent_tools)
+    assert json.loads(r.output[0].arguments) == {"text": "record the demo video", "when": "in 20 minutes"}
 
 
 def test_cli_demo_run_wiring(tmp_path, monkeypatch, capsys):
