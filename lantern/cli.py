@@ -110,6 +110,8 @@ def main(argv=None) -> None:
     p.add_argument("--audit", action="store_true", help="what left this laptop today")
     p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
     p.add_argument("--persona", choices=sorted(PERSONAS))
+    p.add_argument("--serve", action="store_true", help="run the local API server for the desktop app and channels")
+    p.add_argument("--port", type=int, default=8765)
     a = p.parse_args(argv)
 
     cfg = config_mod.load()
@@ -137,6 +139,12 @@ def main(argv=None) -> None:
         facts = mem.facts()
         print("\n".join(f"- {k}: {v}" for k, v in facts.items()) or "Nothing remembered yet.")
         return
+
+    if a.serve:
+        from .core import Core
+        from .server import serve
+        mem.close()
+        return serve(Core(cfg), config_mod.HOME, port=a.port)
 
     agent = build_agent(cfg, mem)
 

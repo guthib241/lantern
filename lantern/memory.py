@@ -10,8 +10,10 @@ Three tables:
 """
 from __future__ import annotations
 
+import functools
 import json
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,16 +64,27 @@ class Task:
     updated_at: float
 
 
+def _locked(fn):
+    """Serialize access: the server's agent thread and request threads share one connection."""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return fn(self, *args, **kwargs)
+    return wrapper
+
+
 class Memory:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(str(self.path))
+        self._lock = threading.RLock()
+        self.db = sqlite3.connect(str(self.path), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self.db.commit()
 
     # ---- tasks -------------------------------------------------------------
+    @_locked
     def start_task(self, goal: str) -> Task:
         now = time.time()
         cur = self.db.execute(
@@ -81,12 +94,14 @@ class Memory:
         self.db.commit()
         return self.get_task(cur.lastrowid)
 
+    @_locked
     def get_task(self, task_id: int) -> Task:
         row = self.db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             raise KeyError(f"no task {task_id}")
         return Task(**dict(row))
 
+    @_locked
     def finish_task(self, task_id: int, status: str, summary: str) -> None:
         if status not in TASK_STATUSES:
             raise ValueError(f"bad status {status!r}")
@@ -96,12 +111,14 @@ class Memory:
         )
         self.db.commit()
 
+    @_locked
     def recent_tasks(self, limit: int = 10) -> list[Task]:
         rows = self.db.execute(
             "SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [Task(**dict(r)) for r in rows]
 
+    @_locked
     def active_tasks(self) -> list[Task]:
         rows = self.db.execute(
             "SELECT * FROM tasks WHERE status = 'active' ORDER BY id"
@@ -109,6 +126,7 @@ class Memory:
         return [Task(**dict(r)) for r in rows]
 
     # ---- steps -------------------------------------------------------------
+    @_locked
     def log_step(self, task_id: int, kind: str, content) -> None:
         if not isinstance(content, str):
             content = json.dumps(content, ensure_ascii=False, default=str)
@@ -119,6 +137,7 @@ class Memory:
         self.db.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (time.time(), task_id))
         self.db.commit()
 
+    @_locked
     def steps(self, task_id: int) -> list[dict]:
         rows = self.db.execute(
             "SELECT kind, content, created_at FROM steps WHERE task_id = ? ORDER BY id",
@@ -127,6 +146,7 @@ class Memory:
         return [dict(r) for r in rows]
 
     # ---- usage / cost --------------------------------------------------------
+    @_locked
     def log_usage(self, task_id: int | None, model: str, input_tokens: int = 0,
                   cached_tokens: int = 0, output_tokens: int = 0, cost_usd: float = 0.0) -> None:
         self.db.execute(
@@ -136,6 +156,7 @@ class Memory:
         )
         self.db.commit()
 
+    @_locked
     def task_usage(self, task_id: int) -> dict:
         """Totals for one task: calls, tokens, cost."""
         row = self.db.execute(
@@ -147,6 +168,7 @@ class Memory:
         ).fetchone()
         return dict(row)
 
+    @_locked
     def usage_by_model(self, since: float = 0.0) -> list[dict]:
         rows = self.db.execute(
             "SELECT model, COUNT(*) AS calls, SUM(input_tokens) AS input_tokens,"
@@ -156,10 +178,12 @@ class Memory:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    @_locked
     def total_cost(self) -> float:
         return float(self.db.execute("SELECT COALESCE(SUM(cost_usd),0) FROM usage").fetchone()[0])
 
     # ---- facts -------------------------------------------------------------
+    @_locked
     def remember(self, key: str, value: str) -> None:
         key = key.strip().lower()
         if not key:
@@ -171,16 +195,19 @@ class Memory:
         )
         self.db.commit()
 
+    @_locked
     def forget(self, key: str) -> bool:
         cur = self.db.execute("DELETE FROM facts WHERE key = ?", (key.strip().lower(),))
         self.db.commit()
         return cur.rowcount > 0
 
+    @_locked
     def facts(self) -> dict[str, str]:
         rows = self.db.execute("SELECT key, value FROM facts ORDER BY key").fetchall()
         return {r["key"]: r["value"] for r in rows}
 
     # ---- context for the model ----------------------------------------------
+    @_locked
     def context_block(self, task_limit: int = 8) -> str:
         """A compact, human-readable briefing injected into every model call,
         so Lantern always knows what it knows and what it has done."""
@@ -200,5 +227,6 @@ class Memory:
         ] or ["- (none)"]
         return "\n".join(lines)
 
+    @_locked
     def close(self) -> None:
         self.db.close()

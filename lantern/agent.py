@@ -11,7 +11,9 @@ How one task runs:
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
+import threading
 from dataclasses import dataclass, field
 
 from . import models
@@ -69,12 +71,14 @@ class Agent:
         self.max_steps = max_steps
         self.on_event = on_event or (lambda kind, data: None)
         self.tools = TOOL_SPECS + [FINISH_SPEC]
+        self.cancel = threading.Event()  # set by STOP / the kill switch
 
     def instructions(self) -> str:
         return (
             BASE_RULES
             + f"\nPersonality: {PERSONAS[self.persona]}\n\n"
             + "# Your memory\n" + self.memory.context_block()
+            + f"\n\nNow: {dt.datetime.now().strftime('%a %d %b %Y, %H:%M')}"
         )
 
     def _create(self, task_id: int, **kw):
@@ -91,39 +95,70 @@ class Agent:
 
     def _result(self, task_id: int, status: str, summary: str, reply: str, steps: int, calls: list) -> Result:
         cost = self.memory.task_usage(task_id)["cost_usd"]
-        return Result(task_id, status, summary, reply, steps, calls, cost)
+        result = Result(task_id, status, summary, reply, steps, calls, cost)
+        self.on_event("done", {"id": task_id, "status": status, "summary": summary, "reply": reply,
+                               "cost_usd": cost, "steps": steps})
+        return result
 
-    def run(self, goal: str) -> Result:
-        task = self.memory.start_task(goal)
+    def _stop(self, task_id: int, status: str, summary: str, steps: int, calls: list) -> Result:
+        self.memory.log_step(task_id, "note", summary)
+        self.memory.finish_task(task_id, status, summary)
+        return self._result(task_id, status, summary, summary, steps, calls)
+
+    @staticmethod
+    def tool_badge(name: str, result) -> str:
+        """Which model (if any) did the work in a tool step, for the UI's model badge."""
+        if isinstance(result, dict) and result.get("model"):
+            return str(result["model"])
+        return "on this computer"
+
+    def run(self, goal: str, task_id: int | None = None) -> Result:
+        """Run one task to completion. Pass task_id to run a task the server already created."""
+        task = self.memory.get_task(task_id) if task_id else self.memory.start_task(goal)
+        self.cancel.clear()
+        try:
+            return self._run(task.id, goal)
+        except Exception as e:
+            self.memory.log_step(task.id, "note", f"error: {type(e).__name__}: {e}")
+            self.memory.finish_task(task.id, "failed", f"error: {type(e).__name__}")
+            self.on_event("done", {"id": task.id, "status": "failed", "summary": f"error: {e}",
+                                   "reply": "", "cost_usd": self.memory.task_usage(task.id)["cost_usd"], "steps": 0})
+            raise
+
+    def _run(self, task_id: int, goal: str) -> Result:
         if hasattr(self.toolbox, "begin_task"):
             self.toolbox.begin_task()
         if hasattr(self.client, "set_task"):  # GuardedClient tags audit rows with the task
-            self.client.set_task(task.id)
-        self.memory.log_step(task.id, "plan", {"goal": goal})
-        self.on_event("task", {"id": task.id, "goal": goal})
+            self.client.set_task(task_id)
+        self.memory.log_step(task_id, "plan", {"goal": goal})
+        self.on_event("task", {"id": task_id, "goal": goal})
 
         calls_made: list = []
         response = self._create(
-            task.id,
+            task_id,
             instructions=self.instructions(),
             input=goal,
             tools=self.tools,
         )
 
         for step in range(1, self.max_steps + 1):
+            if self.cancel.is_set():
+                return self._stop(task_id, "cancelled", "stopped by the user", step, calls_made)
             fcalls = [o for o in response.output if getattr(o, "type", None) == "function_call"]
             text = getattr(response, "output_text", "") or ""
 
             if not fcalls:
                 # Plain answer with no finish call: a chat reply or a quick question.
                 summary = text.strip().splitlines()[0][:200] if text.strip() else "(no reply)"
-                self.memory.log_step(task.id, "reply", text)
-                self.memory.finish_task(task.id, "done", summary)
-                return self._result(task.id, "done", summary, text, step, calls_made)
+                self.memory.log_step(task_id, "reply", text)
+                self.memory.finish_task(task_id, "done", summary)
+                return self._result(task_id, "done", summary, text, step, calls_made)
 
             outputs = []
             finished = None
             for fc in fcalls:
+                if self.cancel.is_set():
+                    return self._stop(task_id, "cancelled", "stopped by the user", step, calls_made)
                 try:
                     args = json.loads(fc.arguments or "{}")
                     if not isinstance(args, dict):
@@ -144,9 +179,10 @@ class Agent:
                             result = {"error": str(e)}
 
                 calls_made.append({"name": fc.name, "args": args, "result": result})
-                self.memory.log_step(task.id, "tool_call", {"name": fc.name, "args": args})
-                self.memory.log_step(task.id, "tool_result", {"name": fc.name, "result": result})
-                self.on_event("tool", {"name": fc.name, "args": args, "result": result})
+                self.memory.log_step(task_id, "tool_call", {"name": fc.name, "args": args})
+                self.memory.log_step(task_id, "tool_result", {"name": fc.name, "result": result})
+                self.on_event("tool", {"name": fc.name, "args": args, "result": result,
+                                       "badge": self.tool_badge(fc.name, result)})
                 outputs.append({
                     "type": "function_call_output",
                     "call_id": fc.call_id,
@@ -157,20 +193,18 @@ class Agent:
                 status, summary = finished
                 # Let the model say its in-character closing line.
                 response = self._create(
-                    task.id, previous_response_id=response.id,
+                    task_id, previous_response_id=response.id,
                     input=outputs, tools=self.tools,
                 )
                 reply = getattr(response, "output_text", "") or summary
-                self.memory.log_step(task.id, "reply", reply)
-                self.memory.finish_task(task.id, status, summary)
-                return self._result(task.id, status, summary, reply, step, calls_made)
+                self.memory.log_step(task_id, "reply", reply)
+                self.memory.finish_task(task_id, status, summary)
+                return self._result(task_id, status, summary, reply, step, calls_made)
 
             response = self._create(
-                task.id, previous_response_id=response.id,
+                task_id, previous_response_id=response.id,
                 input=outputs, tools=self.tools,
             )
 
-        summary = f"stopped after {self.max_steps} steps without finishing"
-        self.memory.log_step(task.id, "note", summary)
-        self.memory.finish_task(task.id, "failed", summary)
-        return self._result(task.id, "failed", summary, summary, self.max_steps, calls_made)
+        return self._stop(task_id, "failed", f"stopped after {self.max_steps} steps without finishing",
+                          self.max_steps, calls_made)
