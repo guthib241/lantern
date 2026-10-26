@@ -5,8 +5,9 @@ Every model call goes through `GuardedClient`, which:
   2. records time, lane, model, endpoint, byte count, SHA-256 of the exact payload
      sent, and how many things were redacted, then
   3. forwards the call.
-Calls to the local Glimmer lane are recorded too (lane="local") but are not
-scrubbed, because private content is allowed there and never leaves the machine.
+Calls to the private Glimmer lane are recorded too but are not scrubbed, because
+private content is allowed there: lane="local" never leaves the machine,
+lane="selfhosted" goes to the user's own server (e.g. Modal) and is shown separately.
 
 The UI's "What left my laptop today" view is `AuditLog.summary(since=today)`.
 """
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS audit (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ts REAL NOT NULL,
     task_id INTEGER,
-    lane TEXT NOT NULL,          -- cloud | local
+    lane TEXT NOT NULL,          -- cloud | local | selfhosted
     destination TEXT NOT NULL,   -- base URL
     endpoint TEXT NOT NULL,      -- responses | chat.completions | asr.transcribe | ...
     model TEXT NOT NULL,
@@ -106,10 +107,12 @@ class AuditLog:
         since = start_of_today() if since is None else since
         cloud = {"calls": 0, "bytes": 0, "by_model": {}, "redactions": Counter()}
         local = {"calls": 0, "bytes": 0}
+        selfhosted = {"calls": 0, "bytes": 0}
         for e in self.entries(since, limit=100_000):
-            if e["lane"] == "local":
-                local["calls"] += 1
-                local["bytes"] += e["bytes"]
+            if e["lane"] in ("local", "selfhosted"):
+                bucket = local if e["lane"] == "local" else selfhosted
+                bucket["calls"] += 1
+                bucket["bytes"] += e["bytes"]
                 continue
             cloud["calls"] += 1
             cloud["bytes"] += e["bytes"]
@@ -118,7 +121,7 @@ class AuditLog:
             m["bytes"] += e["bytes"]
             cloud["redactions"].update(e["redactions"])
         cloud["redactions"] = dict(cloud["redactions"])
-        return {"since": since, "cloud": cloud, "local": local}
+        return {"since": since, "cloud": cloud, "local": local, "selfhosted": selfhosted}
 
     def close(self) -> None:
         self.db.close()
@@ -143,8 +146,8 @@ class GuardedClient:
 
     def __init__(self, client: Any, audit: AuditLog, *, lane: str = "cloud",
                  destination: str = models.BASE_URL, scrubber: Scrubber = DEFAULT):
-        if lane not in ("cloud", "local"):
-            raise ValueError("lane must be 'cloud' or 'local'")
+        if lane not in ("cloud", "local", "selfhosted"):
+            raise ValueError("lane must be 'cloud', 'local' or 'selfhosted'")
         self.inner = client
         self.audit = audit
         self.lane = lane

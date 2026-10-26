@@ -18,6 +18,7 @@ from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
 from .memory import Memory
 from .policy import ZONES, Policy
+from .router import Router, RouterConfig, make_backend
 from .tools import Toolbox
 
 
@@ -69,6 +70,8 @@ def print_audit(audit: AuditLog) -> None:
     c, loc = s["cloud"], s["local"]
     print(f"Today: {c['calls']} cloud calls, {c['bytes']:,} bytes left this laptop"
           f" · {loc['calls']} local calls ({loc['bytes']:,} bytes stayed here)")
+    if s["selfhosted"]["calls"]:
+        print(f"  Self-hosted private lane: {s['selfhosted']['calls']} calls, {s['selfhosted']['bytes']:,} bytes")
     for model, m in c["by_model"].items():
         print(f"  {model:<28} {m['calls']:>4} calls {m['bytes']:>10,} bytes")
     if c["redactions"]:
@@ -88,9 +91,11 @@ def build_agent(cfg, mem: Memory) -> Agent:
     key = os.environ.get("MODEL_API_KEY")
     if not key:
         sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
-    client = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key), AuditLog(cfg.audit_path),
-                           destination=cfg.base_url)
-    tools = Toolbox(Policy.load(cfg.zones_file, cfg.roots), mem, ask_approval)
+    audit = AuditLog(cfg.audit_path)
+    client = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key), audit, destination=cfg.base_url)
+    policy = Policy.load(cfg.zones_file, cfg.roots)
+    router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
+    tools = Toolbox(policy, mem, ask_approval, router=router)
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 
 

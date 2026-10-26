@@ -33,7 +33,8 @@ class ToolError(Exception):
 
 
 class Toolbox:
-    def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver):
+    def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver,
+                 router=None):
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -41,6 +42,7 @@ class Toolbox:
         self.policy = policy
         self.memory = memory
         self.approve = approve
+        self.router = router  # router.Router: the private lane (Muse Glimmer)
 
     @property
     def roots(self) -> list[Path]:
@@ -121,6 +123,16 @@ class Toolbox:
         text = self.policy.read_text(p, limit=MAX_READ_CHARS + 1)
         return {"path": str(p), "truncated": len(text) > MAX_READ_CHARS, "text": text[:MAX_READ_CHARS]}
 
+    def ask_private(self, path: str, question: str) -> dict:
+        """Ask the local model about a private file; only its scrubbed answer comes back."""
+        from .router import PrivateLaneError
+        if self.router is None:
+            raise ToolError("the private lane (local Muse Glimmer) is not set up, so I can't read private files")
+        try:
+            return self.router.ask_private(path, question)
+        except PrivateLaneError as e:
+            raise ToolError(f"{e}. Private files never go to the cloud, so I can't answer this right now.") from e
+
     # ---- tools that change things (approval + verify) ----------------------
     def write_file(self, path: str, content: str, overwrite: bool = False) -> dict:
         try:
@@ -196,7 +208,10 @@ TOOL_SPECS = [
         {"query": {**S, "description": "Words in the file name, or a glob"},
          "in_content": {"type": "boolean", "description": "Also search inside text files"}},
         ["query"]),
-    _fn("read_file", "Read a text file.", {"path": S}, ["path"]),
+    _fn("read_file", "Read a text file. Private-zone files return only a description.", {"path": S}, ["path"]),
+    _fn("ask_private",
+        "Ask a question about a file in a private zone. A local model on this computer reads it and returns a short answer; the file never leaves the computer.",
+        {"path": S, "question": S}, ["path", "question"]),
     _fn("write_file", "Create (or with overwrite=true, replace) a text file. The user is asked to approve.",
         {"path": S, "content": S, "overwrite": {"type": "boolean"}}, ["path", "content"]),
     _fn("move_file", "Move or rename a file. Destination can be a folder. The user is asked to approve.",
