@@ -159,6 +159,28 @@ async function main() {
     await panel.screenshot({ path: path.join(OUT, '3-widget.png') });
     await panel.click('.tabs button[data-tab=tasks]');
 
+    // Quick Ask: the Spotlight-style bar (the global hotkey does exactly this)
+    await app.evaluate(({ BrowserWindow }) => {
+      const q = BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Lantern Quick Ask');
+      q.show(); q.focus(); q.webContents.send('quick:shown');
+    });
+    const quickPage = await until('the Quick Ask window', async () => app.windows().find((p) => p.url().endsWith('quick.html')));
+    await quickPage.waitForSelector('#q-rows li', { timeout: 10000 });
+    const suggestions = await quickPage.$$eval('#q-rows li', (els) => els.map((e) => e.className));
+    check(suggestions.includes('suggestion') && suggestions.includes('recent'), `Quick Ask lists suggestions and recent tasks (${suggestions.join(', ')})`);
+    await quickPage.fill('#q', 'Which projects use torch?');
+    await sleep(200);
+    check((await quickPage.textContent('#q-rows li[aria-selected=true]')).includes('Ask Lantern'), 'typing makes “Ask Lantern” the default row');
+    await quickPage.screenshot({ path: path.join(OUT, '9-quick-ask.png') });
+    const tasksBefore = (await panel.$$('#tasks .task')).length;
+    await quickPage.press('#q', 'Enter');
+    await until('the Quick Ask task', async () => (await panel.$$('#tasks .task')).length > tasksBefore, 15000);
+    t = await until('quick task done', async () => { const x = await latestTask(); return /· done/.test(x.status) && x; }, 60000);
+    check(/vision-lab/.test(t.reply), 'task started from Quick Ask ran to the end');
+    const quickHidden = await until('Quick Ask to hide', async () => app.evaluate(({ BrowserWindow }) =>
+      !BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Lantern Quick Ask').isVisible()), 5000);
+    check(quickHidden, 'Quick Ask hides itself after starting the task');
+
     // extras: a reminder and tidying Downloads
     t = await finish('Remind me in 20 minutes to record the demo video.', 0);
     const reminders = await until('the reminders card', async () => panel.textContent('#reminders'));

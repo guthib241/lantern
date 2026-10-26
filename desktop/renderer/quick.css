@@ -1,0 +1,40 @@
+:root {
+  color-scheme: light dark;
+  --label: #000; --label-2: rgba(60, 60, 67, .62); --sep: rgba(60, 60, 67, .18);
+  --surface: rgba(246, 246, 248, .97); --hl: #007aff; --hl-text: #fff; --chip: rgba(118, 118, 128, .14);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --label: #fff; --label-2: rgba(235, 235, 245, .62); --sep: rgba(84, 84, 88, .6); --surface: rgba(36, 36, 38, .97);
+          --hl: #0a84ff; --chip: rgba(118, 118, 128, .3); }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+body { font: 15px/1.35 var(--font); color: var(--label); -webkit-font-smoothing: antialiased; letter-spacing: -.01em; padding: 10px; }
+/* With a native material (macOS vibrancy, Windows acrylic) the window itself is the glass: stay see-through. */
+body.native { padding: 0; }
+.quick { height: 100%; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); overflow: hidden;
+         box-shadow: 0 0 0 .5px var(--sep), 0 24px 60px rgba(0, 0, 0, .3); animation: in .22s cubic-bezier(.2, .8, .2, 1); }
+body.native .quick { background: transparent; box-shadow: none; border-radius: 0; }
+@keyframes in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: none; } }
+.q-field { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: .5px solid var(--sep); }
+.q-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; flex: none; color: #fff;
+          background: linear-gradient(160deg, #ffc65c 0%, #ff8a1f 100%); }
+.q-icon svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#q { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: 400 22px/1.2 var(--font); letter-spacing: -.02em; color: var(--label); }
+#q::placeholder { color: var(--label-2); }
+kbd { font: 600 11px var(--font); color: var(--label-2); padding: 3px 7px; border-radius: 6px; background: var(--chip); }
+.q-rows { list-style: none; margin: 0; padding: 6px; flex: 1; overflow-y: auto; }
+.q-rows li { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 9px; cursor: pointer; }
+.q-rows li .k { width: 26px; height: 26px; border-radius: 7px; flex: none; display: grid; place-items: center; font-size: 13px; font-weight: 700;
+                background: var(--chip); color: var(--label-2); }
+.q-rows li .t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.q-rows li .t b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-rows li .t small { color: var(--label-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-rows li[aria-selected="true"] { background: var(--hl); color: var(--hl-text); }
+.q-rows li[aria-selected="true"] small, .q-rows li[aria-selected="true"] .k { color: rgba(255, 255, 255, .85); }
+.q-rows li[aria-selected="true"] .k { background: rgba(255, 255, 255, .22); }
+.q-rows li.stop .k { background: #ff3b30; color: #fff; }
+.q-rows li.approvals .k { background: #ff9500; color: #fff; }
+.q-foot { display: flex; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: .5px solid var(--sep); font-size: 12px; color: var(--label-2); }
+@media (prefers-reduced-motion: reduce) { .quick { animation: none; } }

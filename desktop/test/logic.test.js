@@ -249,3 +249,23 @@ test('live activity: what the pill says, and quick Allow only for clean approval
   assert.equal(L.friendly('type "Asha"'), 'Typing');
   assert.equal(L.shortBadge('on this computer'), 'Local');
 });
+
+test('quick ask rows: ask first, stop on "stop", approvals, filtered suggestions, recent', () => {
+  const Q = require('../renderer/lib/quick.js');
+  const T = require('../renderer/lib/today.js');
+  const ctx = { suggestions: T.SUGGESTIONS, pending: 1, recent: [{ id: 3, goal: 'Tidy my Downloads folder.', status: 'done' }] };
+  let r = Q.rows('', ctx);
+  assert.deepEqual(r.map((x) => x.kind), ['approvals', 'suggestion', 'suggestion', 'suggestion', 'suggestion', 'suggestion', 'recent']);
+  r = Q.rows('tidy', ctx);
+  assert.equal(r[0].kind, 'ask');
+  assert.equal(r[0].goal, 'tidy');
+  assert.equal(r.find((x) => x.kind === 'suggestion').label, 'Tidy Downloads');
+  assert.ok(!r.some((x) => x.kind === 'recent'));
+  r = Q.rows('stop', ctx);
+  assert.deepEqual(r.slice(0, 2).map((x) => x.kind), ['stop', 'ask']);
+  assert.equal(Q.score('rem 20', 'Remind me in 20 min'), 3);
+  assert.equal(Q.score('xyz', 'Tidy Downloads'), 0);
+  assert.equal(Q.move(0, -1, 4), 3);
+  assert.equal(Q.move(3, 1, 4), 0);
+  assert.equal(Q.move(0, 1, 0), -1);
+});

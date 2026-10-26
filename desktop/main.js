@@ -10,9 +10,14 @@ const path = require('node:path');
 
 const MOCK = process.argv.includes('--mock') || process.env.LANTERN_MOCK === '1';
 const STOP_HOTKEY = 'CommandOrControl+Shift+X';
-let config = { apiBase: process.env.LANTERN_API || 'http://127.0.0.1:8765', token: '', mock: MOCK };
+const ASK_HOTKEY = 'CommandOrControl+Shift+Space';
+// Native glass behind Quick Ask: macOS vibrancy, Windows 11 acrylic. Elsewhere the page draws its own surface.
+const NATIVE_MATERIAL = process.platform === 'darwin' || process.platform === 'win32';
+let config = { apiBase: process.env.LANTERN_API || 'http://127.0.0.1:8765', token: '', mock: MOCK,
+               platform: process.platform, nativeMaterial: NATIVE_MATERIAL, askHotkey: ASK_HOTKEY };
 let avatar = null;
 let panel = null;
+let quick = null;
 let quitting = false;
 let cameraUntil = 0;   // the camera is allowed for one check-in right after the user clicks
 
@@ -61,6 +66,34 @@ function createPanel() {
   });
 }
 
+function createQuick() {
+  const material = process.platform === 'darwin' ? { vibrancy: 'hud', visualEffectState: 'active', transparent: true }
+    : process.platform === 'win32' ? { backgroundMaterial: 'acrylic' } : { transparent: true };
+  quick = new BrowserWindow({
+    width: 640, height: 400, show: false, frame: false, resizable: false, movable: false, minimizable: false,
+    maximizable: false, fullscreenable: false, alwaysOnTop: true, skipTaskbar: true, title: 'Lantern Quick Ask',
+    backgroundColor: '#00000000', ...material, webPreferences: secure('preload.js'),
+  });
+  quick.setAlwaysOnTop(true, 'pop-up-menu');
+  quick.loadFile(path.join(__dirname, 'renderer', 'quick.html'));
+  quick.on('blur', () => quick.hide());   // like Spotlight: clicking elsewhere closes it
+}
+
+function toggleQuick(show) {
+  if (!quick) return;
+  const want = show === undefined ? !quick.isVisible() : show;
+  if (!want) {
+    quick.hide();
+    return;
+  }
+  const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const [w] = quick.getSize();
+  quick.setPosition(Math.round(workArea.x + (workArea.width - w) / 2), Math.round(workArea.y + workArea.height * 0.2));
+  quick.show();
+  quick.focus();
+  quick.webContents.send('quick:shown');
+}
+
 function togglePanel(show) {
   if (!panel) return;
   const want = show === undefined ? !panel.isVisible() : show;
@@ -107,6 +140,7 @@ ipcMain.on('avatar:hover', (_e, over) => {
 });
 ipcMain.on('panel:toggle', () => togglePanel());
 ipcMain.on('panel:show', () => togglePanel(true));
+ipcMain.on('quick:hide', () => toggleQuick(false));
 ipcMain.on('avatar:menu', () => {
   Menu.buildFromTemplate([
     { label: 'Open Lantern', click: () => togglePanel(true) },
@@ -126,7 +160,11 @@ app.whenReady().then(async () => {
   }
   createAvatar();
   createPanel();
+  createQuick();
   globalShortcut.register(STOP_HOTKEY, stopEverything);
+  if (!globalShortcut.register(ASK_HOTKEY, () => toggleQuick())) {
+    console.warn(`Lantern: ${ASK_HOTKEY} is taken by another app; open Quick Ask from the menu instead.`);
+  }
 });
 
 app.on('before-quit', () => { quitting = true; });

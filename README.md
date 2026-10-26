@@ -83,6 +83,16 @@ flowchart LR
 
 All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-contributor` models on your data. No other AI provider is used anywhere in the product.
 
+## On your desktop
+
+- **Live activity island:** a black capsule above Lantern's face shows each step as it happens, and grows into a small card for approvals, results and reminders. Clean approvals can be answered right there. Anything that followed untrusted content (every form submit) asks you to **Review** the full sheet.
+- **Quick Ask:** press **Ctrl/Cmd+Shift+Space** anywhere, type, press Return. ↑/↓ for suggestions and recent tasks; "stop" stops everything.
+- **The panel:**
+  - a Today view with at-a-glance tiles and suggestions
+  - approval sheets that show form fields as a table
+  - Privacy (what left the laptop, zones, forget), the simulated phone, costs, widgets, and the Setup check
+  - light and dark mode; Ctrl/Cmd+1…6 switch tabs
+
 ## Safety model (enforced in code, not in prompts)
 
 - **Privacy zones** (`~/.lantern/zones.json`):

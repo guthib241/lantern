@@ -20,11 +20,12 @@ def test_renderers_are_locked_down():
     for flag in ("contextIsolation: true", "nodeIntegration: false", "sandbox: true", "setWindowOpenHandler",
                  "setPermissionRequestHandler", "setIgnoreMouseEvents(true, { forward: true })"):
         assert flag in main, flag
-    for page in ("panel.html", "avatar.html"):
+    for page in ("panel.html", "avatar.html", "quick.html"):
         html = (DESKTOP / "renderer" / page).read_text()
         assert "Content-Security-Policy" in html and "script-src 'self'" in html and "unsafe-eval" not in html
     host = (DESKTOP / "renderer" / "widget-host.html").read_text()
     assert "default-src 'none'" in host and "connect-src" not in host
     panel = (DESKTOP / "renderer" / "panel.html").read_text()
     assert 'sandbox="allow-scripts"' in panel and "allow-same-origin" not in panel
-    assert ".innerHTML" not in (DESKTOP / "renderer" / "panel.js").read_text()   # server text goes in as text
+    for script in ("panel.js", "quick.js"):   # server text goes in as text
+        assert ".innerHTML" not in (DESKTOP / "renderer" / script).read_text(), script

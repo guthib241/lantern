@@ -115,3 +115,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **Security fix found while building it:** form tasks were only marked tainted *after* `fill_form` returned, although the page's labels and screenshots had already reached the model. `fill_form` now taints the task before opening the page, so the Submit card is marked "after reading untrusted content" (test added).
   - The e2e approves the widget from the island and checks that the form submit offers Review only.
   - 1 new desktop test; 351 passing.
+- M25: Quick Ask.
+  - **What it is:** **Ctrl/Cmd+Shift+Space** anywhere opens a Spotlight-style bar in the upper middle of the screen. It uses native glass where the OS has it (macOS vibrancy, Windows 11 acrylic) and draws its own surface elsewhere.
+  - **How it works:** type and press Return to start a task, then it hides and the island shows progress. ↑/↓ move through "Ask Lantern", suggestions, recent tasks and "N approvals waiting → open". "stop" runs the kill switch. Esc or clicking away closes it.
+  - **Code and tests:** `lib/quick.js` (rows, prefix matching, wrap-around) is pure and tested. The window uses the same locked-down preferences and CSP as the others, and the static security test now covers `quick.html` and `quick.js`. The e2e opens Quick Ask, checks the rows, starts a task from it and checks that it finishes and the bar hides.
+  - 1 new desktop test; 351 passing.
