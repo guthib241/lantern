@@ -18,6 +18,7 @@ in the browser can't drive Lantern through localhost.
   GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
+  GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
@@ -41,6 +42,7 @@ from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake
 from .core import Core
 from .forms import Vault, VaultError
 from .policy import ZONES
+from .widgets import WidgetError
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 
@@ -176,6 +178,17 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except VaultError as e:
             raise HTTPException(400, str(e))
         return vault.load()
+
+    @app.get("/widgets", dependencies=[Depends(auth)])
+    def widgets():
+        return {"widgets": core.widgets.list()}
+
+    @app.get("/widgets/{name}", dependencies=[Depends(auth)])
+    def widget(name: str):
+        try:
+            return {"name": name, "html": core.widgets.get(name)}
+        except WidgetError as e:
+            raise HTTPException(404 if "no widget" in str(e) else 422, str(e))
 
     whatsapp = hub.channels.get("whatsapp") if hub else None
     if isinstance(whatsapp, WhatsAppChannel):

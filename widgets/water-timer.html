@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Water break timer</title>
+<style>
+  :root { --ink: #2b2236; --muted: #6f6680; --glow: #ffb347; --deep: #f0782f; --accent: #6d4aff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; height: 100vh; display: grid; place-items: center; font: 15px/1.4 system-ui, sans-serif; color: var(--ink);
+         background: radial-gradient(400px 260px at 20% 0%, #ffe9cc, transparent 70%), #fdfbff; }
+  .card { width: 100%; max-width: 400px; padding: 18px; text-align: center; }
+  h1 { font-size: 17px; margin: 0 0 6px; }
+  .ring { position: relative; width: 170px; height: 170px; margin: 8px auto; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring .time { position: absolute; inset: 0; display: grid; place-items: center; font-size: 34px; font-weight: 800; }
+  .row { display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 8px; }
+  button { font: inherit; font-weight: 700; border: 0; border-radius: 12px; padding: 9px 14px; cursor: pointer; color: #fff;
+           background: linear-gradient(135deg, var(--glow), var(--deep)); }
+  button.ghost { background: #fff; color: var(--ink); border: 1px solid #e7e1ef; }
+  input { width: 64px; font: inherit; padding: 7px; border-radius: 10px; border: 1px solid #e7e1ef; text-align: center; }
+  .joke { min-height: 40px; margin-top: 10px; color: var(--muted); }
+  .count { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Water break timer</h1>
+  <div class="ring">
+    <svg width="170" height="170" viewBox="0 0 170 170">
+      <circle cx="85" cy="85" r="74" fill="none" stroke="#f1ecf7" stroke-width="12"></circle>
+      <circle id="arc" cx="85" cy="85" r="74" fill="none" stroke="#ffb347" stroke-width="12" stroke-linecap="round"
+              stroke-dasharray="465" stroke-dashoffset="0"></circle>
+    </svg>
+    <div class="time" id="time">45:00</div>
+  </div>
+  <div class="row">
+    <input id="minutes" type="number" min="1" max="240" value="45" aria-label="Minutes"> min
+    <button id="start">Start</button>
+    <button id="reset" class="ghost">Reset</button>
+  </div>
+  <div class="joke" id="joke">A plain timer. When it rings, the glass of water is your business.</div>
+  <div class="count" id="count"></div>
+</div>
+<script>
+(function () {
+  var JOKES = [
+    "Time's up. The glass of water is still waiting. It is very patient. Unlike me.",
+    "Ding! A break, delivered by an AI that has never once been thirsty.",
+    "Timer done. I would bring you a glass, but I have no arms. Tragic.",
+    "Break o'clock. Bring the mug back this time, please.",
+    "Done! The kettle says hi. It misses you."
+  ];
+  var CIRCLE = 465;
+  var total = 45 * 60, left = total, timer = null, done = 0;
+  var el = function (id) { return document.getElementById(id); };
+
+  function show() {
+    var m = Math.floor(left / 60), s = left % 60;
+    el('time').textContent = m + ':' + (s < 10 ? '0' : '') + s;
+    el('arc').setAttribute('stroke-dashoffset', String(CIRCLE * (1 - left / total)));
+    el('count').textContent = done ? done + ' break' + (done === 1 ? '' : 's') + ' timed so far' : '';
+  }
+
+  function finish() {
+    clearInterval(timer);
+    timer = null;
+    el('start').textContent = 'Start';
+    done += 1;
+    lantern.storage.set('done', done);
+    var joke = JOKES[Math.floor(Math.random() * JOKES.length)];
+    el('joke').textContent = joke;
+    lantern.notify(joke);
+    left = total;
+    show();
+  }
+
+  el('start').addEventListener('click', function () {
+    if (timer) { clearInterval(timer); timer = null; el('start').textContent = 'Start'; return; }
+    var mins = Math.max(1, Math.min(240, parseInt(el('minutes').value, 10) || 45));
+    if (left === total || total !== mins * 60) { total = mins * 60; left = total; }
+    lantern.storage.set('minutes', mins);
+    el('start').textContent = 'Pause';
+    timer = setInterval(function () { left -= 1; show(); if (left <= 0) finish(); }, 1000);
+    show();
+  });
+
+  el('reset').addEventListener('click', function () {
+    clearInterval(timer); timer = null; el('start').textContent = 'Start'; left = total; show();
+  });
+
+  lantern.storage.get('minutes').then(function (m) {
+    if (m) { el('minutes').value = m; total = left = m * 60; show(); }
+  });
+  lantern.storage.get('done').then(function (n) { done = n || 0; show(); });
+  show();
+})();
+</script>
+</body>
+</html>

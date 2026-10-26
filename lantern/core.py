@@ -26,6 +26,7 @@ from .memory import Memory
 from .policy import Policy
 from .router import Router, RouterConfig, make_backend
 from .tools import Toolbox
+from .widgets import Widgets
 
 EventSink = Callable[[dict], None]
 
@@ -60,8 +61,10 @@ class Core:
         self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
         self.envmap = EnvMap(self.policy, cfg.envmap_path)
+        self.widgets = Widgets(Path(cfg.widgets_dir))
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
-                               forms=self.forms, email=self.email, envmap=self.envmap)
+                               forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets)
+        self.toolbox.client = self.client
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
                            on_event=self._agent_event)

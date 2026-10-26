@@ -41,7 +41,7 @@ class ToolError(Exception):
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None, forms=None, email=None, envmap=None):
+                 router=None, forms=None, email=None, envmap=None, widgets=None):
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -54,6 +54,8 @@ class Toolbox:
         self.email = email    # email_tool.EmailService
         self.envmap = envmap  # envmap.EnvMap: projects, their envs and packages
         self.command_runner = None  # (argv, cwd, env, timeout) -> (exit code, output); default envmap.run_command
+        self.widgets = widgets  # widgets.Widgets
+        self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
@@ -337,6 +339,26 @@ class Toolbox:
             result.update(done=installed, verified=installed, package=plan["package"])
         return result
 
+    # ---- widgets ----------------------------------------------------------------
+    def make_widget(self, name: str, description: str) -> dict:
+        """Have Muse Spark write a small sandboxed widget; save it after approval."""
+        from . import models
+        from .widgets import WidgetError
+        if self.widgets is None or self.client is None:
+            raise ToolError("widgets aren't set up")
+
+        def usage(model: str, u) -> None:
+            cost = models.token_cost(model, u)
+            self.memory.log_usage(self.task_id, model, u.input_tokens, u.cached_tokens, u.output_tokens, cost)
+            self.on_event("usage", {"model": model, "badge": models.badge(model), "input_tokens": u.input_tokens,
+                                    "cached_tokens": u.cached_tokens, "output_tokens": u.output_tokens, "cost_usd": cost})
+        try:
+            html, attempts = self.widgets.generate(self.client, description, on_usage=usage)
+            result = self.widgets.save(name, html, approve=self._approve, commit=self._commit)
+        except WidgetError as e:
+            raise ToolError(str(e)) from e
+        return {**result, "attempts": attempts, "model": models.badge(models.SPARK)}
+
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
         if self.tainted:  # untrusted text must not be able to plant "facts" silently
@@ -427,5 +449,9 @@ TOOL_SPECS = [
     _fn("run_in_project", "Run an allowlisted command inside a project's own environment (never the global Python): "
         "pytest / python -m pytest [-q -x -k EXPR paths], npm test, or pip install <one package>. The user approves first.",
         {"path": {**S, "description": "Project folder or name"}, "command": S}, ["path", "command"]),
+    _fn("make_widget", "Write a small widget for the desktop panel (a timer, counter, checklist...). It runs sandboxed "
+        "with no network; the user approves saving it.",
+        {"name": {**S, "description": "Short name, e.g. 'water-timer'"},
+         "description": {**S, "description": "What it should do and look like"}}, ["name", "description"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

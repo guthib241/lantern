@@ -15,7 +15,7 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M10 ☁/💻 Desktop overlay (Electron): avatar window, chat, approval cards, audit view, zones editor, model badges, widget iframe host
 - [x] M11 ☁ Muse Image expression sheet script (canonical + edits via Files API) → `desktop/assets/avatar/`
 - [x] M12 ☁ Environment map + project tools, tested on fake project folders
-- [ ] M13 ☁ Widgets: generator, static checker, sandbox contract; one pre-made water timer
+- [x] M13 ☁ Widgets: generator, static checker, sandbox contract; one pre-made water timer
 - [ ] M14 ☁ MCP client (deferred tools + tool_search) and Lantern MCP server
 - [ ] M15 ☁ Memory encryption at rest + real "forget"
 - [ ] M16 ☁ SAM 3.1 check-in (optional, cut first)

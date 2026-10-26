@@ -4,6 +4,8 @@
 //   electron . --mock              -> starts this and points the app at it
 const http = require('node:http');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const TOKEN = 'mock-token';
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -171,7 +173,7 @@ function createMock() {
     'GET /memory': () => ({ facts: { 'manager email': 'priya@example.com' } }),
     'GET /channel/messages': () => ({ owner: 'owner', messages: phone }),
     'POST /channel/fake': (b) => { phoneIn(b); return { ok: true }; },
-    'GET /widgets': () => ({ widgets: [] }),
+    'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
   };
 
   const server = http.createServer((req, res) => {
@@ -183,6 +185,14 @@ function createMock() {
     let body = '';
     req.on('data', (c) => { body += c; });
     req.on('end', () => {
+      const w = url.pathname.match(/^\/widgets\/([a-z0-9-]+)$/);
+      if (w && req.headers['x-lantern-token'] === TOKEN) {
+        try {
+          return send(200, { name: w[1], html: fs.readFileSync(path.join(__dirname, '..', '..', 'widgets', `${w[1]}.html`), 'utf8') });
+        } catch {
+          return send(404, { detail: 'no such widget' });
+        }
+      }
       const m = url.pathname.match(/^\/approvals\/([\w-]+)$/);
       const key = m ? `${req.method} /approvals/:id` : `${req.method} ${url.pathname}`;
       if (url.pathname !== '/health' && req.headers['x-lantern-token'] !== TOKEN) return send(401, { detail: 'missing or wrong X-Lantern-Token' });
