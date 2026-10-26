@@ -17,6 +17,7 @@ from pathlib import Path
 from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
+from .crypto import cipher_for
 from .email_tool import EmailService, EmailSettings
 from .envmap import EnvMap
 from .forms import FormService, FormSettings, Vault, VaultError
@@ -98,7 +99,7 @@ def build_agent(cfg, mem: Memory) -> Agent:
     key = os.environ.get("MODEL_API_KEY")
     if not key:
         sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
-    audit = AuditLog(cfg.audit_path)
+    audit = AuditLog(cfg.audit_path, mem.cipher)
     client = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key), audit, destination=cfg.base_url)
     policy = Policy.load(cfg.zones_file, cfg.roots)
     router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
@@ -132,12 +133,15 @@ def main(argv=None) -> None:
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--channel-test", metavar="TEXT", help="send TEXT through the configured channels and exit")
     p.add_argument("--mcp", action="store_true", help="run Lantern as an MCP server on stdio")
+    p.add_argument("--forget-task", type=int, metavar="ID", help="really delete one task, its timeline and audit rows")
+    p.add_argument("--forget-fact", metavar="KEY", help="really delete one remembered fact")
+    p.add_argument("--forget-everything", action="store_true", help="erase memory, audit log, voice notes, screenshots")
     a = p.parse_args(argv)
 
     cfg = config_mod.load()
     if a.persona:
         cfg.persona = a.persona
-    mem = Memory(cfg.db_path)
+    mem = Memory(cfg.db_path, cipher_for(cfg))
 
     if a.tasks:
         return print_tasks(mem)
@@ -146,7 +150,22 @@ def main(argv=None) -> None:
     if a.usage:
         return print_usage(mem)
     if a.audit:
-        return print_audit(AuditLog(cfg.audit_path))
+        return print_audit(AuditLog(cfg.audit_path, mem.cipher))
+    if a.forget_task:
+        counts = mem.forget_task(a.forget_task)
+        AuditLog(cfg.audit_path, mem.cipher).forget_task(a.forget_task)
+        return print(f"Forgot task #{a.forget_task}: {counts}")
+    if a.forget_fact:
+        return print("Forgot it." if mem.forget(a.forget_fact) else "Nothing remembered under that name.")
+    if a.forget_everything:
+        if input("Erase Lantern's memory, audit log, voice notes, screenshots and form profile? Type 'forget everything': ") \
+                .strip().lower() != "forget everything":
+            return print("Nothing erased.")
+        from .core import Core
+        mem.close()
+        core = Core(cfg)
+        print(core.forget_everything())
+        return core.shutdown()
     if a.zones or a.set_zone:
         policy = Policy.load(cfg.zones_file, cfg.roots)
         if a.set_zone:
@@ -193,7 +212,7 @@ def main(argv=None) -> None:
         from .mcp_server import LocalLantern, build_server
         from .server import load_token
         policy = Policy.load(cfg.zones_file, cfg.roots)
-        audit = AuditLog(cfg.audit_path)
+        audit = AuditLog(cfg.audit_path, mem.cipher)
         router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
         tools = Toolbox(policy, mem, lambda s: False, router=router, envmap=EnvMap(policy, cfg.envmap_path))
         local = LocalLantern(os.environ.get("LANTERN_API", "http://127.0.0.1:8765"), load_token(config_mod.HOME))

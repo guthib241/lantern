@@ -19,6 +19,7 @@ in the browser can't drive Lantern through localhost.
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
+  POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
@@ -72,6 +73,14 @@ class DecisionIn(BaseModel):
 class ZoneIn(BaseModel):
     path: str
     zone: str
+
+
+class FactIn(BaseModel):
+    key: str
+
+
+class ConfirmIn(BaseModel):
+    confirm: str = ""
 
 
 class PhoneIn(BaseModel):
@@ -178,6 +187,25 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except VaultError as e:
             raise HTTPException(400, str(e))
         return vault.load()
+
+    @app.post("/forget/task/{task_id}", dependencies=[Depends(auth)])
+    def forget_task(task_id: int):
+        try:
+            return core.forget_task(task_id)
+        except KeyError:
+            raise HTTPException(404, "no such task")
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/forget/fact", dependencies=[Depends(auth)])
+    def forget_fact(body: FactIn):
+        return {"forgot": body.key, "existed": core.memory.forget(body.key)}
+
+    @app.post("/forget/everything", dependencies=[Depends(auth)])
+    def forget_everything(body: ConfirmIn):
+        if body.confirm.strip().lower() != "forget everything":
+            raise HTTPException(400, 'send {"confirm": "forget everything"}')
+        return core.forget_everything()
 
     @app.get("/widgets", dependencies=[Depends(auth)])
     def widgets():

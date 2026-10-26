@@ -154,6 +154,17 @@
       case 'channel_error':
         s.lastError = at;
         break;
+      case 'forgot':
+        if (e.everything) {
+          s.tasks = {};
+          s.order = [];
+          s.usage = { byBadge: {}, total: 0 };
+          s.lastDone = null;
+        } else if (e.task_id != null) {
+          delete s.tasks[e.task_id];
+          s.order = s.order.filter((id) => id !== e.task_id);
+        }
+        break;
       default:
         break;
     }

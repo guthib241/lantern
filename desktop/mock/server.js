@@ -173,6 +173,13 @@ function createMock() {
     'GET /memory': () => ({ facts: { 'manager email': 'priya@example.com' } }),
     'GET /channel/messages': () => ({ owner: 'owner', messages: phone }),
     'POST /channel/fake': (b) => { phoneIn(b); return { ok: true }; },
+    'POST /forget/everything': (b) => {
+      if ((b.confirm || '').toLowerCase() !== 'forget everything') return [400, { detail: 'confirm first' }];
+      tasks.length = 0; phone.length = 0; usage.clear();
+      Object.assign(audit.cloud, { calls: 0, bytes: 0, by_model: {}, redactions: {} });
+      emit({ type: 'forgot', everything: true });
+      return { memory: {}, audit: 0 };
+    },
     'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
   };
 
@@ -192,6 +199,14 @@ function createMock() {
         } catch {
           return send(404, { detail: 'no such widget' });
         }
+      }
+      const f = url.pathname.match(/^\/forget\/task\/(\d+)$/);
+      if (f && req.method === 'POST' && req.headers['x-lantern-token'] === TOKEN) {
+        const i = tasks.findIndex((x) => x.id === Number(f[1]));
+        if (i < 0) return send(404, { detail: 'no such task' });
+        tasks.splice(i, 1);
+        emit({ type: 'forgot', task_id: Number(f[1]) });
+        return send(200, { forgot_task: Number(f[1]) });
       }
       const m = url.pathname.match(/^\/approvals\/([\w-]+)$/);
       const key = m ? `${req.method} /approvals/:id` : `${req.method} ${url.pathname}`;

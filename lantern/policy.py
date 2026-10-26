@@ -242,6 +242,28 @@ class Policy:
         shutil.move(str(s), str(d))
         return s, d
 
+    def erase_lantern_data(self, target: str | Path, lantern_home: str | Path) -> int:
+        """"Forget everything": overwrite and delete Lantern's OWN files (voice notes, screenshots,
+        outbox, browser profile) under its home folder. Never touches anything in a user zone."""
+        home = _resolve(lantern_home)
+        t = _resolve(target)
+        if not _under(t, home) or t == home or self.zone_of(t) != HIDDEN:
+            raise PolicyError(f"refusing to erase {t}: not Lantern's own data")
+        if not t.exists():
+            return 0
+        files = [t] if t.is_file() else [Path(d) / f for d, _, fs in os.walk(t) for f in fs]
+        for f in files:
+            if f.is_symlink():
+                f.unlink()
+                continue
+            size = f.stat().st_size
+            with f.open("r+b") as fh:  # best effort overwrite before unlinking
+                fh.write(b"\0" * min(size, 50_000_000))
+            f.unlink()
+        if t.is_dir():
+            shutil.rmtree(t, ignore_errors=True)
+        return len(files)
+
     def exists(self, path: str | Path) -> bool:
         try:
             p, _ = self.check_visible(path)

@@ -22,6 +22,7 @@ from lantern import config as config_mod  # noqa: E402
 from lantern import models  # noqa: E402
 from lantern.audit import AuditLog, GuardedClient  # noqa: E402
 from lantern.avatar import EXPRESSIONS, AvatarError, generate, plan  # noqa: E402
+from lantern.crypto import cipher_for  # noqa: E402
 from lantern.memory import Memory  # noqa: E402
 
 OUT = Path(__file__).resolve().parent.parent / "desktop" / "assets" / "avatar"
@@ -59,8 +60,9 @@ def main(argv: list[str] | None = None, client=None) -> int:
             return 2
         from openai import OpenAI
         client = OpenAI(base_url=cfg.base_url, api_key=key, timeout=180, max_retries=2)
-    audited = GuardedClient(client, AuditLog(cfg.audit_path), destination=cfg.base_url)
-    memory = Memory(cfg.db_path)
+    cipher = cipher_for(cfg)
+    audited = GuardedClient(client, AuditLog(cfg.audit_path, cipher), destination=cfg.base_url)
+    memory = Memory(cfg.db_path, cipher)
     try:
         sheet = generate(audited, a.out, brief=a.brief, reference=reference, only=only,
                          on_cost=lambda usd: memory.log_usage(None, models.IMAGE, cost_usd=usd),

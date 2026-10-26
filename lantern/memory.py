@@ -1,6 +1,9 @@
 """Lantern's memory: what it's doing, what it has done, and what it knows about you.
 
 Everything lives in one local SQLite file. Nothing here leaves the machine.
+With a Cipher (crypto.py), task goals and summaries, step contents and fact values are encrypted
+at rest; old plaintext rows are encrypted on first open. Deleting is real: secure_delete overwrites
+freed pages and VACUUM rebuilds the file after a forget.
 
 Three tables:
   tasks  - every goal you give Lantern, with status and a final summary
@@ -73,15 +76,55 @@ def _locked(fn):
     return wrapper
 
 
+ENCRYPTED = (("tasks", "goal"), ("tasks", "summary"), ("steps", "content"), ("facts", "value"))
+
+
 class Memory:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, cipher=None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
+        self.cipher = cipher
         self.db = sqlite3.connect(str(self.path), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA secure_delete = ON")
         self.db.executescript(SCHEMA)
         self.db.commit()
+        if cipher is not None:
+            self._encrypt_old_rows()
+
+    # ---- encryption at rest --------------------------------------------------
+    def _enc(self, text):
+        return self.cipher.encrypt(text) if self.cipher is not None else text
+
+    def _dec(self, text):
+        return self.cipher.decrypt(text) if self.cipher is not None else text
+
+    def _task(self, row) -> Task:
+        d = dict(row)
+        d["goal"], d["summary"] = self._dec(d["goal"]), self._dec(d["summary"])
+        return Task(**d)
+
+    @_locked
+    def _encrypt_old_rows(self) -> int:
+        """One-time migration: encrypt rows written before encryption was on."""
+        from .crypto import PREFIX
+        n = 0
+        key_col = {"tasks": "id", "steps": "id", "facts": "key"}
+        for table, col in ENCRYPTED:
+            rows = self.db.execute(f"SELECT {key_col[table]} AS k, {col} AS v FROM {table} "
+                                   f"WHERE {col} IS NOT NULL AND {col} NOT LIKE ?", (PREFIX + "%",)).fetchall()
+            for r in rows:
+                self.db.execute(f"UPDATE {table} SET {col} = ? WHERE {key_col[table]} = ?", (self._enc(r["v"]), r["k"]))
+                n += 1
+        self.db.commit()
+        if n:
+            self._vacuum()
+        return n
+
+    def _vacuum(self) -> None:
+        self.db.commit()
+        self.db.execute("VACUUM")
 
     # ---- tasks -------------------------------------------------------------
     @_locked
@@ -89,7 +132,7 @@ class Memory:
         now = time.time()
         cur = self.db.execute(
             "INSERT INTO tasks (goal, status, created_at, updated_at) VALUES (?, 'active', ?, ?)",
-            (goal, now, now),
+            (self._enc(goal), now, now),
         )
         self.db.commit()
         return self.get_task(cur.lastrowid)
@@ -99,7 +142,7 @@ class Memory:
         row = self.db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             raise KeyError(f"no task {task_id}")
-        return Task(**dict(row))
+        return self._task(row)
 
     @_locked
     def finish_task(self, task_id: int, status: str, summary: str) -> None:
@@ -107,7 +150,7 @@ class Memory:
             raise ValueError(f"bad status {status!r}")
         self.db.execute(
             "UPDATE tasks SET status = ?, summary = ?, updated_at = ? WHERE id = ?",
-            (status, summary, time.time(), task_id),
+            (status, self._enc(summary), time.time(), task_id),
         )
         self.db.commit()
 
@@ -116,14 +159,14 @@ class Memory:
         rows = self.db.execute(
             "SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
-        return [Task(**dict(r)) for r in rows]
+        return [self._task(r) for r in rows]
 
     @_locked
     def active_tasks(self) -> list[Task]:
         rows = self.db.execute(
             "SELECT * FROM tasks WHERE status = 'active' ORDER BY id"
         ).fetchall()
-        return [Task(**dict(r)) for r in rows]
+        return [self._task(r) for r in rows]
 
     # ---- steps -------------------------------------------------------------
     @_locked
@@ -132,7 +175,7 @@ class Memory:
             content = json.dumps(content, ensure_ascii=False, default=str)
         self.db.execute(
             "INSERT INTO steps (task_id, kind, content, created_at) VALUES (?, ?, ?, ?)",
-            (task_id, kind, content, time.time()),
+            (task_id, kind, self._enc(content), time.time()),
         )
         self.db.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (time.time(), task_id))
         self.db.commit()
@@ -143,7 +186,7 @@ class Memory:
             "SELECT kind, content, created_at FROM steps WHERE task_id = ? ORDER BY id",
             (task_id,),
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [{**dict(r), "content": self._dec(r["content"])} for r in rows]
 
     # ---- usage / cost --------------------------------------------------------
     @_locked
@@ -191,20 +234,38 @@ class Memory:
         self.db.execute(
             "INSERT INTO facts (key, value, updated_at) VALUES (?, ?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-            (key, value, time.time()),
+            (key, self._enc(value), time.time()),
         )
         self.db.commit()
 
     @_locked
     def forget(self, key: str) -> bool:
+        """Really forget a fact: the row is deleted, overwritten (secure_delete) and the file rebuilt."""
         cur = self.db.execute("DELETE FROM facts WHERE key = ?", (key.strip().lower(),))
-        self.db.commit()
+        self._vacuum()
         return cur.rowcount > 0
 
     @_locked
     def facts(self) -> dict[str, str]:
         rows = self.db.execute("SELECT key, value FROM facts ORDER BY key").fetchall()
-        return {r["key"]: r["value"] for r in rows}
+        return {r["key"]: self._dec(r["value"]) for r in rows}
+
+    # ---- forgetting ------------------------------------------------------------
+    @_locked
+    def forget_task(self, task_id: int) -> dict:
+        """Delete a task with its timeline and usage rows, then rebuild the file."""
+        counts = {table: self.db.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,)).rowcount
+                  for table in ("steps", "usage")}
+        counts["tasks"] = self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount
+        self._vacuum()
+        return counts
+
+    @_locked
+    def forget_everything(self) -> dict:
+        counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount for table in ("steps", "usage", "tasks", "facts")}
+        self.db.execute("DELETE FROM sqlite_sequence")
+        self._vacuum()
+        return counts
 
     # ---- context for the model ----------------------------------------------
     @_locked

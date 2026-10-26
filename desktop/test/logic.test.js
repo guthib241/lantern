@@ -124,3 +124,14 @@ test('widget bridge allows only notify and storage', () => {
   assert.equal(a.get('count'), 3);
   assert.equal(b.get('count'), null);
 });
+
+test('forget removes a task, or everything', () => {
+  let s = run([{ type: 'queued', task_id: 1, goal: 'a', ts: 1 }, { type: 'queued', task_id: 2, goal: 'b', ts: 2 },
+               { type: 'usage', badge: 'Muse Spark', cost_usd: 0.01, task_id: 2, ts: 3 }]);
+  s = S.reduce(s, { type: 'forgot', task_id: 1, ts: 4 });
+  assert.deepEqual(s.order, [2]);
+  assert.equal(s.tasks[1], undefined);
+  s = S.reduce(s, { type: 'forgot', everything: true, ts: 5 });
+  assert.deepEqual(s.order, []);
+  assert.equal(s.usage.total, 0);
+});

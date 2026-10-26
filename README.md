@@ -93,6 +93,10 @@ Lantern can also run a project's tests or `pip install` one package, always insi
 {"servers": {"notes": {"command": "python", "args": ["-m", "my_notes_mcp"], "read_only": ["search"]}}}
 ```
 
+## Encrypted memory, real forgetting
+
+Lantern's memory and audit log are encrypted on disk, with the key in your OS keychain. "Forget" means gone: the rows are overwritten and the database file rebuilt. Use `python -m lantern --forget-task 12`, `--forget-everything`, or the buttons on the desktop.
+
 ## Tests
 
 ```bash

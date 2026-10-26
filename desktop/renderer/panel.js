@@ -96,10 +96,36 @@
         h('div', { class: 'goal' }, t.goal || `Task #${t.id}`),
         h('div', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`),
         h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))),
-        t.reply ? h('p', { class: 'reply' }, t.reply) : null));
+        t.reply ? h('p', { class: 'reply' }, t.reply) : null,
+        t.status !== 'running' ? h('button', { class: 'forget', onclick: () => forgetTask(t.id) }, 'Forget') : null));
     }
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
   }
+
+  async function forgetTask(id) {
+    if (!window.confirm(`Really forget task #${id}? Its timeline and audit rows are deleted for good.`)) return;
+    try {
+      await api.post(`/forget/task/${id}`);
+      state = LanternState.reduce(state, { type: 'forgot', task_id: id, ts: now() });
+      renderAll();
+      toast(`Task #${id} forgotten.`);
+    } catch (e) {
+      toast(`Couldn't forget it: ${e.message}`);
+    }
+  }
+
+  $('forget-all').addEventListener('click', async () => {
+    if (!window.confirm('Forget everything? Memory, audit log, voice notes, screenshots and the form profile are erased for good.')) return;
+    try {
+      await api.post('/forget/everything', { confirm: 'forget everything' });
+      state = LanternState.reduce(state, { type: 'forgot', everything: true, ts: now() });
+      renderAll();
+      loadPrivacy();
+      toast('Everything forgotten.');
+    } catch (e) {
+      toast(`Couldn't forget: ${e.message}`);
+    }
+  });
 
   $('ask').addEventListener('submit', async (e) => {
     e.preventDefault();

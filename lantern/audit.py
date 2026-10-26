@@ -67,11 +67,13 @@ def _plain(obj: Any) -> Any:
 
 
 class AuditLog:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, cipher=None):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.cipher = cipher  # previews (the start of what was sent) are encrypted at rest
         self.db = sqlite3.connect(str(self.path), check_same_thread=False)
         self.db.row_factory = sqlite3.Row
+        self.db.execute("PRAGMA secure_delete = ON")
         self.db.executescript(SCHEMA)
         self.db.commit()
 
@@ -83,10 +85,11 @@ class AuditLog:
             "endpoint": endpoint, "model": model, "bytes": len(payload), "sha256": sha256_hex(payload),
             "redactions": json.dumps(dict(redactions or {})), "preview": preview[:300],
         }
+        stored = dict(row, preview=self.cipher.encrypt(row["preview"]) if self.cipher else row["preview"])
         self.db.execute(
             "INSERT INTO audit (ts, task_id, lane, destination, endpoint, model, bytes, sha256, redactions, preview)"
             " VALUES (:ts, :task_id, :lane, :destination, :endpoint, :model, :bytes, :sha256, :redactions, :preview)",
-            row,
+            stored,
         )
         self.db.commit()
         return row
@@ -99,8 +102,22 @@ class AuditLog:
         for r in rows:
             d = dict(r)
             d["redactions"] = json.loads(d["redactions"])
+            if self.cipher:
+                d["preview"] = self.cipher.decrypt(d["preview"])
             out.append(d)
         return out
+
+    def forget_task(self, task_id: int) -> int:
+        n = self.db.execute("DELETE FROM audit WHERE task_id = ?", (task_id,)).rowcount
+        self.db.commit()
+        self.db.execute("VACUUM")
+        return n
+
+    def forget_all(self) -> int:
+        n = self.db.execute("DELETE FROM audit").rowcount
+        self.db.commit()
+        self.db.execute("VACUUM")
+        return n
 
     def summary(self, since: float | None = None) -> dict:
         """What left the laptop since `since` (default: start of today)."""

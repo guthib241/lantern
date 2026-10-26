@@ -19,12 +19,13 @@ from . import models
 from .agent import Agent
 from .approvals import ApprovalBus, BusGate
 from .audit import AuditLog, GuardedClient
+from .crypto import cipher_for
 from .email_tool import EmailService, EmailSettings
 from .envmap import EnvMap
 from .forms import FormService, FormSettings
 from .mcp_client import MCPHub
 from .memory import Memory
-from .policy import Policy
+from .policy import Policy, PolicyError
 from .router import Router, RouterConfig, make_backend
 from .tools import Toolbox
 from .widgets import Widgets
@@ -50,8 +51,9 @@ class Core:
                  forms: FormService | None = None, email: EmailService | None = None,
                  mcp: MCPHub | None = None):
         self.cfg = cfg
-        self.memory = memory or Memory(cfg.db_path)
-        self.audit = audit or AuditLog(cfg.audit_path)
+        cipher = None if (memory and audit) else cipher_for(cfg)
+        self.memory = memory or Memory(cfg.db_path, cipher)
+        self.audit = audit or AuditLog(cfg.audit_path, cipher)
         self.policy = policy or Policy.load(cfg.zones_file, cfg.roots)
         self.router = router or Router(self.policy, make_backend(RouterConfig.from_env(dict(os.environ)), self.audit))
         self.bus = bus or ApprovalBus()
@@ -156,6 +158,30 @@ class Core:
         return {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
                 "created_at": t.created_at, "updated_at": t.updated_at,
                 "usage": self.memory.task_usage(t.id)}
+
+    # ---- forgetting (real deletes: secure_delete + VACUUM; Lantern's own files overwritten) -------
+    def forget_task(self, task_id: int) -> dict:
+        if task_id == self.current_task:
+            raise ValueError("that task is still running; stop it first")
+        self.memory.get_task(task_id)  # KeyError if unknown
+        counts = self.memory.forget_task(task_id)
+        counts["audit"] = self.audit.forget_task(task_id)
+        self.emit({"type": "forgot", "task_id": task_id})
+        return {"forgot_task": task_id, **counts}
+
+    def forget_everything(self) -> dict:
+        """Memory, audit log, voice notes, screenshots, outbox, Lantern's browser profile and form profile."""
+        self.stop()
+        self.wait_idle(15)
+        result = {"memory": self.memory.forget_everything(), "audit": self.audit.forget_all(), "files": {}, "skipped": []}
+        home = Path(self.cfg.db_path).expanduser().parent
+        for target in (self.cfg.media_dir, self.cfg.browser_profile_dir, self.cfg.profile_path):
+            try:
+                result["files"][str(target)] = self.policy.erase_lantern_data(target, home)
+            except (PolicyError, OSError) as e:
+                result["skipped"].append(f"{target}: {e}")
+        self.emit({"type": "forgot", "everything": True})
+        return result
 
     def shutdown(self) -> None:
         self.stop()

@@ -13,3 +13,5 @@
 | websockets | BSD-3 | WebSocket support for Uvicorn (the desktop app's live events) |
 | Electron 44.5.1 (desktop, dev dependency) | MIT | the avatar overlay and panel windows |
 | mcp (Model Context Protocol Python SDK 2.x) | MIT | MCP client (other tools as deferred tools) and Lantern's MCP server |
+| cryptography (Fernet) | Apache-2.0 / BSD-3 | encrypting memory and the audit log at rest |
+| keyring | MIT | keeping the encryption key in the OS keychain |
