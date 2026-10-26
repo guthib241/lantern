@@ -36,8 +36,10 @@ from .base import Channel, Incoming
 STOP = re.compile(r"^\W*/?stop\b", re.I)
 STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
+RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
-         "\"which projects use torch?\"), STOP to halt everything, or status. Approvals arrive here as buttons.")
+         "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
+         "or resume. Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
 
@@ -69,6 +71,11 @@ class ChannelHub:
         if listen:
             for c in self.channels.values():
                 c.start(self.receive)
+        cut = getattr(self.core, "interrupted", [])
+        if cut:
+            names = "; ".join(f"#{t.id} {t.goal.split(chr(10))[0][:60]}" for t in cut[:3])
+            self.say(None, f"🏮 I was stopped in the middle of {len(cut)} task{'s' if len(cut) != 1 else ''}: "
+                           f"{names}{' …' if len(cut) > 3 else ''}. Reply resume to continue.")
         return self
 
     def stop(self) -> None:
@@ -174,6 +181,12 @@ class ChannelHub:
             return self.say(ch.name, self._status())
         if HELP.match(t):
             return self.say(ch.name, SCOPE)
+        if RESUME.match(t):
+            new_ids = self.core.resume()
+            for task_id in new_ids:
+                self.origin[task_id] = ch.name
+            return self.say(ch.name, f"🏮 Resuming {len(new_ids)} task{'s' if len(new_ids) != 1 else ''} "
+                                     f"(#{', #'.join(map(str, new_ids))})." if new_ids else "Nothing to resume.")
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")

@@ -70,3 +70,9 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **Security fix:** moving a writable folder that contains a private or hidden sub-zone would have carried those files out of their zone (zones are paths). `policy.move` now refuses it, and `move_file` refuses before asking.
   - **Rehearsal:** the demo home gained a messy `Downloads/` (tiny valid JPG/PNG/PDF files), and "tidy my Downloads" is a rehearsal beat.
   - 13 new tests; 338 passing.
+- M20: Resume after restart.
+  - **On startup:** tasks still `active` from a previous run (crash, restart, closed laptop) are marked `interrupted` before the worker starts. The phone is told ("I was stopped in the middle of 1 task … reply resume"), and the panel shows a banner with **Resume all** and a **Resume** button per task.
+  - **Ways to resume:** `resume` on WhatsApp/Telegram, `POST /tasks/resume`, Try again on an interrupted task, or `python -m lantern --resume`. The CLI forwards to a running server, or runs the tasks itself.
+  - **What the resumed task knows:** the original goal plus what the cut-short run already did ("fill_form (verified)"), so it doesn't submit twice. Every change still needs approval anyway. The old task becomes `resumed`.
+  - **Second server refused:** a second `--serve` on a busy port now exits with a clear message instead of marking the live server's tasks interrupted and then failing to bind.
+  - 6 new tests plus 1 desktop test; 344 passing.

@@ -134,6 +134,7 @@ python -m lantern "find my march invoice and move it to Documents/Tax"
 python -m lantern --profile-set "full name" "Asha Rao"  # the local profile vault for forms
 python -m lantern --which torch                       # which projects use torch? (no model call)
 python -m lantern --tasks | --task 3 | --usage | --audit | --zones
+python -m lantern --resume                           # continue tasks cut short when Lantern last stopped
 python -m lantern --forget-task 12 | --forget-everything
 ```
 

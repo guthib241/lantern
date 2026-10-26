@@ -26,7 +26,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     goal TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active',   -- active | done | failed | cancelled
+    status TEXT NOT NULL DEFAULT 'active',   -- active | done | failed | cancelled | interrupted | resumed
     summary TEXT,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS reminders (
 );
 """
 
-TASK_STATUSES = {"active", "done", "failed", "cancelled"}
+TASK_STATUSES = {"active", "done", "failed", "cancelled", "interrupted", "resumed"}
 
 
 @dataclass
@@ -195,6 +195,11 @@ class Memory:
         rows = self.db.execute(
             "SELECT * FROM tasks WHERE status = 'active' ORDER BY id"
         ).fetchall()
+        return [self._task(r) for r in rows]
+
+    @_locked
+    def tasks_with_status(self, status: str, limit: int = 50) -> list[Task]:
+        rows = self.db.execute("SELECT * FROM tasks WHERE status = ? ORDER BY id LIMIT ?", (status, limit)).fetchall()
         return [self._task(r) for r in rows]
 
     # ---- steps -------------------------------------------------------------

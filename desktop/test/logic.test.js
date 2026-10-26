@@ -157,3 +157,12 @@ test('a reminder shows in the bubble, then fades; tool steps read plainly', () =
   assert.equal(t.tasks[1].steps[0].label, 'Reminder set for today 18:00 ✓');
   assert.equal(t.tasks[1].verified, true);
 });
+
+test('interrupted tasks come with hello and leave when resumed', () => {
+  let s = run([{ type: 'hello', pending: [], interrupted: [{ id: 4, goal: 'fill the form' }], ts: 1 },
+               { type: 'queued', task_id: 4, goal: 'fill the form', ts: 1 }]);
+  assert.deepEqual(s.interrupted, [{ id: 4, goal: 'fill the form' }]);
+  s = S.reduce(s, { type: 'resumed', from: 4, task_id: 9, ts: 2 });
+  assert.deepEqual(s.interrupted, []);
+  assert.equal(s.tasks[4].status, 'resumed');
+});

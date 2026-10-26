@@ -23,6 +23,7 @@
       lastCheckin: null,  // {reaction, found, at}
       lastRetry: null,    // {at, wait_s, error}: the network wobbled and Lantern is retrying
       lastReminder: null, // {text, late, at}: a reminder just went off
+      interrupted: [],    // [{id, goal}]: tasks cut short when Lantern stopped, waiting for "resume"
       connected: false,
     };
   }
@@ -90,6 +91,11 @@
         s.connected = true;
         s.approvals = {};
         for (const a of e.pending || []) s.approvals[a.id] = a;
+        s.interrupted = (e.interrupted || []).map((t) => ({ id: t.id, goal: t.goal || '' }));
+        break;
+      case 'resumed':
+        s.interrupted = s.interrupted.filter((t) => t.id !== e.from);
+        if (s.tasks[e.from]) s.tasks[e.from].status = 'resumed';
         break;
       case 'disconnected':
         s.connected = false;

@@ -198,6 +198,7 @@ function createMock() {
     },
     'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
     'GET /reminders': () => reminders.filter((r) => r.status === 'pending'),
+    'POST /tasks/resume': () => ({ task_ids: [] }),
   };
 
   const server = http.createServer((req, res) => {
@@ -260,7 +261,8 @@ function createMock() {
     socket.on('data', (buf) => { if ((buf[0] & 0x0f) === 0x8) socket.end(); });   // client sent close
     socket.on('close', () => sockets.delete(socket));
     socket.on('error', () => sockets.delete(socket));
-    socket.write(frame(JSON.stringify({ type: 'hello', version: 'mock', pending: [...approvals.values()].map((x) => x.approval), ts: now() })));
+    socket.write(frame(JSON.stringify({ type: 'hello', version: 'mock', pending: [...approvals.values()].map((x) => x.approval),
+                                        interrupted: [], ts: now() })));
   });
 
   return { server, submit, stop, phone, sockets };

@@ -90,15 +90,22 @@
     const box = $('tasks');
     box.textContent = '';
     const tasks = LanternState.recentTasks(state, 12);
-    if (!tasks.length) box.append(h('p', { class: 'empty' }, 'No tasks yet. Try “which projects use torch?”'));
+    if (state.interrupted.length) {
+      const n = state.interrupted.length;
+      box.append(h('div', { class: 'interrupted' },
+        h('b', {}, `${n} task${n > 1 ? 's were' : ' was'} cut short when Lantern stopped`),
+        h('ul', {}, state.interrupted.slice(0, 4).map((t) => h('li', {}, `#${t.id} ${t.goal}`))),
+        h('button', { class: 'ghost', onclick: resumeAll }, 'Resume all')));
+    }
+    if (!tasks.length && !state.interrupted.length) box.append(h('p', { class: 'empty' }, 'No tasks yet. Try “which projects use torch?”'));
     for (const t of tasks) {
       box.append(h('div', { class: 'task' },
         h('div', { class: 'goal' }, t.goal || `Task #${t.id}`),
         h('div', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`),
         h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))),
         t.reply ? h('p', { class: 'reply' }, t.reply) : null,
-        t.status === 'failed' || t.status === 'cancelled'
-          ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, 'Try again') : null,
+        ['failed', 'cancelled', 'interrupted'].includes(t.status)
+          ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
         t.status !== 'running' ? h('button', { class: 'forget', onclick: () => forgetTask(t.id) }, 'Forget') : null));
     }
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
@@ -129,6 +136,15 @@
       toast(`Couldn't cancel it: ${e.message}`);
     }
     loadReminders();
+  }
+
+  async function resumeAll() {
+    try {
+      const r = await api.post('/tasks/resume');
+      toast(r.task_ids.length ? `Resuming ${r.task_ids.length} task(s).` : 'Nothing to resume.');
+    } catch (e) {
+      toast(`Couldn't resume: ${e.message}`);
+    }
   }
 
   async function retryTask(id) {

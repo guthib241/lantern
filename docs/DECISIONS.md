@@ -56,3 +56,8 @@
   - **Binding:** the approval binds each file's path, size and `mtime_ns`, not a content hash, so tidying big folders stays fast while a file swapped after approval still changes the hash.
   - **Scope:** files only, because a folder move can drag a nested private or hidden zone out of its zone. That gap also existed in `move_file` and is now closed in `policy.move` itself.
   - **Undo:** another `organize_files` with the reversed plan, so it is approved and verified like any change. Lantern still never deletes.
+- Oct 26 (M20): Resuming re-runs the goal as a new task instead of replaying the old Responses chain.
+  - **Why not replay:** a `previous_response_id` from before a crash may have expired and still holds pending calls whose results we never sent.
+  - **What the new task gets:** the old timeline's tool results, summarised ("fill_form (verified); send_email not reached"), with an instruction to check before repeating anything that changes something.
+  - **Safety:** every change still needs a fresh approval bound to its payload, so a duplicate submit would show up on a card.
+  - **Who marks tasks interrupted:** only the long-running owner, Core (the server) or `--resume`, so a read-only CLI command can never mark a live server's task interrupted. The server refuses to start twice on the same port.

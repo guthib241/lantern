@@ -21,7 +21,8 @@ in the browser can't drive Lantern through localhost.
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
   POST /checkin {image: data URL, concept}   SAM 3.1 camera check-in (objects only, nothing stored)
-  POST /tasks/{id}/retry            run a failed task's goal again
+  POST /tasks/{id}/retry            run a failed task's goal again (an interrupted one is resumed)
+  POST /tasks/resume                resume every task cut short when Lantern stopped (M20)
   GET  /reminders, POST /reminders/{id}/cancel   upcoming reminders (M18)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
@@ -141,6 +142,10 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         view["steps"] = core.memory.steps(task_id)
         return view
+
+    @app.post("/tasks/resume", dependencies=[Depends(auth)])
+    def resume_tasks():
+        return {"task_ids": core.resume()}
 
     @app.post("/tasks/{task_id}/retry", dependencies=[Depends(auth)])
     def retry_task(task_id: int):
@@ -313,7 +318,9 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
 
         async def pump() -> None:
             await ws.send_json({"type": "hello", "version": __version__,
-                                "pending": [a.public(include_nonce=True) for a in core.bus.pending()]})
+                                "pending": [a.public(include_nonce=True) for a in core.bus.pending()],
+                                "interrupted": [{"id": t.id, "goal": t.goal.split("\n")[0]}
+                                                for t in core.memory.tasks_with_status("interrupted")]})
             while True:
                 event = await q.get()
                 await ws.send_json(_jsonable(event))

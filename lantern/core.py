@@ -7,6 +7,7 @@ subscribers (the server's websocket, channels).
 """
 from __future__ import annotations
 
+import json
 import os
 import queue
 import threading
@@ -46,6 +47,42 @@ class NoModelClient:
         self.responses = self._R()
 
 
+INTERRUPTED = "cut short when Lantern stopped; say 'resume' to continue"
+RESUME_NOTE = "\n\n[Resuming task #"
+
+
+def recover_interrupted(memory: Memory) -> list:
+    """Tasks still 'active' from a previous run were cut short (crash, restart, power): mark them."""
+    out = []
+    for t in memory.active_tasks():
+        memory.log_step(t.id, "note", "interrupted: Lantern stopped before this task finished")
+        memory.finish_task(t.id, "interrupted", INTERRUPTED)
+        out.append(memory.get_task(t.id))
+    return out
+
+
+def resume_goal(memory: Memory, task) -> str:
+    """The goal again, plus what the cut-short run already did, so nothing gets done twice."""
+    goal = task.goal.split(RESUME_NOTE)[0]
+    done = []
+    for step in memory.steps(task.id):
+        if step["kind"] != "tool_result":
+            continue
+        try:
+            data = json.loads(step["content"])
+        except (TypeError, ValueError):
+            continue
+        name, result = data.get("name"), data.get("result") or {}
+        if name in (None, "finish") or not isinstance(result, dict):
+            continue
+        state = ("verified" if result.get("verified") else "error: " + str(result["error"])[:60] if result.get("error")
+                 else "not verified")
+        done.append(f"{name} ({state})")
+    already = "; ".join(done[-12:]) if done else "nothing yet"
+    return (f"{goal}{RESUME_NOTE}{task.id}, which was cut short when Lantern stopped. Already done then: {already}. "
+            "Check before repeating anything that changes something.]")
+
+
 class Core:
     def __init__(self, cfg: config_mod.Config, client: Any = None, *, memory: Memory | None = None,
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
@@ -82,6 +119,7 @@ class Core:
         self._sinks: list[EventSink] = []
         self._queue: queue.Queue = queue.Queue()
         self.current_task: int | None = None
+        self.interrupted = recover_interrupted(self.memory)   # before the worker starts taking tasks
         self.bus.subscribe(self._approval_event)
         self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
         self._worker.start()
@@ -164,11 +202,28 @@ class Core:
         return {"stopped": True, "denied_approvals": denied, "task_id": self.current_task}
 
     def retry_task(self, task_id: int) -> int:
-        """Run a failed or cancelled task's goal again as a new task."""
+        """Run a failed or cancelled task's goal again as a new task (an interrupted one is resumed)."""
         t = self.memory.get_task(task_id)
         if t.status in ("active",):
             raise ValueError("that task is still running")
-        return self.submit(t.goal)
+        if t.status == "interrupted":
+            return self.resume([task_id])[0]
+        return self.submit(t.goal.split(RESUME_NOTE)[0])
+
+    def resume(self, task_ids: list[int] | None = None) -> list[int]:
+        """Queue interrupted tasks again, each told what its cut-short run already did."""
+        tasks = ([self.memory.get_task(i) for i in task_ids] if task_ids is not None
+                 else self.memory.tasks_with_status("interrupted"))
+        new_ids = []
+        for t in tasks:
+            if t.status != "interrupted":
+                continue
+            new_id = self.submit(resume_goal(self.memory, t))
+            self.memory.finish_task(t.id, "resumed", f"resumed as task #{new_id}")
+            self.emit({"type": "resumed", "from": t.id, "task_id": new_id})
+            new_ids.append(new_id)
+        self.interrupted = [t for t in self.interrupted if t.id not in {x.id for x in tasks}]
+        return new_ids
 
     def task_view(self, task_id: int) -> dict:
         t = self.memory.get_task(task_id)

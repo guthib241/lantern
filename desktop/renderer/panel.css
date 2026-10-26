@@ -97,3 +97,5 @@ button.ghost { border: 1px solid var(--line); background: #fff; border-radius: 1
 .reminder .when { flex: none; font-weight: 700; color: var(--glow-deep); }
 .reminder .what { flex: 1; word-break: break-word; }
 .reminder .forget { margin-top: 0; }
+.interrupted { margin-top: 12px; padding: 10px 14px; border-radius: 16px; background: #f4f0ff; border: 1px solid #d9cffe; font-size: 13px; }
+.interrupted ul { margin: 6px 0; padding-left: 18px; color: var(--muted); }

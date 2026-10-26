@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import os
 import sys
 from pathlib import Path
@@ -117,9 +118,51 @@ def build_agent(cfg, mem: Memory) -> Agent:
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 
 
+def server_running(port: int) -> bool:
+    """Is something (normally another Lantern) already listening on 127.0.0.1:port?"""
+    import socket
+    with socket.socket() as sock:
+        sock.settimeout(0.3)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def refuse_second_server(port: int) -> None:
+    if server_running(port):
+        sys.exit(f"Lantern is already running on http://127.0.0.1:{port}. Stop it first, or pick another --port.")
+
+
+def resume_tasks(cfg, mem: Memory, port: int) -> None:
+    """Ask the running server to resume, or (no server) run the cut-short tasks right here."""
+    from .core import recover_interrupted, resume_goal
+    if server_running(port):
+        import urllib.request
+        from .server import load_token
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/tasks/resume", method="POST", data=b"",
+                                     headers={"X-Lantern-Token": load_token(config_mod.HOME)})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            ids = json.loads(r.read())["task_ids"]
+        return print(f"Asked the running Lantern to resume {len(ids)} task(s): {ids}")
+    recover_interrupted(mem)
+    tasks = mem.tasks_with_status("interrupted")
+    if not tasks:
+        return print("Nothing to resume.")
+    agent = build_agent(cfg, mem)
+    for t in tasks:
+        goal = resume_goal(mem, t)
+        mem.finish_task(t.id, "resumed", "resumed from the command line")
+        print(f"\n▶ resuming #{t.id}: {t.goal.splitlines()[0]}")
+        try:
+            r = agent.run(goal)
+            print(f"🏮 {r.reply.strip()}")
+        except Exception as e:
+            print(f"  ✗ {explain(e)}")
+
+
 def run_demo(a) -> None:
     """Rehearsal: a fresh copy of demo/home, a scripted model, the simulated phone. Nothing leaves the laptop."""
     from . import demo
+    if a.demo and not a.demo_run:
+        refuse_second_server(a.port)
     cfg = demo.prepare(a.demo_dir)
     if a.persona:
         cfg.persona = a.persona
@@ -163,6 +206,7 @@ def main(argv=None) -> None:
     p.add_argument("--forget-task", type=int, metavar="ID", help="really delete one task, its timeline and audit rows")
     p.add_argument("--forget-fact", metavar="KEY", help="really delete one remembered fact")
     p.add_argument("--forget-everything", action="store_true", help="erase memory, audit log, voice notes, screenshots")
+    p.add_argument("--resume", action="store_true", help="continue the tasks cut short when Lantern last stopped")
     p.add_argument("--demo", action="store_true", help="with --serve: rehearsal mode (scripted model, demo/home, nothing sent)")
     p.add_argument("--demo-run", action="store_true", help="play the 3-minute demo story offline and print it")
     p.add_argument("--demo-dir", metavar="DIR", help="empty folder for the rehearsal's data (default: a new temp folder)")
@@ -250,10 +294,14 @@ def main(argv=None) -> None:
         tools = Toolbox(policy, mem, lambda s: False, router=router, envmap=EnvMap(policy, cfg.envmap_path))
         local = LocalLantern(os.environ.get("LANTERN_API", "http://127.0.0.1:8765"), load_token(config_mod.HOME))
         return build_server(tools, audit=audit, forward=local.request).run("stdio")
+    if a.resume:
+        return resume_tasks(cfg, mem, a.port)
     if a.serve or a.channel_test:
         from .channels import ChannelHub, channels_from_env
         from .core import Core
         from .server import serve
+        if a.serve:
+            refuse_second_server(a.port)
         mem.close()
         core = Core(cfg)
         hub = ChannelHub(core, channels_from_env(dict(os.environ)))
