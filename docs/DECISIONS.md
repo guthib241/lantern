@@ -1,0 +1,5 @@
+# Decisions
+
+- Oct 26: OpenAI Python SDK used as the HTTP client because Meta Model API is OpenAI-compatible (per dev.meta.ai quickstart).
+- Oct 26: Research findings adopted (see docs/SPEC.md v2): WhatsApp scoped as a personal task/approval console because of WhatsApp's Jan 2026 AI-provider rule, Telegram as fallback; glasses via built-in WhatsApp voice messages, not the glasses SDK; Electron for the overlay; sqlite-vec for local embeddings; Muse Glimmer lane is just an OpenAI-compatible URL so it can be local or self-hosted on Modal.
+- Oct 26: User laptop = RTX 4060 Laptop 8 GB VRAM, Ryzen 7, 15.6 GB RAM, 1 TB. Official Glimmer Q4_K_M (~19 GiB) does not fit. Plan: private lane runs Glimmer IQ2_M / IQ2_XXS GGUF (~9-11 GB) in llama.cpp with partial GPU offload, text-only (skip the 1.4 GB vision projector), `-c 8192`, used only for short private tasks (classify, summarise, redact, answer about a private file). Backup: self-hosted Glimmer on Modal. Local embeddings use a small embedding GGUF on CPU. During the demo, close other heavy apps (RAM is tight with Electron + Chromium + model).
