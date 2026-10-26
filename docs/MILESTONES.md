@@ -5,7 +5,7 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M0 Oct 26 — Agent loop, memory, sandboxed file tools, CLI, tests
 - [x] M1 ☁ `models.py` registry + cost table; token/cost logging per task; `scripts/smoke.py` (one real call per model, prints OK/fail, skipped if no key)
 - [x] M2 ☁ `policy.py` zones (hidden/private/open/writable) + `zones.json`; all tools go through it; hidden paths never listed; tests
-- [ ] M3 ☁ `scrubber.py` (secret + PII patterns incl. Aadhaar, PAN, UPI, card numbers) + `audit.py`; every cloud payload scrubbed and logged with SHA-256; tests with planted fake keys
+- [x] M3 ☁ `scrubber.py` (secret + PII patterns incl. Aadhaar, PAN, UPI, card numbers) + `audit.py`; every cloud payload scrubbed and logged with SHA-256; tests with planted fake keys
 - [ ] M4 ☁/💻 `router.py`: private content → Glimmer OpenAI-compatible URL (config), cloud gets only redacted description or Glimmer's answer; fake local backend for tests
 - [ ] M5 ☁ `approvals.py`: pending approvals with nonce, 10-min expiry, payload hash; agent waits asynchronously; untrusted-content taint forces approval on high-risk tools
 - [ ] M6 ☁ FastAPI server on 127.0.0.1: `/task`, `/tasks`, `/approvals`, websocket events with model badge per step

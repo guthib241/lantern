@@ -15,6 +15,7 @@ import sys
 
 from . import config as config_mod
 from .agent import PERSONAS, Agent
+from .audit import AuditLog, GuardedClient
 from .memory import Memory
 from .policy import ZONES, Policy
 from .tools import Toolbox
@@ -63,6 +64,17 @@ def print_usage(mem: Memory) -> None:
     print(f"Total spent: ${mem.total_cost():.4f}")
 
 
+def print_audit(audit: AuditLog) -> None:
+    s = audit.summary()
+    c, loc = s["cloud"], s["local"]
+    print(f"Today: {c['calls']} cloud calls, {c['bytes']:,} bytes left this laptop"
+          f" · {loc['calls']} local calls ({loc['bytes']:,} bytes stayed here)")
+    for model, m in c["by_model"].items():
+        print(f"  {model:<28} {m['calls']:>4} calls {m['bytes']:>10,} bytes")
+    if c["redactions"]:
+        print("  Redacted before sending: " + ", ".join(f"{k}×{v}" for k, v in c["redactions"].items()))
+
+
 def print_task(mem: Memory, task_id: int) -> None:
     t = mem.get_task(task_id)
     u = mem.task_usage(task_id)
@@ -76,7 +88,8 @@ def build_agent(cfg, mem: Memory) -> Agent:
     key = os.environ.get("MODEL_API_KEY")
     if not key:
         sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
-    client = OpenAI(base_url=cfg.base_url, api_key=key)
+    client = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key), AuditLog(cfg.audit_path),
+                           destination=cfg.base_url)
     tools = Toolbox(Policy.load(cfg.zones_file, cfg.roots), mem, ask_approval)
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 
@@ -89,6 +102,7 @@ def main(argv=None) -> None:
     p.add_argument("--memory", action="store_true", help="show remembered facts")
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
     p.add_argument("--zones", action="store_true", help="show privacy zones")
+    p.add_argument("--audit", action="store_true", help="what left this laptop today")
     p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
     p.add_argument("--persona", choices=sorted(PERSONAS))
     a = p.parse_args(argv)
@@ -104,6 +118,8 @@ def main(argv=None) -> None:
         return print_task(mem, a.task)
     if a.usage:
         return print_usage(mem)
+    if a.audit:
+        return print_audit(AuditLog(cfg.audit_path))
     if a.zones or a.set_zone:
         policy = Policy.load(cfg.zones_file, cfg.roots)
         if a.set_zone:

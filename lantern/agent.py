@@ -93,6 +93,8 @@ class Agent:
 
     def run(self, goal: str) -> Result:
         task = self.memory.start_task(goal)
+        if hasattr(self.client, "set_task"):  # GuardedClient tags audit rows with the task
+            self.client.set_task(task.id)
         self.memory.log_step(task.id, "plan", {"goal": goal})
         self.on_event("task", {"id": task.id, "goal": goal})
 
