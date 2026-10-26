@@ -7,7 +7,7 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M2 ☁ `policy.py` zones (hidden/private/open/writable) + `zones.json`; all tools go through it; hidden paths never listed; tests
 - [x] M3 ☁ `scrubber.py` (secret + PII patterns incl. Aadhaar, PAN, UPI, card numbers) + `audit.py`; every cloud payload scrubbed and logged with SHA-256; tests with planted fake keys
 - [x] M4 ☁/💻 `router.py`: private content → Glimmer OpenAI-compatible URL (config), cloud gets only redacted description or Glimmer's answer; fake local backend for tests
-- [ ] M5 ☁ `approvals.py`: pending approvals with nonce, 10-min expiry, payload hash; agent waits asynchronously; untrusted-content taint forces approval on high-risk tools
+- [x] M5 ☁ `approvals.py`: pending approvals with nonce, 10-min expiry, payload hash; agent waits asynchronously; untrusted-content taint forces approval on high-risk tools
 - [ ] M6 ☁ FastAPI server on 127.0.0.1: `/task`, `/tasks`, `/approvals`, websocket events with model badge per step
 - [ ] M7 ☁ Forms: Playwright driver + `computer` tool loop (develop on `muse-spark-1.3`), local demo form in `demo/forms/`, hard stops for password/OTP/card/ID/CAPTCHA, Submit → approval, verify confirmation. Tests with Playwright against the demo form and a fake model
 - [ ] M8 ☁/💻 Channels: `Channel` interface; WhatsApp webhook (signature check, buttons, voice → ffmpeg → Voice Transcribe); Telegram fallback; STOP keyword. Fake channel for tests

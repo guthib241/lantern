@@ -3,7 +3,10 @@
 Safety rules baked in here, not left to the model:
   1. Every file access goes through policy.py (privacy zones). Hidden paths are never
      listed, private files are described instead of read, and only writable zones change.
-  2. Anything that changes your files (write, move) asks for approval first.
+  2. Anything that changes your files (write, move) asks for approval first, through
+     approvals.py: the approval is bound to a hash of the exact change and used once.
+     After untrusted content (file text, private-lane answers) enters the task, even
+     normally automatic tools like `remember` need approval (taint).
   3. Lantern never deletes. The worst it can do is move a file, and it asks first.
   4. After every change, the tool checks the result on disk and reports what it saw,
      so the agent verifies instead of trusting itself.
@@ -11,11 +14,14 @@ Safety rules baked in here, not left to the model:
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 from pathlib import Path
 from typing import Callable
 
+from .approvals import ApprovalError, Gate, as_gate
 from .memory import Memory
 from .policy import PRIVATE, Policy, PolicyError
+from .untrusted import wrap
 
 Approver = Callable[[str], bool]  # gets a plain-English description, returns yes/no
 
@@ -33,7 +39,7 @@ class ToolError(Exception):
 
 
 class Toolbox:
-    def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver,
+    def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
                  router=None):
         if not isinstance(policy, Policy):
             if not policy:
@@ -41,8 +47,27 @@ class Toolbox:
             policy = Policy.from_roots(policy)
         self.policy = policy
         self.memory = memory
-        self.approve = approve
+        self.gate = as_gate(approve)
         self.router = router  # router.Router: the private lane (Muse Glimmer)
+        self.tainted = False  # set once untrusted content reached the model in this task
+
+    def begin_task(self) -> None:
+        self.tainted = False
+
+    def _approve(self, action: str, summary: str, payload: dict):
+        """Ask the gate. Returns commit(payload) on yes, None on no."""
+        if self.tainted:
+            summary += "  [after reading untrusted content]"
+        return self.gate.ask(action, summary, payload, tainted=self.tainted)
+
+    @staticmethod
+    def _commit(commit, payload: dict) -> dict | None:
+        """Bind: the payload about to run must hash to what was approved."""
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"done": False, "reason": str(e)}
+        return None
 
     @property
     def roots(self) -> list[Path]:
@@ -121,7 +146,8 @@ class Toolbox:
         if p.suffix.lower() not in TEXT_EXTS:
             return {"path": str(p), "note": f"binary file ({p.suffix}), {p.stat().st_size} bytes; cannot show text"}
         text = self.policy.read_text(p, limit=MAX_READ_CHARS + 1)
-        return {"path": str(p), "truncated": len(text) > MAX_READ_CHARS, "text": text[:MAX_READ_CHARS]}
+        self.tainted = True
+        return {"path": str(p), "truncated": len(text) > MAX_READ_CHARS, **wrap(text[:MAX_READ_CHARS], str(p))}
 
     def ask_private(self, path: str, question: str) -> dict:
         """Ask the local model about a private file; only its scrubbed answer comes back."""
@@ -129,7 +155,9 @@ class Toolbox:
         if self.router is None:
             raise ToolError("the private lane (local Muse Glimmer) is not set up, so I can't read private files")
         try:
-            return self.router.ask_private(path, question)
+            result = self.router.ask_private(path, question)
+            self.tainted = True  # the answer is derived from untrusted file content
+            return result
         except PrivateLaneError as e:
             raise ToolError(f"{e}. Private files never go to the cloud, so I can't answer this right now.") from e
 
@@ -142,8 +170,15 @@ class Toolbox:
         if p.exists() and not overwrite:
             raise ToolError(f"{p} already exists; set overwrite=true if you mean to replace it")
         verb = "Replace" if p.exists() else "Create"
-        if not self.approve(f"{verb} file {p} ({len(content)} characters)"):
+
+        def plan(text: str) -> dict:
+            return {"path": str(p), "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                    "chars": len(text), "overwrite": p.exists()}
+        commit = self._approve("write_file", f"{verb} file {p} ({len(content)} characters)", plan(content))
+        if commit is None:
             return {"done": False, "reason": "user declined"}
+        if refused := self._commit(commit, plan(content)):
+            return refused
         self.policy.write_text(p, content)
         ok = p.is_file() and self.policy.read_text(p) == content  # verify on disk
         return {"done": ok, "path": str(p), "verified": ok}
@@ -160,18 +195,35 @@ class Toolbox:
             dst = dst / src.name
         if dst.exists():
             raise ToolError(f"{dst} already exists; pick another name")
-        if not self.approve(f"Move {src} -> {dst}"):
+        payload = {"from": str(src), "to": str(dst)}
+        commit = self._approve("move_file", f"Move {src} -> {dst}", payload)
+        if commit is None:
             return {"done": False, "reason": "user declined"}
+        if refused := self._commit(commit, {"from": str(src), "to": str(dst)}):
+            return refused
         self.policy.move(src, dst)
         ok = dst.exists() and not src.exists()  # verify on disk
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
 
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
+        if self.tainted:  # untrusted text must not be able to plant "facts" silently
+            payload = {"key": key, "value": value}
+            commit = self._approve("remember", f"Remember '{key}' = '{value}'", payload)
+            if commit is None:
+                return {"done": False, "reason": "user declined"}
+            if refused := self._commit(commit, payload):
+                return refused
         self.memory.remember(key, value)
         return {"remembered": {key: value}}
 
     def forget(self, key: str) -> dict:
+        if self.tainted:
+            commit = self._approve("forget", f"Forget '{key}'", {"key": key})
+            if commit is None:
+                return {"done": False, "reason": "user declined"}
+            if refused := self._commit(commit, {"key": key}):
+                return refused
         return {"forgot": key, "existed": self.memory.forget(key)}
 
     # ---- dispatch ----------------------------------------------------------
