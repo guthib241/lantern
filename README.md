@@ -87,6 +87,7 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
 
 - **Live activity island:** a black capsule above Lantern's face shows each step as it happens, and grows into a small card for approvals, results and reminders. Clean approvals can be answered right there. Anything that followed untrusted content (every form submit) asks you to **Review** the full sheet.
 - **Quick Ask:** press **Ctrl/Cmd+Shift+Space** anywhere, type, press Return. ↑/↓ for suggestions and recent tasks; "stop" stops everything.
+- **Menu bar and notifications:** the lantern icon in the menu bar (system tray on Windows/Linux) shows what Lantern is doing and how many approvals wait. System notifications cover approvals (title only, never the values), reminders and failures.
 - **The panel:**
   - a Today view with at-a-glance tiles and suggestions
   - approval sheets that show form fields as a table

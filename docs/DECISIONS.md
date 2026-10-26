@@ -73,3 +73,8 @@
   - **Suggestion chips:** they fill the ask field rather than running at once, so a stray click never starts a paid task.
 - Oct 27 (M24): The island may answer an approval only when nothing about it is flagged. Quick Allow needs: no untrusted content in the task, no warnings on the card, not expired. Everything else (every form submit, emails to addresses seen only in files) must be reviewed in the panel, where the whole card is shown. Deny is always available, because saying no is never risky. Any web page counts as untrusted from the moment it opens, not after the tool returns.
 - Oct 27 (M25): The Quick Ask hotkey is Ctrl/Cmd+Shift+Space: free by default on macOS, Windows and common Linux desktops. Alt+Space and Ctrl+Space clash with window menus and input sources. If another app holds it, Lantern logs a warning and the menu bar item (M26) still opens Quick Ask. Suggestions that need finishing ("Remind me in 20 minutes to ") go into the field instead of running.
+- Oct 27 (M26): Notifications are terse on purpose. An approval says only "Lantern needs your OK: Submit this form?", because notification history and lock screens are visible to anyone nearby and are often synced. The values stay in the app.
+  - **Approvals:** notify only when the panel isn't already in front (the sheet is right there otherwise).
+  - **Reminders:** always notify; they're the user's own words.
+  - **Successes:** no notification; the island shows them.
+  - **Event source:** the main process follows the event stream itself (Node 24's built-in WebSocket) instead of relaying through a renderer, which Chromium throttles while hidden.

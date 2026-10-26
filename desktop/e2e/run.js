@@ -101,6 +101,13 @@ async function main() {
           continue;
         }
         const card = await panel.textContent('.approval');
+        if (/Submit this form/.test(card)) {
+          const native = await until('the menu bar status', async () => {
+            const n = await app.evaluate(() => global.lanternNative);
+            return n.badge === 1 && n;
+          }, 10000);
+          check(native.line === '1 approval waiting', `menu bar says “${native.line}”, badge ${native.badge}`);
+        }
         if (/Submit this form/.test(card)) {   // read untrusted page content: the island must not offer a quick Allow
           await avatar.waitForSelector('#island-review', { state: 'visible', timeout: 15000 });
           check(!(await avatar.isVisible('#island-allow')), 'island offers Review only for a flagged approval');
@@ -213,6 +220,9 @@ async function main() {
     await panel.emulateMedia({ colorScheme: 'light' });
 
     check(!/\[object |undefined|NaN/.test(await panel.textContent('main')), 'no rendering glitches ([object …], undefined, NaN) anywhere in the panel');
+    const native = await app.evaluate(() => global.lanternNative);
+    check(native.badge === 0, `badge clears when nothing waits (${native.line})`);
+    check(!JSON.stringify(native.notified).includes('Asha'), `notifications never carry form values (${native.notified.length} sent)`);
 
     // STOP from the panel
     await panel.click('#stop');

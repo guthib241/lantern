@@ -3,7 +3,7 @@
 // the sprite, and a panel (chat, approvals, privacy, phone, costs, widgets). Renderers are
 // sandboxed with context isolation; they talk to the local Lantern server on 127.0.0.1 with
 // the per-install token from ~/.lantern/token. Ctrl/Cmd+Shift+X is the global STOP.
-const { app, BrowserWindow, Menu, globalShortcut, ipcMain, screen, session } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -18,6 +18,10 @@ let config = { apiBase: process.env.LANTERN_API || 'http://127.0.0.1:8765', toke
 let avatar = null;
 let panel = null;
 let quick = null;
+let tray = null;
+// What the menu bar icon, badge and notifications last showed (also read by the end-to-end test).
+const nativeStatus = { line: 'Starting…', badge: 0, notified: [] };
+global.lanternNative = nativeStatus;
 let quitting = false;
 let cameraUntil = 0;   // the camera is allowed for one check-in right after the user clicks
 
@@ -144,23 +148,93 @@ ipcMain.on('quick:hide', () => toggleQuick(false));
 ipcMain.on('avatar:menu', () => {
   Menu.buildFromTemplate([
     { label: 'Open Lantern', click: () => togglePanel(true) },
+    { label: `Ask Lantern… (${ASK_HOTKEY.replace('CommandOrControl', 'Ctrl/Cmd')})`, click: () => toggleQuick(true) },
     { label: `STOP everything (${STOP_HOTKEY.replace('CommandOrControl', 'Ctrl/Cmd')})`, click: stopEverything },
     { type: 'separator' },
     { label: 'Quit Lantern', click: () => { quitting = true; app.quit(); } },
   ]).popup({ window: avatar });
 });
 
+// ---- menu bar icon, badge, notifications ----------------------------------------------------------
+function trayImage() {
+  // macOS tints a black "Template" image for light/dark menu bars; elsewhere use the amber glyph.
+  const name = process.platform === 'darwin' ? 'lanternTemplate.png' : 'lantern.png';
+  const image = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray', name));
+  if (process.platform === 'darwin') image.setTemplateImage(true);
+  return image;
+}
+
+function trayMenu(st) {
+  const hotkey = (k) => k.replace('CommandOrControl', process.platform === 'darwin' ? 'Cmd' : 'Ctrl');
+  return Menu.buildFromTemplate([
+    { label: st.line, enabled: false },
+    { type: 'separator' },
+    { label: `Ask Lantern…  (${hotkey(ASK_HOTKEY)})`, click: () => toggleQuick(true) },
+    { label: st.pending ? `Review ${st.pending} approval${st.pending === 1 ? '' : 's'}…` : 'Open Lantern', click: () => togglePanel(true) },
+    { type: 'separator' },
+    { label: `Stop everything  (${hotkey(STOP_HOTKEY)})`, click: stopEverything },
+    { type: 'separator' },
+    { label: 'Quit Lantern', click: () => { quitting = true; app.quit(); } },
+  ]);
+}
+
+function notify(n) {
+  nativeStatus.notified.push({ kind: n.kind, title: n.title, body: n.body });
+  if (nativeStatus.notified.length > 20) nativeStatus.notified.shift();
+  if (!Notification.isSupported()) return;
+  const note = new Notification({ title: n.title, body: n.body, silent: n.kind !== 'approval' && n.kind !== 'reminder' });
+  note.on('click', () => togglePanel(true));
+  note.show();
+}
+
+function startNative() {
+  const S = require('./renderer/lib/state.js');
+  const N = require('./renderer/lib/native.js');
+  const { Api } = require('./renderer/lib/api.js');
+  let state = S.initial();
+  let connected = false;
+  let shown = '';
+  try {
+    tray = new Tray(trayImage());
+    tray.on('click', () => togglePanel());
+  } catch (e) {
+    console.warn('Lantern: no system tray here', e.message);
+  }
+  const refresh = () => {
+    const st = N.status(state, Date.now() / 1000, connected);
+    Object.assign(nativeStatus, { line: st.line, badge: st.badge });
+    const key = JSON.stringify(st);
+    if (key === shown) return;
+    shown = key;
+    app.setBadgeCount(st.badge);
+    if (tray) {
+      tray.setToolTip(st.tooltip);
+      tray.setContextMenu(trayMenu(st));
+      if (process.platform === 'darwin') tray.setTitle(st.pending ? String(st.pending) : '');
+    }
+  };
+  new Api(config.apiBase, config.token).events((e) => {
+    state = S.reduce(state, { ts: Date.now() / 1000, ...e });
+    const n = N.notice(e, state, { panelFocused: !!(panel && panel.isVisible() && panel.isFocused()) });
+    if (n) notify(n);
+    refresh();
+  }, (up) => { connected = up; refresh(); });
+  setInterval(refresh, 2000);
+  refresh();
+}
+
 app.whenReady().then(async () => {
   lockDown();
   if (MOCK) {
     const mock = await require('./mock/server.js').start(Number(process.env.LANTERN_MOCK_PORT || 8766));
-    config = { apiBase: mock.url, token: mock.token, mock: true };
+    Object.assign(config, { apiBase: mock.url, token: mock.token, mock: true });
   } else {
     config.token = process.env.LANTERN_TOKEN || readToken();
   }
   createAvatar();
   createPanel();
   createQuick();
+  startNative();
   globalShortcut.register(STOP_HOTKEY, stopEverything);
   if (!globalShortcut.register(ASK_HOTKEY, () => toggleQuick())) {
     console.warn(`Lantern: ${ASK_HOTKEY} is taken by another app; open Quick Ask from the menu instead.`);

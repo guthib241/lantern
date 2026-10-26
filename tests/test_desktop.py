@@ -29,3 +29,14 @@ def test_renderers_are_locked_down():
     assert 'sandbox="allow-scripts"' in panel and "allow-same-origin" not in panel
     for script in ("panel.js", "quick.js"):   # server text goes in as text
         assert ".innerHTML" not in (DESKTOP / "renderer" / script).read_text(), script
+
+
+def test_tray_icons_are_ours_and_up_to_date():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("make_tray_icons", DESKTOP.parent / "scripts" / "make_tray_icons.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for name, rgb in (("lanternTemplate", (0, 0, 0)), ("lantern", (255, 159, 10))):
+        for suffix, size in (("", 16), ("@2x", 32)):
+            committed = (DESKTOP / "assets" / "tray" / f"{name}{suffix}.png").read_bytes()
+            assert committed.startswith(b"\x89PNG") and committed == mod.render(size, rgb), f"{name}{suffix}"

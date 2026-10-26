@@ -120,3 +120,9 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **How it works:** type and press Return to start a task, then it hides and the island shows progress. ↑/↓ move through "Ask Lantern", suggestions, recent tasks and "N approvals waiting → open". "stop" runs the kill switch. Esc or clicking away closes it.
   - **Code and tests:** `lib/quick.js` (rows, prefix matching, wrap-around) is pure and tested. The window uses the same locked-down preferences and CSP as the others, and the static security test now covers `quick.html` and `quick.js`. The e2e opens Quick Ask, checks the rows, starts a task from it and checks that it finishes and the bar hides.
   - 1 new desktop test; 351 passing.
+- M26: Native integration.
+  - **Menu bar / tray icon:** our own lantern glyph, drawn by `scripts/make_tray_icons.py` (stdlib, anti-aliased): a black Template image on macOS, amber elsewhere. Its menu shows the live status ("Working: Clicking at…", "1 approval waiting", "Offline…"), Ask Lantern…, Review approvals / Open Lantern, Stop everything and Quit. On macOS the pending count sits next to the icon.
+  - **Badge:** the app badge shows the number of pending approvals.
+  - **System notifications:** approvals while the panel isn't in front (title only, never values), reminders, and failures. A click opens the panel.
+  - **Code and tests:** the main process follows Lantern's events over its own WebSocket. `lib/native.js` is pure and tested. Mock mode now keeps the platform settings, and the avatar's right-click menu gained "Ask Lantern…". The e2e checks "1 approval waiting", the badge, that it clears, and that no notification carries form values; a test keeps the committed tray PNGs identical to what the script draws.
+  - 1 new Python test plus 1 desktop test; 352 passing.

@@ -269,3 +269,23 @@ test('quick ask rows: ask first, stop on "stop", approvals, filtered suggestions
   assert.equal(Q.move(3, 1, 4), 0);
   assert.equal(Q.move(0, 1, 0), -1);
 });
+
+test('menu bar status, badge and terse notifications', () => {
+  const N = require('../renderer/lib/native.js');
+  assert.equal(N.status(S.initial(), 1, true).line, 'Idle');
+  assert.match(N.status(S.initial(), 1, false).line, /^Offline/);
+  let s = run([{ type: 'task', id: 1, goal: 'g', ts: 1 }, { type: 'form', phase: 'step', action: 'click (1, 2)', badge: 'Muse Wonder', task_id: 1, ts: 2 }]);
+  assert.equal(N.status(s, 3, true).line, 'Working: Clicking at (1, 2)');
+  const req = { type: 'approval', event: 'requested', approval, ts: 4 };
+  s = S.reduce(s, req);
+  assert.deepEqual([N.status(s, 5, true).line, N.status(s, 5, true).badge], ['1 approval waiting', 1]);
+  const n = N.notice(req, s, { panelFocused: false, now: 5 });
+  assert.equal(n.title, 'Lantern needs your OK');
+  assert.equal(n.body, 'Submit this form? Review it in Lantern.');
+  assert.ok(!n.body.includes('Asha'));   // never the values
+  assert.equal(N.notice(req, s, { panelFocused: true }), null);
+  assert.equal(N.notice({ type: 'reminder', text: 'call Priya', late: true }, s, { panelFocused: true }).body,
+    'call Priya (it was due while Lantern was off)');
+  assert.equal(N.notice({ type: 'done', status: 'failed', summary: 'no internet' }, s, {}).title, 'Lantern couldn’t finish');
+  assert.equal(N.notice({ type: 'done', status: 'done', reply: 'ok' }, s, {}), null);
+});
