@@ -86,12 +86,25 @@ async function main() {
                      steps: [...t.querySelectorAll('.steps li')].map((li) => li.textContent) } : null;
       });
     }
-    async function finish(goal, allows) {
+    async function finish(goal, allows, via = 'panel') {
       const before = (await latestTask()) || { status: '' };
       await ask(goal);
       for (let i = 0; i < allows; i++) {
         await panel.waitForSelector('.approval .allow', { timeout: 60000 });
+        if (via === 'island') {   // approve from the live activity island instead of the panel
+          await avatar.waitForSelector('#island-allow', { state: 'visible', timeout: 15000 });
+          await sleep(500);
+          await avatar.screenshot({ path: path.join(OUT, '8-island-approval.png') });
+          await avatar.click('#island-allow');
+          console.log('    ⏸ approved from the island');
+          await until('the card to close', async () => !(await panel.$('.approval .allow')), 15000);
+          continue;
+        }
         const card = await panel.textContent('.approval');
+        if (/Submit this form/.test(card)) {   // read untrusted page content: the island must not offer a quick Allow
+          await avatar.waitForSelector('#island-review', { state: 'visible', timeout: 15000 });
+          check(!(await avatar.isVisible('#island-allow')), 'island offers Review only for a flagged approval');
+        }
         if (/\[object /.test(card)) throw new Error(`approval card shows a rendering bug: ${card.slice(0, 120)}`);
         if (!fs.existsSync(path.join(OUT, '0-approval.png'))) {
           await sleep(400);   // let the sheet finish animating in
@@ -115,8 +128,8 @@ async function main() {
     check(t.steps.some((s) => /Muse Wonder/.test(s)), 'browser steps carry the Muse Wonder badge');
     check(t.steps.some((s) => /Email sent/.test(s)), 'email step shown');
     await panel.screenshot({ path: path.join(OUT, '1-form-verified.png') });
-    const bubble = await until('the avatar bubble', async () => (await avatar.textContent('#bubble')).trim());
-    check(bubble.length > 0, `avatar reacts: “${bubble.slice(0, 60)}”`);
+    const island = await until('the island', async () => (await avatar.textContent('#island-text')).trim());
+    check(/Done/.test(island), `live activity island reports: “${island}” (${(await avatar.textContent('#island-detail')).slice(0, 50)}…)`);
     await avatar.screenshot({ path: path.join(OUT, '1-avatar.png') });
 
     // 2. private file on the local lane, 3. the planted key
@@ -136,7 +149,7 @@ async function main() {
     // 4. projects, 5. the widget
     t = await finish('Which projects use torch?', 0);
     check(/vision-lab/.test(t.reply), 'projects answered from the local map');
-    t = await finish('Make me a water timer.', 1);
+    t = await finish('Make me a water timer.', 1, 'island');
     check(/· done/.test(t.status), 'widget saved after approval');
     await panel.click('.tabs button[data-tab=widgets]');
     await panel.click('#widget-list button >> text=/water/i');
@@ -181,7 +194,7 @@ async function main() {
 
     // STOP from the panel
     await panel.click('#stop');
-    await until('the stop event', async () => /Stopped|stopped/.test(await avatar.textContent('#bubble')), 10000);
+    await until('the stop event', async () => /Stopped/.test(await avatar.textContent('#island-text')), 10000);
     check(true, 'STOP reaches the server and the avatar');
     console.log(`\nall end-to-end checks passed · screenshots in ${OUT}`);
   } catch (e) {

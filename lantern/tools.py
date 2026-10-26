@@ -311,6 +311,9 @@ class Toolbox:
         from .forms import FormError
         if self.forms is None:
             raise ToolError("form filling isn't set up on this computer")
+        # The page's labels and screenshots reach the model while it fills, so the task is tainted from
+        # the moment the page opens: the Submit card is marked, and quick-approve shortcuts are refused.
+        self.tainted = True
         try:
             result = self.forms.fill(url, goal, approve=self._approve, commit=self._commit,
                                      task_id=self.task_id, cancel=self.cancel, on_event=self.on_event)

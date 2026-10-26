@@ -35,8 +35,8 @@ const secure = (preload) => ({
 
 function createAvatar() {
   const { workArea } = screen.getPrimaryDisplay();
-  const w = 240;
-  const h = 320;
+  const w = 340;   // room for the live activity island to expand above the face
+  const h = 430;
   avatar = new BrowserWindow({
     width: w, height: h, x: workArea.x + workArea.width - w - 16, y: workArea.y + workArea.height - h - 8,
     transparent: true, frame: false, alwaysOnTop: true, skipTaskbar: true, resizable: false,

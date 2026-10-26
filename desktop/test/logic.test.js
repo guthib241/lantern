@@ -222,3 +222,30 @@ test('form approvals read as a field list, and fall back to the raw text when un
   assert.ok(odd.summary.includes('just some text'));   // nothing hidden
   assert.equal(C.card({ ...approval, action: 'send_email', summary: 'Send email to a@b.c: “x”.' }, 100).fields, null);
 });
+
+test('live activity: what the pill says, and quick Allow only for clean approvals', () => {
+  const L = require('../renderer/lib/activity.js');
+  assert.equal(L.activity(S.initial(), 10).mode, 'idle');
+  let s = run([{ type: 'task', id: 1, goal: 'fill the form', ts: 1 },
+               { type: 'form', phase: 'step', action: 'click (412, 315)', badge: 'Muse Wonder', task_id: 1, ts: 2 }]);
+  let a = L.activity(s, 3);
+  assert.deepEqual([a.mode, a.text, a.badge, a.detail], ['working', 'Clicking at (412, 315)', 'Wonder', 'fill the form']);
+  const clean = { ...approval, action: 'save_widget', tainted: false, summary: "Add widget 'water-timer' (4,402 bytes)." };
+  a = L.activity(S.reduce(s, { type: 'approval', event: 'requested', approval: clean, ts: 4 }), 5);
+  assert.equal(a.mode, 'approval');
+  assert.equal(a.text, 'Add this widget?');
+  assert.equal(a.quickAllow, true);
+  a = L.activity(S.reduce(s, { type: 'approval', event: 'requested', approval, ts: 4 }), 5);   // tainted form submit
+  assert.equal(a.quickAllow, false);
+  assert.match(a.detail, /fields$/);
+  const warned = { ...clean, summary: 'Send email to x@evil.test ⚠️ x@evil.test appeared only in a file' };
+  assert.equal(L.activity(S.reduce(s, { type: 'approval', event: 'requested', approval: warned, ts: 4 }), 5).quickAllow, false);
+  assert.equal(L.activity(S.reduce(s, { type: 'approval', event: 'requested', approval: clean, ts: 4 }), 800).quickAllow, false);   // expired
+  s = S.reduce(s, { type: 'done', id: 1, status: 'done', reply: 'Submitted.', ts: 10 });
+  assert.equal(L.activity(s, 12).mode, 'done');
+  assert.equal(L.activity(s, 30).mode, 'idle');
+  assert.equal(L.activity(S.reduce(s, { type: 'reminder', text: 'call Priya', ts: 40 }), 41).text, 'call Priya');
+  assert.equal(L.activity(S.reduce(s, { type: 'stopped', ts: 50 }), 51).mode, 'stopped');
+  assert.equal(L.friendly('type "Asha"'), 'Typing');
+  assert.equal(L.shortBadge('on this computer'), 'Local');
+});

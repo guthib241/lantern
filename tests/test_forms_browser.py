@@ -152,6 +152,7 @@ def test_reimbursement_form_end_to_end(tmp_path, chromium, at):
     assert "Left for you: Organiser portal password" in asked[0] and "Asha Rao" in asked[0]
     a = list(bus._items.values())[0]
     assert a.action == "submit_form" and a.status == "used" and "Asha Rao" not in json.dumps(a.payload)
+    assert a.tainted and asked[0].endswith("[after reading untrusted content]")   # web page = untrusted from the start
     # the computer-use requests follow the native computer tool shape
     first, second = client.requests[1], client.requests[2]
     assert first["tools"] == [{"type": "computer"}]

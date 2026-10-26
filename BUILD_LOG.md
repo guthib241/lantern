@@ -109,3 +109,9 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - A cost meter against the $150 budget.
   - **Bugs found by reviewing screenshots:** nested children rendered as `[object HTMLElement]`, and the status line lost its class. The e2e now fails on any `[object …]`, `undefined` or `NaN` in the panel, and checks dark mode.
   - 2 new desktop tests; 351 passing.
+- M24: Live activity island.
+  - **What it shows:** above Lantern's face, a black capsule says what Lantern is doing right now: "Clicking at (412, 315) · Wonder", "Network wobbly · retrying", "Done · verified", a reminder. It grows into a small card for approvals, results and reminders (spring animation, reduced-motion aware). `lib/activity.js` is pure and tested.
+  - **Approving from the island:** Deny / Allow, bound to the same nonce and payload hash as the panel. Quick **Allow** appears only for clean approvals; anything flagged (untrusted content read, warnings, expired) shows **Review…**, which opens the full sheet in the panel.
+  - **Security fix found while building it:** form tasks were only marked tainted *after* `fill_form` returned, although the page's labels and screenshots had already reached the model. `fill_form` now taints the task before opening the page, so the Submit card is marked "after reading untrusted content" (test added).
+  - The e2e approves the widget from the island and checks that the form submit offers Review only.
+  - 1 new desktop test; 351 passing.
