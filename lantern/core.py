@@ -18,6 +18,7 @@ from . import models
 from .agent import Agent
 from .approvals import ApprovalBus, BusGate
 from .audit import AuditLog, GuardedClient
+from .forms import FormService, FormSettings
 from .memory import Memory
 from .policy import Policy
 from .router import Router, RouterConfig, make_backend
@@ -40,7 +41,8 @@ class NoModelClient:
 class Core:
     def __init__(self, cfg: config_mod.Config, client: Any = None, *, memory: Memory | None = None,
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
-                 bus: ApprovalBus | None = None, approval_timeout: float | None = None):
+                 bus: ApprovalBus | None = None, approval_timeout: float | None = None,
+                 forms: FormService | None = None):
         self.cfg = cfg
         self.memory = memory or Memory(cfg.db_path)
         self.audit = audit or AuditLog(cfg.audit_path)
@@ -51,7 +53,10 @@ class Core:
             client = self._default_client()
         self.client = client if isinstance(client, GuardedClient) else GuardedClient(client, self.audit,
                                                                                      destination=cfg.base_url)
-        self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router)
+        self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
+        self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
+                               forms=self.forms)
+        self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
                            on_event=self._agent_event)
         self._sinks: list[EventSink] = []

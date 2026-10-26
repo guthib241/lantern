@@ -5,6 +5,10 @@
 
 Needs MODEL_API_KEY (skips everything without it). Costs well under $0.05 per run.
 The Glimmer check runs only if LANTERN_GLIMMER_URL is set (local or Modal server).
+The `cua` check (computer use, M7) needs Playwright + Chromium: it shows a calibration page
+with one button at a known spot, asks the forms model (LANTERN_FORMS_MODEL, default Spark)
+to click it with the native computer tool and with the cookbook's function tools, and prints
+which protocol works and whether coordinates come back as pixels or 0..1000.
 Request shapes follow dev.meta.ai/docs and the meta-model-cookbook.
 """
 from __future__ import annotations
@@ -108,6 +112,52 @@ def check_glimmer() -> str:
     return repr((r.choices[0].message.content or "").strip()[:40])
 
 
+CALIBRATION = """<!doctype html><body style="margin:0;width:1280px;height:800px;background:#f6f3fa;font:20px sans-serif">
+<p style="padding:30px">Calibration page. Click the orange OK button.</p>
+<button style="position:absolute;left:1040px;top:620px;width:120px;height:60px;background:#f0782f;color:#fff;
+border:0;border-radius:12px;font-size:22px">OK</button></body>"""
+TARGET = (1100, 650)  # centre of the button, in screenshot pixels
+
+
+def _units(x: float, y: float) -> str:
+    if abs(x - TARGET[0]) < 70 and abs(y - TARGET[1]) < 70:
+        return "pixel"
+    if abs(x - TARGET[0] * 1000 / 1280) < 70 and abs(y - TARGET[1] * 1000 / 800) < 70:
+        return "normalized"
+    return "unclear"
+
+
+def check_cua() -> str:
+    import json as _json
+    from lantern.forms.computer import CUA_RULES, FUNCTION_EXTRA, FUNCTION_TOOLS, NATIVE_TOOL, call_actions, data_url, parse_action
+    from lantern.forms.driver import BrowserDriver, chromium_executable
+    model = models.check_model(os.environ.get("LANTERN_FORMS_MODEL", models.SPARK))
+    with tempfile.TemporaryDirectory() as d, BrowserDriver(Path(d) / "profile", executable_path=chromium_executable()) as b:
+        b.page.set_content(CALIBRATION)
+        shot = data_url(b.screenshot())
+    goal = [{"role": "user", "content": [{"type": "input_text", "text": "Click the orange OK button."},
+                                         {"type": "input_image", "image_url": shot}]}]
+    report = []
+    try:
+        r = client().responses.create(model=model, instructions=CUA_RULES, input=goal, tools=[NATIVE_TOOL])
+        calls = [o for o in r.output if getattr(o, "type", "") == "computer_call"]
+        acts = [a for c in calls for a in call_actions(c) if a["kind"] == "click"]
+        raw = [getattr(c, "model_dump", lambda **k: c)(exclude_none=True) for c in calls]
+        units = _units(acts[0]["x"], acts[0]["y"]) if acts else "no click"
+        report.append(f"native: {units} {_json.dumps(raw, default=str)[:300]}")
+    except Exception as e:
+        report.append(f"native: rejected ({type(e).__name__}: {str(e)[:120]})")
+    r = client().responses.create(model=model, instructions=CUA_RULES + FUNCTION_EXTRA, input=goal,
+                                  tools=FUNCTION_TOOLS, parallel_tool_calls=False)
+    fcs = [o for o in r.output if getattr(o, "type", "") == "function_call" and o.name == "computer.computer"]
+    if fcs:
+        a = parse_action(_json.loads(fcs[0].arguments))
+        report.append(f"function: {_units(a.get('x', -1), a.get('y', -1))} {fcs[0].arguments[:120]}")
+    else:
+        report.append("function: no computer.computer call")
+    return f"{model}: " + " | ".join(report)
+
+
 CHECKS = {
     "spark": (models.SPARK, lambda: check_text(models.SPARK)),
     "wonder": (models.WONDER, lambda: check_text(models.WONDER)),
@@ -115,6 +165,7 @@ CHECKS = {
     "voice": (models.VOICE, check_voice),
     "sam": (models.SAM, check_sam),
     "glimmer": ("glimmer (LANTERN_GLIMMER_URL)", check_glimmer),
+    "cua": ("computer use (forms model)", check_cua),
 }
 
 

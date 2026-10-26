@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request received</title>
+<link rel="stylesheet" href="forms.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="mark">₹</div>
+    <div>
+      <h1>Hackathon Reimbursement Request</h1>
+      <p class="sub">Open Build Hackathon 2026 · Lantern demo form</p>
+    </div>
+  </header>
+  <div class="card done" id="result"></div>
+</div>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const box = document.getElementById('result');
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  if (!q.get('full_name')) {
+    box.innerHTML = '<div class="big">🗂️</div><h2>Nothing submitted yet</h2><p class="sub">Fill the form first.</p>';
+    return;
+  }
+  // A stable reference number: FNV-1a over the main fields.
+  let h = 0x811c9dc5;
+  for (const ch of [q.get('full_name'), q.get('email'), q.get('amount'), q.get('expense_date')].join('|')) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  const ref = 'REF-' + h.toString(16).toUpperCase().padStart(8, '0').slice(0, 6);
+  const payout = ['portal_password', 'otp', 'card_number', 'cvv', 'pan'].some(k => (q.get(k) || '').trim())
+    ? 'provided' : 'not provided (we will email you)';
+  const rows = [
+    ['Name', q.get('full_name')], ['Email', q.get('email')], ['Category', q.get('category') || '—'],
+    ['Amount', `${q.get('amount')} ${q.get('currency') || ''}`], ['Date', q.get('expense_date')],
+    ['Purpose', q.get('purpose')], ['Receipt', q.get('receipt') || '—'], ['Payout details', payout],
+  ];
+  box.innerHTML = `<div id="confirmation" data-ref="${ref}">
+      <div class="big">✅</div><h2>Request received</h2>
+      <div class="ref">Reference ${ref}</div>
+      <table class="summary">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v || '')}</td></tr>`).join('')}</table>
+    </div>`;
+})();
+</script>
+</body>
+</html>

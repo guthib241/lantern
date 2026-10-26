@@ -15,6 +15,7 @@ in the browser can't drive Lantern through localhost.
   GET  /zones, POST /zones {path, zone}
   GET  /memory                      remembered facts
   GET  /usage                       tokens and cost per model
+  GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
   WS   /events?token=...            live events; every step carries a model badge
 """
 from __future__ import annotations
@@ -31,6 +32,7 @@ from pydantic import BaseModel
 from . import __version__, models
 from .approvals import ApprovalError
 from .core import Core
+from .forms import Vault, VaultError
 from .policy import ZONES
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
@@ -61,6 +63,12 @@ class DecisionIn(BaseModel):
 class ZoneIn(BaseModel):
     path: str
     zone: str
+
+
+class ProfileIn(BaseModel):
+    key: str
+    value: str
+    section: str = "profile"
 
 
 def create_app(core: Core, token: str) -> FastAPI:
@@ -142,6 +150,19 @@ def create_app(core: Core, token: str) -> FastAPI:
     @app.get("/usage", dependencies=[Depends(auth)])
     def usage():
         return {"by_model": core.memory.usage_by_model(), "total_usd": core.memory.total_cost()}
+
+    @app.get("/profile", dependencies=[Depends(auth)])
+    def profile():
+        return Vault(core.cfg.profile_path).load()
+
+    @app.post("/profile", dependencies=[Depends(auth)])
+    def set_profile(body: ProfileIn):
+        vault = Vault(core.cfg.profile_path)
+        try:
+            vault.set(body.key, body.value, body.section)
+        except VaultError as e:
+            raise HTTPException(400, str(e))
+        return vault.load()
 
     @app.websocket("/events")
     async def events(ws: WebSocket, token_q: str = Query(default="", alias="token")):

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -40,7 +41,7 @@ class ToolError(Exception):
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None):
+                 router=None, forms=None):
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -49,10 +50,15 @@ class Toolbox:
         self.memory = memory
         self.gate = as_gate(approve)
         self.router = router  # router.Router: the private lane (Muse Glimmer)
+        self.forms = forms    # forms.FormService: Lantern's browser for form filling
         self.tainted = False  # set once untrusted content reached the model in this task
+        self.task_id: int | None = None
+        self.cancel = threading.Event()  # the agent swaps in its own (STOP / kill switch)
+        self.on_event: Callable[[str, dict], None] = lambda kind, data: None
 
-    def begin_task(self) -> None:
+    def begin_task(self, task_id: int | None = None) -> None:
         self.tainted = False
+        self.task_id = task_id
 
     def _approve(self, action: str, summary: str, payload: dict):
         """Ask the gate. Returns commit(payload) on yes, None on no."""
@@ -205,6 +211,20 @@ class Toolbox:
         ok = dst.exists() and not src.exists()  # verify on disk
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
 
+    # ---- forms (computer use) ------------------------------------------------
+    def fill_form(self, url: str, goal: str) -> dict:
+        """Fill a web form in Lantern's own browser; Submit always needs approval."""
+        from .forms import FormError
+        if self.forms is None:
+            raise ToolError("form filling isn't set up on this computer")
+        try:
+            result = self.forms.fill(url, goal, approve=self._approve, commit=self._commit,
+                                     task_id=self.task_id, cancel=self.cancel, on_event=self.on_event)
+        except FormError as e:
+            raise ToolError(str(e)) from e
+        self.tainted = True  # labels and the confirmation text come from a web page
+        return result
+
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
         if self.tainted:  # untrusted text must not be able to plant "facts" silently
@@ -271,5 +291,12 @@ TOOL_SPECS = [
     _fn("remember", "Save a lasting fact about the user or their setup, e.g. key='manager email'.",
         {"key": S, "value": S}, ["key", "value"]),
     _fn("forget", "Delete a remembered fact.", {"key": S}, ["key"]),
+    _fn("fill_form",
+        "Fill a web form in Lantern's own browser from the user's saved profile and the goal. Lantern never types "
+        "passwords, one-time codes, card or ID numbers and stops at CAPTCHAs. Submitting always asks the user first; "
+        "the result says whether the confirmation page was verified.",
+        {"url": {**S, "description": "The form's URL, or the name of a saved form such as 'hackathon reimbursement'"},
+         "goal": {**S, "description": "What to fill in, with details the profile doesn't have (amount, date, purpose, receipt file path)"}},
+        ["url", "goal"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

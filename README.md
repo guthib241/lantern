@@ -33,6 +33,19 @@ python -m lantern --memory                          # what it remembers about yo
 python -m lantern --persona sarcastic
 ```
 
+## Forms (computer use)
+
+Lantern fills web forms in its own browser (a separate Chromium profile with no saved passwords):
+
+```bash
+pip install playwright && python -m playwright install chromium   # once, on your laptop
+python -m lantern --profile-set "full name" "Asha Rao"              # the local profile vault
+python -m lantern "fill the hackathon reimbursement form: taxi 2400 INR on 25 Oct"
+python scripts/smoke.py cua                                         # check computer use against the real API
+```
+
+It never types passwords, one-time codes, card or ID numbers, stops at CAPTCHAs ("you do this part"), and always asks before Submit, with the approval bound to a hash of every value. Afterwards it checks the confirmation page and saves a screenshot. Set `LANTERN_FORMS_MODEL=muse-wonder-1.0` for final runs and `LANTERN_FORMS_HEADLESS=0` to watch it work.
+
 ## Tests
 
 ```bash

@@ -16,6 +16,7 @@ import sys
 from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
+from .forms import FormService, FormSettings, Vault, VaultError
 from .memory import Memory
 from .policy import ZONES, Policy
 from .router import Router, RouterConfig, make_backend
@@ -31,6 +32,8 @@ def ask_approval(description: str) -> bool:
 
 
 def show_event(kind: str, data: dict) -> None:
+    if kind == "form" and data.get("phase") == "step":
+        print(f"    [{data.get('badge')}] {data.get('action')}")
     if kind == "tool" and data["name"] != "finish":
         args = ", ".join(f"{k}={v!r}"[:60] for k, v in data["args"].items())
         mark = "✗" if "error" in data["result"] else "•"
@@ -95,7 +98,9 @@ def build_agent(cfg, mem: Memory) -> Agent:
     client = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key), audit, destination=cfg.base_url)
     policy = Policy.load(cfg.zones_file, cfg.roots)
     router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
-    tools = Toolbox(policy, mem, ask_approval, router=router)
+    forms = FormService(FormSettings.from_config(cfg), client, policy, mem)
+    tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms)
+    tools.on_event = show_event
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
 
 
@@ -109,6 +114,9 @@ def main(argv=None) -> None:
     p.add_argument("--zones", action="store_true", help="show privacy zones")
     p.add_argument("--audit", action="store_true", help="what left this laptop today")
     p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
+    p.add_argument("--profile", action="store_true", help="show the form profile vault")
+    p.add_argument("--profile-set", nargs=2, metavar=("KEY", "VALUE"), help="save a profile answer for forms")
+    p.add_argument("--form-bookmark", nargs=2, metavar=("NAME", "URL"), help="save a form's URL under a name")
     p.add_argument("--persona", choices=sorted(PERSONAS))
     p.add_argument("--serve", action="store_true", help="run the local API server for the desktop app and channels")
     p.add_argument("--port", type=int, default=8765)
@@ -134,6 +142,20 @@ def main(argv=None) -> None:
             policy.save(cfg.zones_file)
         for z in policy.describe():
             print(f"{z['zone']:<9} {z['path']}")
+        return
+    if a.profile or a.profile_set or a.form_bookmark:
+        vault = Vault(cfg.profile_path)
+        try:
+            if a.profile_set:
+                vault.set(*a.profile_set)
+            if a.form_bookmark:
+                vault.set(*a.form_bookmark, section="forms")
+        except VaultError as e:
+            sys.exit(f"✗ {e}")
+        data = vault.load()
+        for section in ("profile", "answers", "forms"):
+            for k, v in data[section].items():
+                print(f"{section:<8} {k}: {v}")
         return
     if a.memory:
         facts = mem.facts()

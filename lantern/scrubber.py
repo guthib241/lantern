@@ -145,8 +145,12 @@ class Scrubber:
         return whole[:start] + f"[REDACTED:{pat.kind}]" + whole[end:]
 
     def scrub_obj(self, obj: Any, found: Counter | None = None) -> tuple[Any, Counter]:
-        """Scrub every string inside dicts/lists (keys are left alone)."""
+        """Scrub every string inside dicts/lists (keys are left alone).
+        Base64 data URLs (screenshots) are left untouched: regexes can't see pixels, and a
+        PAN- or IBAN-shaped run inside the base64 would otherwise corrupt the image."""
         found = Counter() if found is None else found
+        if isinstance(obj, str) and is_data_url(obj):
+            return obj, found
         if isinstance(obj, str):
             r = self.scrub(obj)
             found.update(r.redactions)
@@ -156,6 +160,13 @@ class Scrubber:
         if isinstance(obj, (list, tuple)):
             return [self.scrub_obj(v, found)[0] for v in obj], found
         return obj, found
+
+
+DATA_URL = re.compile(r"^data:[\w.+-]+/[\w.+-]+;base64,[A-Za-z0-9+/=]*$")
+
+
+def is_data_url(text: str) -> bool:
+    return text.startswith("data:") and DATA_URL.match(text) is not None
 
 
 DEFAULT = Scrubber()

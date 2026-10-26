@@ -29,3 +29,13 @@ class FakeClient:
         out, text = item[0], item[1]
         u = item[2] if len(item) > 2 else None
         return NS(id=f"resp_{len(self.requests)}", output=out, output_text=text, usage=u)
+
+
+def computer_call(cid, *actions, checks=None):
+    """A native `computer_call` output item with an ordered `actions` list."""
+    return NS(type="computer_call", call_id=cid, actions=list(actions),
+              pending_safety_checks=list(checks or []), status="completed")
+
+
+def click(x, y, button="left"):
+    return {"type": "click", "button": button, "x": x, "y": y}

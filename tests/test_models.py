@@ -126,5 +126,5 @@ def test_smoke_skips_without_key(monkeypatch, capsys):
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None, raising=False)
     assert smoke.main([]) == 0
     out = capsys.readouterr().out
-    assert out.count("SKIP") == 6
+    assert out.count("SKIP") == len(smoke.CHECKS) == 7
     assert smoke.tiny_png().startswith(b"\x89PNG")
