@@ -4,107 +4,147 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
+<meta name="color-scheme" content="light dark">
 <title>Lantern</title>
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand"><span class="mark" id="mark">🏮</span><div><b>Lantern</b><small id="conn">connecting…</small></div></div>
-    <span class="pill" id="today-cost" title="Model spend so far">$0.00</span>
-    <button class="stop" id="stop" title="Stop everything (Ctrl/Cmd+Shift+X)">STOP</button>
+  <!-- Lantern's own line icons (24x24, stroke). Referenced with <use href="#i-…">. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-today" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M8 12.4l2.8 2.8L16.4 9.4"/></symbol>
+      <symbol id="i-privacy" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.6"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.5v2.2"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.8" width="10" height="18.4" rx="2.8"/><path d="M10.6 18.2h2.8"/></symbol>
+      <symbol id="i-costs" viewBox="0 0 24 24"><path d="M5 20v-6M10 20V6.5M15 20v-9M20 20v-11.5"/></symbol>
+      <symbol id="i-widgets" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
+      <symbol id="i-setup" viewBox="0 0 24 24"><path d="M4 7.5h9.5M18.5 7.5H20M4 16.5h3.5M12.5 16.5H20"/><circle cx="16" cy="7.5" r="2.3"/><circle cx="10" cy="16.5" r="2.3"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6L20 20"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></symbol>
+      <symbol id="i-lantern" viewBox="0 0 24 24"><path d="M9.8 4.7a2.2 2.2 0 0 1 4.4 0"/><path d="M8.2 6.6h7.6M9.2 20.4h5.6"/><rect x="6.8" y="6.6" width="10.4" height="13.8" rx="4.4"/><path d="M12 10.2c1.4 1.4 1.9 2.5 1.9 3.5a1.9 1.9 0 0 1-3.8 0c0-1 .5-2.1 1.9-3.5z"/></symbol>
+    </defs>
+  </svg>
+
+  <header class="toolbar">
+    <div class="app-icon" id="mark" aria-hidden="true"><svg class="ico"><use href="#i-lantern"/></svg></div>
+    <div class="title-block">
+      <div class="app-name">Lantern</div>
+      <div class="status" id="conn">connecting…</div>
+    </div>
+    <span class="capsule" id="today-cost" title="Model spend so far">$0.00</span>
+    <button class="stop" id="stop" title="Stop everything (Ctrl/Cmd+Shift+X)">Stop</button>
   </header>
 
-  <section id="approvals" class="approvals" aria-live="polite"></section>
-
-  <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="tasks" class="on">Tasks</button>
-    <button role="tab" data-tab="privacy">Privacy</button>
-    <button role="tab" data-tab="phone">Phone</button>
-    <button role="tab" data-tab="costs">Costs</button>
-    <button role="tab" data-tab="widgets">Widgets</button>
-    <button role="tab" data-tab="setup">Setup</button>
-  </nav>
+  <section id="approvals" class="approvals" aria-live="assertive"></section>
 
   <main>
-    <section data-panel="tasks" class="on">
+    <section data-panel="tasks" class="on" aria-label="Today">
+      <div class="large-title">
+        <p class="eyebrow" id="today-date"></p>
+        <h1 id="today-greeting">Today</h1>
+      </div>
       <form id="ask" class="ask">
-        <input id="goal" autocomplete="off" placeholder="Ask Lantern… e.g. fill the hackathon reimbursement form" maxlength="2000">
-        <button type="submit">Go</button>
+        <svg class="ico lead" aria-hidden="true"><use href="#i-search"/></svg>
+        <input id="goal" autocomplete="off" placeholder="Ask Lantern to do something…" maxlength="2000" aria-label="Ask Lantern">
+        <button type="submit" class="send" aria-label="Go" title="Go (Return)"><svg class="ico"><use href="#i-send"/></svg></button>
       </form>
-      <div class="checkin">
-        <select id="checkin-concept" aria-label="What to look for"></select>
-        <button id="checkin" class="ghost" title="One snapshot, objects only, nothing stored">📷 Check-in</button>
-      </div>
-      <div id="reminders" class="reminders" hidden></div>
+      <div class="suggestions" id="suggestions" aria-label="Suggestions"></div>
+      <div class="glance" id="glance" aria-live="polite"></div>
+      <div id="reminders" class="group" hidden></div>
       <div id="tasks" class="tasks"></div>
-    </section>
-
-    <section data-panel="setup">
-      <div class="card">
-        <h3>Setup check</h3>
-        <p class="hint">What Lantern needs on this computer, and the exact fix for anything missing. Read-only: nothing is created or sent.</p>
-        <p class="headline" id="ready-demo">…</p>
-        <p class="hint" id="ready-rehearsal"></p>
-        <div id="doctor"></div>
-        <button class="ghost" id="doctor-again">Check again</button>
+      <div class="group checkin-group">
+        <div class="row">
+          <span class="row-icon teal"><svg class="ico"><use href="#i-camera"/></svg></span>
+          <div class="row-text"><b>Camera check-in</b><small>One snapshot, objects only, nothing stored</small></div>
+        </div>
+        <div class="row checkin">
+          <select id="checkin-concept" aria-label="What to look for"></select>
+          <button id="checkin" class="tinted">Check</button>
+        </div>
       </div>
     </section>
 
-    <section data-panel="privacy">
-      <div class="card">
-        <h3>What left my laptop today</h3>
-        <p class="headline" id="audit-headline">…</p>
-        <p class="private" id="audit-private"></p>
+    <section data-panel="privacy" aria-label="Privacy">
+      <div class="large-title"><p class="eyebrow">Today</p><h1>Privacy</h1></div>
+      <div class="group">
+        <div class="hero">
+          <p class="hero-number" id="audit-headline">…</p>
+          <p class="hero-good" id="audit-private"></p>
+        </div>
         <table class="rows" id="audit-rows"></table>
-        <p class="redactions" id="audit-redactions"></p>
+        <p class="footnote warn-text" id="audit-redactions"></p>
       </div>
-      <div class="card">
-        <h3>Privacy zones</h3>
-        <p class="hint">hidden: never listed · private: only the local model reads it · open: readable, scrubbed before sending · writable: Lantern may change files (after you approve)</p>
+      <h2 class="section">Privacy zones</h2>
+      <div class="group">
         <div id="zones"></div>
-        <form id="zone-add" class="zone-add">
-          <input id="zone-path" placeholder="/path/to/folder" autocomplete="off">
-          <select id="zone-kind"><option>private</option><option>open</option><option>writable</option><option>hidden</option></select>
-          <button type="submit">Set</button>
+        <form id="zone-add" class="zone-add row">
+          <input id="zone-path" placeholder="Add a folder…" autocomplete="off" aria-label="Folder path">
+          <select id="zone-kind" aria-label="Zone"><option>private</option><option>open</option><option>writable</option><option>hidden</option></select>
+          <button type="submit" class="tinted">Set</button>
         </form>
       </div>
-      <div class="card">
-        <h3>Forget</h3>
-        <p class="hint">Lantern's memory and audit log are encrypted on disk. Forgetting deletes for good: rows are overwritten and the files rebuilt.</p>
-        <button id="forget-all" class="danger">Forget everything</button>
+      <p class="footnote">Hidden: never listed. Private: only the local model reads it. Open: readable, scrubbed before sending. Writable: Lantern may change files, after you approve.</p>
+      <h2 class="section">Memory</h2>
+      <div class="group">
+        <button id="forget-all" class="row destructive">Forget everything…</button>
       </div>
+      <p class="footnote">Lantern's memory and audit log are encrypted on disk. Forgetting deletes for good: rows are overwritten and the files rebuilt.</p>
     </section>
 
-    <section data-panel="phone">
+    <section data-panel="phone" aria-label="Phone">
+      <div class="large-title"><p class="eyebrow">WhatsApp · Telegram</p><h1>Phone</h1></div>
       <div class="phone">
-        <div class="phone-top">WhatsApp · Lantern <small id="phone-note"></small></div>
+        <div class="phone-top"><span class="dot"></span><div><b>Lantern</b><small id="phone-note"></small></div></div>
         <div class="phone-msgs" id="phone-msgs"></div>
         <form id="phone-form" class="phone-form">
-          <input id="phone-text" placeholder="Message Lantern as the owner" autocomplete="off">
-          <button type="submit">Send</button>
+          <input id="phone-text" placeholder="Message" autocomplete="off" aria-label="Message Lantern as the owner">
+          <button type="submit" class="send" aria-label="Send"><svg class="ico"><use href="#i-send"/></svg></button>
         </form>
       </div>
     </section>
 
-    <section data-panel="costs">
-      <div class="card">
-        <h3>Spend by model</h3>
+    <section data-panel="costs" aria-label="Costs">
+      <div class="large-title"><p class="eyebrow">Meta Model API</p><h1>Costs</h1></div>
+      <div class="group">
+        <div class="hero">
+          <p class="hero-number" id="cost-total">…</p>
+          <div class="meter" aria-hidden="true"><span id="cost-bar"></span></div>
+        </div>
         <table class="rows" id="cost-rows"></table>
-        <p class="hint" id="cost-total"></p>
       </div>
     </section>
 
-    <section data-panel="widgets">
-      <div class="card">
-        <h3>Widgets</h3>
-        <p class="hint">Little tools Lantern writes for you. They run sandboxed: no network, no files, only a notify button and their own storage.</p>
-        <div id="widget-list" class="widget-list"></div>
-      </div>
+    <section data-panel="widgets" aria-label="Widgets">
+      <div class="large-title"><p class="eyebrow">Sandboxed: no network, no files</p><h1>Widgets</h1></div>
+      <div id="widget-list" class="widget-list"></div>
       <iframe id="widget-host" class="widget-host" sandbox="allow-scripts" src="widget-host.html" title="Widget"></iframe>
+    </section>
+
+    <section data-panel="setup" aria-label="Setup">
+      <div class="large-title"><p class="eyebrow">This computer</p><h1>Setup</h1></div>
+      <div class="group">
+        <div class="hero">
+          <p class="hero-number small" id="ready-demo">…</p>
+          <p class="footnote" id="ready-rehearsal"></p>
+        </div>
+      </div>
+      <div class="group" id="doctor"></div>
+      <div class="group"><button class="row link" id="doctor-again">Check again</button></div>
+      <p class="footnote">Read-only: checking creates nothing and sends nothing.</p>
     </section>
   </main>
 
-  <div id="toast" class="toast" hidden></div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="tasks" class="on" aria-selected="true"><svg class="ico"><use href="#i-today"/></svg><span>Today</span></button>
+    <button role="tab" data-tab="privacy"><svg class="ico"><use href="#i-privacy"/></svg><span>Privacy</span></button>
+    <button role="tab" data-tab="phone"><svg class="ico"><use href="#i-phone"/></svg><span>Phone</span></button>
+    <button role="tab" data-tab="costs"><svg class="ico"><use href="#i-costs"/></svg><span>Costs</span></button>
+    <button role="tab" data-tab="widgets"><svg class="ico"><use href="#i-widgets"/></svg><span>Widgets</span></button>
+    <button role="tab" data-tab="setup"><svg class="ico"><use href="#i-setup"/></svg><span>Setup</span></button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="../assets/avatar/manifest.js"></script>
   <script src="lib/state.js"></script>
@@ -113,6 +153,7 @@
   <script src="lib/widgets.js"></script>
   <script src="lib/api.js"></script>
   <script src="lib/setup.js"></script>
+  <script src="lib/today.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

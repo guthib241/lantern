@@ -190,3 +190,35 @@ test('audit view is honest in rehearsal: nothing actually left', () => {
   assert.equal(A.view(audit, { rehearsal: true }).headline,
     '2.0 KB would have left this laptop today, in 2 calls (rehearsal: nothing was sent)');
 });
+
+test('today: glance tiles and suggestions', () => {
+  const T = require('../renderer/lib/today.js');
+  const now = new Date(2026, 9, 27, 15, 0).getTime() / 1000;
+  let s = run([{ type: 'task', id: 1, goal: 'g', ts: now - 60 },
+               { type: 'tool', name: 'fill_form', result: { verified: true }, task_id: 1, ts: now - 50 },
+               { type: 'done', id: 1, status: 'done', reply: 'ok', ts: now - 40 },
+               { type: 'usage', badge: 'Muse Spark', cost_usd: 0.0123, task_id: 1, ts: now - 45 }]);
+  let tiles = T.glance(s, { now, reminders: [{ due: 'today 18:00', text: 'send the video' }] });
+  assert.deepEqual(tiles.map((t) => [t.id, t.value]), [['needs', '0'], ['done', '1'], ['next', 'today 18:00'], ['spend', '$0.01']]);
+  assert.equal(tiles[1].note, '1 verified');
+  s = S.reduce(s, { type: 'approval', event: 'requested', approval, ts: now });
+  tiles = T.glance(s, { now });
+  assert.equal(tiles[0].value, '1');
+  assert.equal(tiles[0].tone, 'orange');
+  assert.equal(tiles[2].value, '—');
+  assert.equal(T.greeting(now), 'Good afternoon');
+  assert.ok(T.SUGGESTIONS.length >= 4 && T.SUGGESTIONS.every((x) => x.label && x.goal));
+  const yesterday = run([{ type: 'done', id: 9, status: 'done', ts: now - 86400 * 2 }]);
+  assert.equal(T.glance(yesterday, { now })[1].value, '0');   // only today counts
+});
+
+test('form approvals read as a field list, and fall back to the raw text when unsure', () => {
+  const ok = C.card({ ...approval, summary: "Submit 'Claim' (local demo): Full name: Asha Rao; Amount: 2400; Note: a: b. Left for you: CVV." }, 100);
+  assert.equal(ok.lead, "Submit 'Claim' (local demo)");
+  assert.deepEqual(ok.fields, [{ label: 'Full name', value: 'Asha Rao' }, { label: 'Amount', value: '2400' }, { label: 'Note: a', value: 'b' }]);
+  assert.deepEqual(ok.leftForYou, ['CVV']);
+  const odd = C.card({ ...approval, summary: "Submit 'Claim': Full name: Asha; just some text" }, 100);
+  assert.equal(odd.fields, null);
+  assert.ok(odd.summary.includes('just some text'));   // nothing hidden
+  assert.equal(C.card({ ...approval, action: 'send_email', summary: 'Send email to a@b.c: “x”.' }, 100).fields, null);
+});

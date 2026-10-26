@@ -33,6 +33,11 @@
       .sort((a, b) => b.raw - a.raw);
     const redactions = Object.entries(c.redactions || {}).map(([k, v]) => `${k.replace(/_/g, ' ')} ×${v}`);
     return {
+      amount: c.calls ? bytes(c.bytes) : '0 bytes',
+      caption: c.calls
+        ? `${rehearsal ? 'would have left' : 'left'} this laptop today, in ${c.calls} call${c.calls === 1 ? '' : 's'}`
+          + (rehearsal ? ' · rehearsal, nothing was sent' : '')
+        : 'nothing has left this laptop today',
       headline: c.calls
         ? `${bytes(c.bytes)} ${rehearsal ? 'would have left' : 'left'} this laptop today, in ${c.calls} call${c.calls === 1 ? '' : 's'}`
           + (rehearsal ? ' (rehearsal: nothing was sent)' : '')

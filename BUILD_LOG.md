@@ -95,3 +95,17 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - In rehearsal, the privacy view says "would have left this laptop (rehearsal: nothing was sent)".
   - `node_modules/` is gitignored; `desktop/package-lock.json` is committed.
   - 351 passing (including the Electron e2e) and 18 desktop tests.
+
+## Oct 26–27 (design pass)
+- M23: Apple-style design system and panel redesign.
+  - **Design tokens:** system colours, grouped background and separators for light *and* dark, the system font stack (nothing bundled), translucent toolbar and tab bar (backdrop blur), spring-like motion that respects "reduce motion", focus rings, and a high-contrast tweak.
+  - **Panel:**
+    - A bottom tab bar with our own line icons (Ctrl/Cmd+1…6 switch tabs).
+    - Large titles and inset grouped lists.
+    - A **Today** view with a greeting, a search-style ask field, one-tap suggestions and four at-a-glance tiles (needs you, done today, next reminder, spent today).
+    - Task cards with a status ring and collapsible steps.
+    - An approval *sheet* with Deny / Allow (the default action on the right) and form fields shown as a two-column table. It falls back to the raw text whenever parsing isn't exact, so nothing approved is hidden.
+    - The privacy hero is a big number with a caption, and zone rows show the folder name over the path.
+    - A cost meter against the $150 budget.
+  - **Bugs found by reviewing screenshots:** nested children rendered as `[object HTMLElement]`, and the status line lost its class. The e2e now fails on any `[object …]`, `undefined` or `NaN` in the panel, and checks dark mode.
+  - 2 new desktop tests; 351 passing.

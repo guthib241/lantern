@@ -69,7 +69,7 @@ async function main() {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => { if (w.getTitle() === 'Lantern') w.show(); }));
     console.log('desktop app launched (avatar + panel windows)');
 
-    await until('connected header', async () => /rehearsal/.test(await panel.textContent('#conn')));
+    await until('connected header', async () => /rehearsal/i.test(await panel.textContent('#conn')));
     check(true, 'panel connected to the real server and shows rehearsal mode');
     const secure = await panel.evaluate(() => typeof require === 'undefined' && typeof process === 'undefined');
     check(secure, 'renderer has no Node access (sandbox + context isolation)');
@@ -92,6 +92,12 @@ async function main() {
       for (let i = 0; i < allows; i++) {
         await panel.waitForSelector('.approval .allow', { timeout: 60000 });
         const card = await panel.textContent('.approval');
+        if (/\[object /.test(card)) throw new Error(`approval card shows a rendering bug: ${card.slice(0, 120)}`);
+        if (!fs.existsSync(path.join(OUT, '0-approval.png'))) {
+          await sleep(400);   // let the sheet finish animating in
+          await panel.screenshot({ path: path.join(OUT, '0-approval.png') });
+          await avatar.screenshot({ path: path.join(OUT, '0-avatar-approval.png') });
+        }
         await panel.click('.approval .allow');
         console.log(`    ⏸ approved: ${card.replace(/\s+/g, ' ').slice(0, 110)}…`);
         await until('the card to close', async () => !(await panel.$('.approval .allow')) || i < allows - 1, 15000);
@@ -161,6 +167,17 @@ async function main() {
     await panel.click('.tabs button[data-tab=costs]');
     await sleep(500);
     check(/\$0\.00/.test(await panel.textContent('#today-cost')), 'rehearsal cost stays $0.00');
+
+    // dark appearance (macOS/Windows pass the system theme through; headless Linux can't, so emulate it)
+    await panel.emulateMedia({ colorScheme: 'dark' });
+    await panel.click('.tabs button[data-tab=tasks]');
+    await sleep(500);
+    const dark = await panel.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    check(dark === 'rgb(0, 0, 0)', `dark appearance applies (${dark})`);
+    await panel.screenshot({ path: path.join(OUT, '7-dark.png') });
+    await panel.emulateMedia({ colorScheme: 'light' });
+
+    check(!/\[object |undefined|NaN/.test(await panel.textContent('main')), 'no rendering glitches ([object …], undefined, NaN) anywhere in the panel');
 
     // STOP from the panel
     await panel.click('#stop');

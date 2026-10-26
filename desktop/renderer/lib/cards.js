@@ -14,6 +14,10 @@
     cua_safety_check: 'Safety check from the browser model',
     save_widget: 'Add this widget?',
     run_in_project: 'Run this command?',
+    organize_files: 'Tidy these files?',
+    set_reminder: 'Set this reminder?',
+    cancel_reminder: 'Cancel this reminder?',
+    mcp_call: "Use another program's tool?",
   };
   const UNTRUSTED_MARK = '[after reading untrusted content]';
 
@@ -34,11 +38,14 @@
     const main = pieces.shift();
     for (const w of pieces) warnings.push(w.trim());
     const remaining = (approval.expires_at || 0) - now;
+    const parsed = approval.action === 'submit_form' ? formFields(main) : null;
     return {
       id: approval.id,
       action: approval.action,
       title: TITLES[approval.action] || `Allow ${String(approval.action || 'this').replace(/_/g, ' ')}?`,
       summary: main,
+      lead: parsed ? parsed.lead : '',
+      fields: parsed ? parsed.fields : null,   // null: show the summary text as is
       warnings,
       leftForYou: left ? left[1].split(/,\s*/) : [],
       untrusted,
@@ -49,10 +56,28 @@
     };
   }
 
+  /** "Submit 'X' (local demo): Full name: Asha; Amount: 2400." -> {lead, fields:[{label, value}]}.
+   *  Only when every piece reads as "label: value"; otherwise null, and the card shows the raw text,
+   *  so nothing the user approves is ever hidden by the layout. */
+  function formFields(text) {
+    const cut = text.indexOf('): ');
+    if (cut < 0) return null;
+    const lead = text.slice(0, cut + 1);
+    const body = text.slice(cut + 3).replace(/\.\s*$/, '');
+    const fields = [];
+    for (const piece of body.split('; ')) {
+      const at = piece.lastIndexOf(': ');
+      if (at <= 0) return null;
+      fields.push({ label: piece.slice(0, at).trim(), value: piece.slice(at + 2).trim() });
+    }
+    const rebuilt = `${lead}: ${fields.map((f) => `${f.label}: ${f.value}`).join('; ')}`;
+    return fields.length && rebuilt.replace(/\.$/, '') === text.replace(/\.\s*$/, '') ? { lead, fields } : null;
+  }
+
   /** The POST /approvals/{id} body: the nonce from the card and the hash it showed. */
   function decision(approval, approve) {
     return { nonce: approval.nonce, approve: !!approve, expected_hash: approval.payload_hash };
   }
 
-  return { card, decision, mmss, TITLES };
+  return { card, decision, mmss, formFields, TITLES };
 });

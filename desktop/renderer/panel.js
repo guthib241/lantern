@@ -11,7 +11,7 @@
   // Lantern's Muse-made face in the header, when the avatar sheet exists.
   const face = ((window.LanternAvatarManifest || {}).expressions || {}).idle;
   if (face && /\.(webp|png)$/.test(face.file)) {
-    const img = h('img', { src: `../assets/avatar/${face.file}`, alt: 'Lantern', class: 'face' });
+    const img = h('img', { src: `../assets/avatar/${face.file}`, alt: 'Lantern' });
     $('mark').replaceChildren(img);
   }
 
@@ -36,25 +36,43 @@
     return h('span', { class: 'chip ' + kind }, b);
   }
 
+  function bellIcon() {   // our own static icon from the sprite in panel.html
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ico');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#i-bell');
+    svg.append(use);
+    return svg;
+  }
+
   function toast(text) {
     const t = $('toast');
     t.textContent = text;
     t.hidden = false;
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => { t.hidden = true; }, 4000);
+    toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
   }
 
   // ---- tabs ---------------------------------------------------------------------------------
   const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets, setup: loadDoctor };
+  const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
-  for (const b of document.querySelectorAll('.tabs button')) {
-    b.addEventListener('click', () => {
-      tab = b.dataset.tab;
-      document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
-      document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('on', s.dataset.panel === tab));
-      if (loaders[tab]) loaders[tab]();
-    });
+  function showTab(name) {
+    tab = name;
+    tabButtons.forEach((x) => { x.classList.toggle('on', x.dataset.tab === name); x.setAttribute('aria-selected', String(x.dataset.tab === name)); });
+    document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('on', s.dataset.panel === name));
+    window.scrollTo({ top: 0 });
+    if (loaders[name]) loaders[name]();
   }
+  for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab));
+  // Ctrl/Cmd+1…6 switch sections, like any native app with a tab bar.
+  window.addEventListener('keydown', (e) => {
+    const n = Number(e.key);
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && n >= 1 && n <= tabButtons.length) {
+      e.preventDefault();
+      showTab(tabButtons[n - 1].dataset.tab);
+    }
+  });
 
   // ---- approvals ------------------------------------------------------------------------------
   async function decide(a, approve) {
@@ -71,21 +89,27 @@
     box.textContent = '';
     for (const a of LanternState.pendingList(state)) {
       const c = LanternCards.card(a, now());
-      box.append(h('div', { class: 'approval' },
-        h('div', { class: 'meta' }, h('span', {}, `#${c.id} · ${a.action}`), h('span', {}, c.expired ? 'expired' : `expires in ${c.expiresIn}`)),
+      box.append(h('div', { class: 'approval', role: 'alertdialog', 'aria-label': c.title },
+        h('div', { class: 'meta' }, h('span', {}, `#${c.id}`), h('span', {}, c.expired ? 'expired' : `expires in ${c.expiresIn}`)),
         h('h3', {}, c.title),
-        h('p', { class: 'summary' }, c.summary),
+        c.fields
+          ? [h('p', { class: 'summary lead' }, c.lead),
+             h('dl', { class: 'fields' }, c.fields.flatMap((f) => [h('dt', {}, f.label), h('dd', {}, f.value)]))]
+          : h('p', { class: 'summary' }, c.summary),
         c.untrusted ? h('div', { class: 'warn untrusted' }, 'Lantern read untrusted content (a file, web page or email) during this task. Check the details.') : null,
         c.warnings.map((w) => h('div', { class: 'warn' }, w)),
         c.leftForYou.length ? h('p', { class: 'left' }, 'Left for you: ' + c.leftForYou.join(', ')) : null,
         h('div', { class: 'hash' }, `bound to sha256 ${c.hash}…`),
-        h('div', { class: 'row' },
-          h('button', { class: 'allow', disabled: c.expired, onclick: () => decide(a, true) }, c.allowLabel),
-          h('button', { class: 'deny', onclick: () => decide(a, false) }, 'Deny'))));
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'deny', onclick: () => decide(a, false) }, 'Deny'),
+          h('button', { class: 'allow', disabled: c.expired, onclick: () => decide(a, true) }, c.allowLabel))));
     }
   }
 
   // ---- tasks ------------------------------------------------------------------------------------
+  const STATE_MARK = { done: '✓', failed: '!', cancelled: '✕', interrupted: '‖', resumed: '↻' };
+  const openSteps = new Set();   // tasks whose steps the user expanded
+
   function renderTasks() {
     const box = $('tasks');
     box.textContent = '';
@@ -95,35 +119,67 @@
       box.append(h('div', { class: 'interrupted' },
         h('b', {}, `${n} task${n > 1 ? 's were' : ' was'} cut short when Lantern stopped`),
         h('ul', {}, state.interrupted.slice(0, 4).map((t) => h('li', {}, `#${t.id} ${t.goal}`))),
-        h('button', { class: 'ghost', onclick: resumeAll }, 'Resume all')));
+        h('button', { class: 'tinted', onclick: resumeAll }, 'Resume all')));
     }
-    if (!tasks.length && !state.interrupted.length) box.append(h('p', { class: 'empty' }, 'No tasks yet. Try “which projects use torch?”'));
-    for (const t of tasks) {
-      box.append(h('div', { class: 'task' },
-        h('div', { class: 'goal' }, t.goal || `Task #${t.id}`),
-        h('div', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`),
-        h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))),
+    if (!tasks.length && !state.interrupted.length) {
+      box.append(h('p', { class: 'empty' }, 'Nothing yet today. Tap a suggestion, or ask for anything.'));
+    } else if (tasks.length) {
+      box.append(h('h2', { class: 'section' }, 'Recent'));
+    }
+    tasks.forEach((t, i) => {
+      const live = t.status === 'running' || t.status === 'queued';
+      const steps = h('details', { open: live || i === 0 || openSteps.has(t.id) || undefined,
+                                   ontoggle: (e) => (e.target.open ? openSteps.add(t.id) : openSteps.delete(t.id)) },
+        h('summary', {}, `${t.steps.length} step${t.steps.length === 1 ? '' : 's'}`),
+        h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))));
+      box.append(h('article', { class: 'task' },
+        h('div', { class: 'head' },
+          h('span', { class: `state ${t.status}`, 'aria-hidden': 'true' }, STATE_MARK[t.status] || ''),
+          h('div', {},
+            h('div', { class: 'goal' }, t.goal || `Task #${t.id}`),
+            h('div', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`))),
+        t.steps.length ? steps : null,
         t.reply ? h('p', { class: 'reply' }, t.reply) : null,
-        ['failed', 'cancelled', 'interrupted'].includes(t.status)
-          ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
-        t.status !== 'running' ? h('button', { class: 'forget', onclick: () => forgetTask(t.id) }, 'Forget') : null));
-    }
+        h('div', { class: 'actions' },
+          ['failed', 'cancelled', 'interrupted'].includes(t.status)
+            ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
+          !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)));
+    });
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
+    renderGlance();
   }
+
+  // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------
+  let upcoming = [];
+  function renderGlance() {
+    const t = now();
+    $('today-date').textContent = LanternToday.dateLine(t);
+    $('today-greeting').textContent = LanternToday.greeting(t);
+    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t }).map((g) =>
+      h('div', { class: `tile ${g.tone}`, 'data-tile': g.id },
+        h('span', { class: 't-label' }, g.label), h('span', { class: 't-value' }, g.value), h('span', { class: 't-note' }, g.note))));
+  }
+  $('suggestions').replaceChildren(...LanternToday.SUGGESTIONS.map((s) => h('button', { class: 'chip-s', type: 'button', onclick: () => {
+    $('goal').value = s.goal;
+    $('goal').focus();
+    $('goal').setSelectionRange(s.goal.length, s.goal.length);
+  } }, s.label)));
 
   // ---- reminders ----------------------------------------------------------------------------------
   async function loadReminders() {
     let items = [];
     try { items = await api.get('/reminders'); } catch (e) { items = []; }
+    upcoming = items;
+    renderGlance();
     const box = $('reminders');
     box.textContent = '';
     box.hidden = !items.length;
     if (!items.length) return;
-    box.append(h('h3', {}, '⏰ Reminders'));
     for (const r of items) {
-      box.append(h('div', { class: 'reminder' },
-        h('span', { class: 'when' }, r.due + (r.repeat ? ` · ${r.repeat}` : '')),
+      box.append(h('div', { class: 'row reminder' },
+        h('span', { class: 'row-icon orange' }, bellIcon()),
         h('span', { class: 'what' }, r.text),
+        h('span', { class: 'when' }, r.due + (r.repeat ? ` · ${r.repeat}` : '')),
         h('button', { class: 'forget', onclick: () => cancelReminder(r) }, 'Cancel')));
     }
   }
@@ -250,7 +306,7 @@
   async function loadPrivacy() {
     try {
       const v = LanternAudit.view(await api.get('/audit'), { rehearsal: !!health.demo });
-      $('audit-headline').textContent = v.headline;
+      $('audit-headline').replaceChildren(h('span', { class: 'big' }, v.amount), h('span', { class: 'caption' }, v.caption));
       $('audit-private').textContent = v.privateLine + (v.selfhosted ? ' · ' + v.selfhosted : '');
       const rows = $('audit-rows');
       rows.textContent = '';
@@ -264,7 +320,8 @@
       for (const zone of z.zones.filter((x) => !folded.includes(x))) {
         const sel = h('select', { onchange: (e) => setZone(zone.path, e.target.value) },
           z.choices.map((c) => h('option', c === zone.zone ? { selected: true } : {}, c)));
-        list.append(h('div', { class: 'zone' }, h('code', {}, zone.path), sel));
+        const name = zone.path.split(/[\\/]/).filter(Boolean).pop() || zone.path;
+        list.append(h('div', { class: 'zone' }, h('div', { class: 'zone-name' }, h('b', {}, name), h('code', {}, zone.path)), sel));
       }
       if (folded.length) list.append(h('p', { class: 'hint' }, `+ ${folded.length} built-in hidden paths that don't exist on this computer`));
     } catch (e) {
@@ -338,7 +395,8 @@
       for (const r of u.by_model) {
         rows.append(h('tr', {}, h('td', {}, r.model), h('td', {}, `${r.calls} calls · ${LanternAudit.money(r.cost_usd)}`)));
       }
-      $('cost-total').textContent = `Total so far: ${LanternAudit.money(u.total_usd)} of the $150 hackathon budget`;
+      $('cost-total').textContent = `${LanternAudit.money(u.total_usd)} of $150 spent`;
+      $('cost-bar').style.width = `${Math.min(100, (u.total_usd / 150) * 100)}%`;
     } catch (e) {
       $('cost-total').textContent = `Can't reach Lantern (${e.message})`;
     }
@@ -356,7 +414,7 @@
       widgets = (await api.get('/widgets')).widgets || [];
     } catch (e) { /* no widget support on this server yet */ }
     if (!widgets.length) list.append(h('p', { class: 'hint' }, 'No widgets yet. Ask “make me a water timer”.'));
-    for (const w of widgets) list.append(h('button', { onclick: () => openWidget(w.name) }, w.title || w.name));
+    for (const w of widgets) list.append(h('button', { onclick: () => openWidget(w.name) }, w.title || w.name, h('small', {}, w.source === 'built-in' ? 'Built in' : 'Made for you')));
   }
 
   async function openWidget(name) {
@@ -393,11 +451,11 @@
     if (e.type === 'reminder') toast(`⏰ ${e.text}`);
     if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
   }, async (up) => {
-    $('conn').textContent = up ? (cfg.mock ? 'connected (mock)' : 'connected') : 'offline: is `python -m lantern --serve` running?';
-    $('conn').className = up ? 'up' : 'down';
+    $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
+    $('conn').className = 'status ' + (up ? 'up' : 'down');
     if (up) {
       try { health = await api.get('/health'); } catch (e) { health = {}; }
-      if (health.demo) $('conn').textContent = 'connected · rehearsal (scripted model, nothing sent)';
+      if (health.demo) $('conn').textContent = 'Rehearsal · scripted model, nothing sent';
       loadReminders();
     }
   });

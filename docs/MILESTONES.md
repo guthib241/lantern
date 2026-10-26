@@ -27,3 +27,9 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M20 ☁ Resume after restart: tasks cut off by a crash or restart are marked interrupted, reported, and can be resumed
 - [x] M21 ☁/💻 `lantern --doctor`: one checklist of everything the laptop needs, with the exact fix for each item (CLI, API, desktop)
 - [x] M22 ☁ Packaging and CI: `pyproject.toml` with a `lantern` command, GitHub Actions running every test
+
+## Design pass (requested: Apple-quality design, innovative and useful)
+- [x] M23 Apple-style design system and panel redesign: system colours with light/dark, translucent toolbar and tab bar, large titles, inset grouped lists, approval sheet with a field table, a Today view with at-a-glance tiles and one-tap suggestions
+- [ ] M24 Live activity pill: Dynamic-Island-style status for the avatar with inline Allow / Deny
+- [ ] M25 Quick Ask: Spotlight-style bar on a global hotkey, native vibrancy / acrylic
+- [ ] M26 Native integration: menu bar icon and menu, notifications for approvals and reminders, badge count
