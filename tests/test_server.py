@@ -144,3 +144,38 @@ def test_token_file_created_private(tmp_path):
     import os
     t = load_token(tmp_path)
     assert t == load_token(tmp_path) and oct(os.stat(tmp_path / "token").st_mode)[-3:] == "600"
+
+
+def test_real_uvicorn_serves_the_event_websocket(tmp_path):
+    """The desktop app talks to a real uvicorn, not the test client: /events must upgrade there too."""
+    import socket
+    import threading
+
+    import uvicorn
+    from websockets.sync.client import connect
+
+    core, _, _ = make(tmp_path, [])
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(create_app(core, TOKEN), host="127.0.0.1", port=port, log_level="error"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        for _ in range(200):
+            if server.started:
+                break
+            time.sleep(0.02)
+        with connect(f"ws://127.0.0.1:{port}/events?token={TOKEN}", origin="null") as ws:
+            import json
+            assert json.loads(ws.recv(timeout=5))["type"] == "hello"
+            assert len(core._sinks) == 1
+        for _ in range(200):  # the window closed: its sink goes away without waiting for an event
+            if not core._sinks:
+                break
+            time.sleep(0.02)
+        assert core._sinks == []
+    finally:
+        server.should_exit = True
+        thread.join(5)
+    assert not thread.is_alive()  # shutdown isn't stuck on a forgotten websocket

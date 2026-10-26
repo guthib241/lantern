@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Widgets inherit this policy: no network, no remote scripts, no plugins. Only inline code and data: images. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">
+<title>Widget host</title>
+<style>
+  html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; color: #6f6680; }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+  #empty { text-align: center; margin-top: 60px; }
+</style>
+</head>
+<body>
+<p id="empty">Pick a widget.</p>
+<script>
+// Loaded by the panel as <iframe sandbox="allow-scripts" src="widget-host.html">: an opaque origin with
+// no access to the panel, Lantern's token or the local server. It runs one widget at a time in a
+// nested sandboxed iframe and relays only bridge messages; the panel re-checks every message.
+(function () {
+  const BRIDGE = '<script>(function(){var n=0,w={};' +
+    'addEventListener("message",function(e){var m=e.data||{};if(m.id&&w[m.id]){w[m.id](m.value);delete w[m.id];}});' +
+    'window.lantern=Object.freeze({notify:function(t){parent.postMessage({type:"notify",text:String(t)},"*");},' +
+    'storage:Object.freeze({get:function(k){return new Promise(function(r){var id="r"+(++n);w[id]=r;' +
+    'parent.postMessage({type:"storage.get",key:String(k),id:id},"*");});},' +
+    'set:function(k,v){parent.postMessage({type:"storage.set",key:String(k),value:v},"*");}})});})();<\/script>';
+  let frame = null;
+  window.addEventListener('message', (ev) => {
+    const m = ev.data || {};
+    if (ev.source === window.parent) {
+      if (m.type === 'lantern.load' && typeof m.html === 'string') {
+        if (frame) frame.remove();
+        document.getElementById('empty').hidden = true;
+        frame = document.createElement('iframe');
+        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.setAttribute('title', 'widget');
+        frame.srcdoc = '<!doctype html><meta charset="utf-8">' + BRIDGE + m.html;
+        document.body.appendChild(frame);
+      } else if (m.type === 'lantern.reply' && frame) {
+        frame.contentWindow.postMessage(m.payload, '*');
+      }
+      return;
+    }
+    if (frame && ev.source === frame.contentWindow) {
+      window.parent.postMessage({ type: 'lantern.widget', payload: m }, '*');
+    }
+  });
+})();
+</script>
+</body>
+</html>

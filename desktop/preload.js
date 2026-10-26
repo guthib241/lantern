@@ -1,0 +1,13 @@
+// The only bridge between the sandboxed renderers and the main process.
+// Exposes a few narrow calls; no Node APIs, no ipcRenderer itself.
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('lantern', {
+  config: () => ipcRenderer.invoke('config'),          // {apiBase, token, mock}
+  stop: () => ipcRenderer.invoke('stop'),
+  onStopped: (fn) => ipcRenderer.on('stopped', (_e, result) => fn(result)),
+  hover: (over) => ipcRenderer.send('avatar:hover', !!over),
+  togglePanel: () => ipcRenderer.send('panel:toggle'),
+  showPanel: () => ipcRenderer.send('panel:show'),
+  avatarMenu: () => ipcRenderer.send('avatar:menu'),
+});

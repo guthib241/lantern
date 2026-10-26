@@ -385,8 +385,10 @@ def test_simulated_phone_routes(tmp_path):
     assert http.post("/channel/fake", json={"text": "hello"}).status_code == 401
     assert http.post("/channel/fake", json={"text": "hello"}, headers=H).json() == {"ok": True}
     settle(core, hub)
-    texts = [m["text"] for m in http.get("/channel/messages", headers=H).json()["messages"]]
-    assert texts[-1] == "Hi! Send me a task." and texts[0].startswith("🏮 On it")
+    msgs = http.get("/channel/messages", headers=H).json()["messages"]
+    assert msgs[0] == {**msgs[0], "text": "hello", "from_owner": True}
+    texts = [m["text"] for m in msgs]
+    assert texts[-1] == "Hi! Send me a task." and texts[1].startswith("🏮 On it")
     assert http.get("/webhook/whatsapp").status_code == 404   # no WhatsApp configured
 
 

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
+<title>Lantern</title>
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark">🏮</span><div><b>Lantern</b><small id="conn">connecting…</small></div></div>
+    <span class="pill" id="today-cost" title="Model spend so far">$0.00</span>
+    <button class="stop" id="stop" title="Stop everything (Ctrl/Cmd+Shift+X)">STOP</button>
+  </header>
+
+  <section id="approvals" class="approvals" aria-live="polite"></section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="tasks" class="on">Tasks</button>
+    <button role="tab" data-tab="privacy">Privacy</button>
+    <button role="tab" data-tab="phone">Phone</button>
+    <button role="tab" data-tab="costs">Costs</button>
+    <button role="tab" data-tab="widgets">Widgets</button>
+  </nav>
+
+  <main>
+    <section data-panel="tasks" class="on">
+      <form id="ask" class="ask">
+        <input id="goal" autocomplete="off" placeholder="Ask Lantern… e.g. fill the hackathon reimbursement form" maxlength="2000">
+        <button type="submit">Go</button>
+      </form>
+      <div id="tasks" class="tasks"></div>
+    </section>
+
+    <section data-panel="privacy">
+      <div class="card">
+        <h3>What left my laptop today</h3>
+        <p class="headline" id="audit-headline">…</p>
+        <p class="private" id="audit-private"></p>
+        <table class="rows" id="audit-rows"></table>
+        <p class="redactions" id="audit-redactions"></p>
+      </div>
+      <div class="card">
+        <h3>Privacy zones</h3>
+        <p class="hint">hidden: never listed · private: only the local model reads it · open: readable, scrubbed before sending · writable: Lantern may change files (after you approve)</p>
+        <div id="zones"></div>
+        <form id="zone-add" class="zone-add">
+          <input id="zone-path" placeholder="/path/to/folder" autocomplete="off">
+          <select id="zone-kind"><option>private</option><option>open</option><option>writable</option><option>hidden</option></select>
+          <button type="submit">Set</button>
+        </form>
+      </div>
+    </section>
+
+    <section data-panel="phone">
+      <div class="phone">
+        <div class="phone-top">WhatsApp · Lantern <small id="phone-note"></small></div>
+        <div class="phone-msgs" id="phone-msgs"></div>
+        <form id="phone-form" class="phone-form">
+          <input id="phone-text" placeholder="Message Lantern as the owner" autocomplete="off">
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </section>
+
+    <section data-panel="costs">
+      <div class="card">
+        <h3>Spend by model</h3>
+        <table class="rows" id="cost-rows"></table>
+        <p class="hint" id="cost-total"></p>
+      </div>
+    </section>
+
+    <section data-panel="widgets">
+      <div class="card">
+        <h3>Widgets</h3>
+        <p class="hint">Little tools Lantern writes for you. They run sandboxed: no network, no files, only a notify button and their own storage.</p>
+        <div id="widget-list" class="widget-list"></div>
+      </div>
+      <iframe id="widget-host" class="widget-host" sandbox="allow-scripts" src="widget-host.html" title="Widget"></iframe>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="lib/state.js"></script>
+  <script src="lib/cards.js"></script>
+  <script src="lib/audit.js"></script>
+  <script src="lib/widgets.js"></script>
+  <script src="lib/api.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

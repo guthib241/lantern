@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*">
+<title>Lantern</title>
+<link rel="stylesheet" href="avatar.css">
+</head>
+<body>
+  <div class="stage">
+    <div class="bubble" id="bubble" hidden></div>
+    <div class="sprite" id="sprite" title="Lantern: click to open, right-click for STOP"></div>
+    <div class="badge" id="badge" hidden></div>
+  </div>
+  <script src="lib/state.js"></script>
+  <script src="lib/expression.js"></script>
+  <script src="lib/sprite.js"></script>
+  <script src="lib/api.js"></script>
+  <script src="avatar.js"></script>
+</body>
+</html>

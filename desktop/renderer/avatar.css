@@ -1,0 +1,24 @@
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+body { font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #2b2236; }
+.stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 6px; }
+.sprite { width: 170px; height: 204px; cursor: pointer; animation: bob 3.2s ease-in-out infinite; filter: drop-shadow(0 8px 18px rgba(240, 120, 47, .35)); }
+.sprite svg, .sprite img, .sprite video { width: 100%; height: 100%; display: block; object-fit: contain; }
+.sprite.sleeping { animation-duration: 6s; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .2)); }
+.sprite.celebrating { animation: hop .6s ease-in-out 3, bob 3.2s ease-in-out 1.8s infinite; }
+.sprite.needs-approval { animation: nudge 1.4s ease-in-out infinite; }
+.sprite.annoyed { animation: shake .35s ease-in-out 2, bob 3.2s ease-in-out .7s infinite; }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-22px) rotate(-4deg); } }
+@keyframes nudge { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+.bubble {
+  max-width: 214px; margin-bottom: 6px; padding: 8px 12px; border-radius: 14px; background: #fff;
+  box-shadow: 0 6px 18px rgba(43, 34, 54, .18); position: relative; cursor: pointer;
+}
+.bubble::after { content: ""; position: absolute; bottom: -7px; left: 50%; margin-left: -7px; border: 7px solid transparent; border-top-color: #fff; border-bottom: 0; }
+.bubble.urgent { background: #6d4aff; color: #fff; font-weight: 600; }
+.bubble.urgent::after { border-top-color: #6d4aff; }
+.badge {
+  position: absolute; top: 4px; right: 8px; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 99px;
+  background: rgba(255, 255, 255, .92); box-shadow: 0 2px 8px rgba(43, 34, 54, .15);
+}

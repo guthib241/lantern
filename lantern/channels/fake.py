@@ -32,6 +32,14 @@ class FakeChannel(Channel):
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         self.acks.append((incoming.button, text))
 
+    def note_owner(self, text: str = "", button: str = "") -> None:
+        """Show the owner's side of the chat too (typed text, or the title of the tapped button)."""
+        if button:
+            titles = [b["title"] for m in self.sent for b in m.get("buttons", []) if b["id"] == button]
+            text = titles[-1] if titles else "(tapped a button)"
+        with self._lock:
+            self.sent.append({"type": "text", "text": text, "ts": time.time(), "from_owner": True})
+
     def messages(self) -> list[dict]:
         with self._lock:
             return list(self.sent)

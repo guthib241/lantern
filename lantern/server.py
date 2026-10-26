@@ -30,7 +30,7 @@ import os
 import secrets
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -209,6 +209,7 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         def phone_send(body: PhoneIn):
             if not (body.text.strip() or body.button):
                 raise HTTPException(400, "send text or a button id")
+            phone.note_owner(body.text.strip(), body.button)
             hub.receive(FakeChannel.incoming(text=body.text, button=body.button, sender=phone.owner))
             return {"ok": True}
 
@@ -224,16 +225,26 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         def sink(event: dict) -> None:
             loop.call_soon_threadsafe(_put, q, event)
 
-        unsubscribe = core.subscribe(sink)
-        try:
+        async def pump() -> None:
             await ws.send_json({"type": "hello", "version": __version__,
                                 "pending": [a.public(include_nonce=True) for a in core.bus.pending()]})
             while True:
                 event = await q.get()
                 await ws.send_json(_jsonable(event))
-        except WebSocketDisconnect:
-            pass
+
+        async def until_closed() -> None:
+            # Notice a closed window right away, not at the next event, so no handler (or sink) leaks.
+            while (await ws.receive())["type"] != "websocket.disconnect":
+                pass
+
+        unsubscribe = core.subscribe(sink)
+        tasks = [asyncio.create_task(pump()), asyncio.create_task(until_closed())]
+        try:
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             unsubscribe()
 
     return app

@@ -12,7 +12,7 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M7 ☁ Forms: Playwright driver + `computer` tool loop (develop on `muse-spark-1.3`), local demo form in `demo/forms/`, hard stops for password/OTP/card/ID/CAPTCHA, Submit → approval, verify confirmation. Tests with Playwright against the demo form and a fake model
 - [x] M8 ☁/💻 Channels: `Channel` interface; WhatsApp webhook (signature check, buttons, voice → ffmpeg → Voice Transcribe); Telegram fallback; STOP keyword. Fake channel for tests
 - [x] M9 ☁ Email: draft → approve (recipient, subject, attachment hashes) → send → verify via IMAP; fake SMTP in tests
-- [ ] M10 ☁/💻 Desktop overlay (Electron): avatar window, chat, approval cards, audit view, zones editor, model badges, widget iframe host
+- [x] M10 ☁/💻 Desktop overlay (Electron): avatar window, chat, approval cards, audit view, zones editor, model badges, widget iframe host
 - [ ] M11 ☁ Muse Image expression sheet script (canonical + edits via Files API) → `desktop/assets/avatar/`
 - [ ] M12 ☁ Environment map + project tools, tested on fake project folders
 - [ ] M13 ☁ Widgets: generator, static checker, sandbox contract; one pre-made water timer
