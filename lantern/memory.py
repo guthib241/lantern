@@ -6,6 +6,7 @@ Three tables:
   tasks  - every goal you give Lantern, with status and a final summary
   steps  - the timeline inside a task (plan, tool calls, results, checks)
   facts  - long-lived things Lantern learned ("manager's email is priya@...")
+  usage  - tokens and USD cost of every model call, per task
 """
 from __future__ import annotations
 
@@ -29,6 +30,16 @@ CREATE TABLE IF NOT EXISTS steps (
     task_id INTEGER NOT NULL REFERENCES tasks(id),
     kind TEXT NOT NULL,      -- plan | tool_call | tool_result | check | note | reply
     content TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER REFERENCES tasks(id),   -- NULL for calls outside a task
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    cached_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
     created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS facts (
@@ -114,6 +125,39 @@ class Memory:
             (task_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- usage / cost --------------------------------------------------------
+    def log_usage(self, task_id: int | None, model: str, input_tokens: int = 0,
+                  cached_tokens: int = 0, output_tokens: int = 0, cost_usd: float = 0.0) -> None:
+        self.db.execute(
+            "INSERT INTO usage (task_id, model, input_tokens, cached_tokens, output_tokens, cost_usd, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (task_id, model, input_tokens, cached_tokens, output_tokens, cost_usd, time.time()),
+        )
+        self.db.commit()
+
+    def task_usage(self, task_id: int) -> dict:
+        """Totals for one task: calls, tokens, cost."""
+        row = self.db.execute(
+            "SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens),0) AS input_tokens,"
+            " COALESCE(SUM(cached_tokens),0) AS cached_tokens,"
+            " COALESCE(SUM(output_tokens),0) AS output_tokens,"
+            " COALESCE(SUM(cost_usd),0) AS cost_usd FROM usage WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        return dict(row)
+
+    def usage_by_model(self, since: float = 0.0) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT model, COUNT(*) AS calls, SUM(input_tokens) AS input_tokens,"
+            " SUM(cached_tokens) AS cached_tokens, SUM(output_tokens) AS output_tokens,"
+            " SUM(cost_usd) AS cost_usd FROM usage WHERE created_at >= ? GROUP BY model ORDER BY model",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def total_cost(self) -> float:
+        return float(self.db.execute("SELECT COALESCE(SUM(cost_usd),0) FROM usage").fetchone()[0])
 
     # ---- facts -------------------------------------------------------------
     def remember(self, key: str, value: str) -> None:

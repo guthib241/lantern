@@ -3,7 +3,7 @@
 Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final step needs the user's laptop (build it with a fake/offline mode so tests pass in the cloud).
 
 - [x] M0 Oct 26 — Agent loop, memory, sandboxed file tools, CLI, tests
-- [ ] M1 ☁ `models.py` registry + cost table; token/cost logging per task; `scripts/smoke.py` (one real call per model, prints OK/fail, skipped if no key)
+- [x] M1 ☁ `models.py` registry + cost table; token/cost logging per task; `scripts/smoke.py` (one real call per model, prints OK/fail, skipped if no key)
 - [ ] M2 ☁ `policy.py` zones (hidden/private/open/writable) + `zones.json`; all tools go through it; hidden paths never listed; tests
 - [ ] M3 ☁ `scrubber.py` (secret + PII patterns incl. Aadhaar, PAN, UPI, card numbers) + `audit.py`; every cloud payload scrubbed and logged with SHA-256; tests with planted fake keys
 - [ ] M4 ☁/💻 `router.py`: private content → Glimmer OpenAI-compatible URL (config), cloud gets only redacted description or Glimmer's answer; fake local backend for tests

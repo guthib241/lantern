@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from . import models
 from .memory import Memory
 from .tools import TOOL_SPECS, Toolbox, ToolError, _fn
 
@@ -51,16 +52,17 @@ class Result:
     reply: str
     steps: int
     tool_calls: list = field(default_factory=list)
+    cost_usd: float = 0.0
 
 
 class Agent:
     def __init__(self, client, memory: Memory, toolbox: Toolbox,
-                 model: str = "muse-spark-1.3", persona: str = "smug",
+                 model: str = models.SPARK, persona: str = "smug",
                  max_steps: int = 20, on_event=None):
         self.client = client
         self.memory = memory
         self.toolbox = toolbox
-        self.model = model
+        self.model = models.check_model(model)
         self.persona = persona if persona in PERSONAS else "smug"
         self.max_steps = max_steps
         self.on_event = on_event or (lambda kind, data: None)
@@ -73,14 +75,30 @@ class Agent:
             + "# Your memory\n" + self.memory.context_block()
         )
 
+    def _create(self, task_id: int, **kw):
+        """One Responses API call; its token usage and cost are logged to the task."""
+        response = self.client.responses.create(model=self.model, **kw)
+        usage = models.Usage.from_response(getattr(response, "usage", None))
+        cost = models.token_cost(self.model, usage)
+        self.memory.log_usage(task_id, self.model, usage.input_tokens, usage.cached_tokens,
+                              usage.output_tokens, cost)
+        self.on_event("usage", {"model": self.model, "badge": models.badge(self.model),
+                                "input_tokens": usage.input_tokens, "cached_tokens": usage.cached_tokens,
+                                "output_tokens": usage.output_tokens, "cost_usd": cost})
+        return response
+
+    def _result(self, task_id: int, status: str, summary: str, reply: str, steps: int, calls: list) -> Result:
+        cost = self.memory.task_usage(task_id)["cost_usd"]
+        return Result(task_id, status, summary, reply, steps, calls, cost)
+
     def run(self, goal: str) -> Result:
         task = self.memory.start_task(goal)
         self.memory.log_step(task.id, "plan", {"goal": goal})
         self.on_event("task", {"id": task.id, "goal": goal})
 
         calls_made: list = []
-        response = self.client.responses.create(
-            model=self.model,
+        response = self._create(
+            task.id,
             instructions=self.instructions(),
             input=goal,
             tools=self.tools,
@@ -95,7 +113,7 @@ class Agent:
                 summary = text.strip().splitlines()[0][:200] if text.strip() else "(no reply)"
                 self.memory.log_step(task.id, "reply", text)
                 self.memory.finish_task(task.id, "done", summary)
-                return Result(task.id, "done", summary, text, step, calls_made)
+                return self._result(task.id, "done", summary, text, step, calls_made)
 
             outputs = []
             finished = None
@@ -132,21 +150,21 @@ class Agent:
             if finished:
                 status, summary = finished
                 # Let the model say its in-character closing line.
-                response = self.client.responses.create(
-                    model=self.model, previous_response_id=response.id,
+                response = self._create(
+                    task.id, previous_response_id=response.id,
                     input=outputs, tools=self.tools,
                 )
                 reply = getattr(response, "output_text", "") or summary
                 self.memory.log_step(task.id, "reply", reply)
                 self.memory.finish_task(task.id, status, summary)
-                return Result(task.id, status, summary, reply, step, calls_made)
+                return self._result(task.id, status, summary, reply, step, calls_made)
 
-            response = self.client.responses.create(
-                model=self.model, previous_response_id=response.id,
+            response = self._create(
+                task.id, previous_response_id=response.id,
                 input=outputs, tools=self.tools,
             )
 
         summary = f"stopped after {self.max_steps} steps without finishing"
         self.memory.log_step(task.id, "note", summary)
         self.memory.finish_task(task.id, "failed", summary)
-        return Result(task.id, "failed", summary, summary, self.max_steps, calls_made)
+        return self._result(task.id, "failed", summary, summary, self.max_steps, calls_made)

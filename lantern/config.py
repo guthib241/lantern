@@ -17,6 +17,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import models
+
 HOME = Path(os.environ.get("LANTERN_HOME", "~/.lantern")).expanduser()
 
 
@@ -24,8 +26,8 @@ HOME = Path(os.environ.get("LANTERN_HOME", "~/.lantern")).expanduser()
 class Config:
     roots: list[str] = field(default_factory=lambda: [str(Path.home() / "Documents")])
     persona: str = "smug"
-    model: str = "muse-spark-1.3"
-    base_url: str = "https://api.meta.ai/v1"
+    model: str = models.SPARK
+    base_url: str = models.BASE_URL
     db_path: str = str(HOME / "memory.db")
 
 

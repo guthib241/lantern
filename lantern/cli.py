@@ -47,11 +47,25 @@ def print_tasks(mem: Memory) -> None:
         print(f"{icon} #{t.id} {fmt_time(t.created_at)}  {t.goal}")
         if t.summary:
             print(f"     → {t.summary}")
+        u = mem.task_usage(t.id)
+        if u["calls"]:
+            print(f"     ${u['cost_usd']:.4f} · {u['input_tokens']} in ({u['cached_tokens']} cached) / {u['output_tokens']} out")
+
+
+def print_usage(mem: Memory) -> None:
+    rows = mem.usage_by_model()
+    if not rows:
+        print("No model calls logged yet.")
+    for r in rows:
+        print(f"{r['model']:<28} {r['calls']:>4} calls  {r['input_tokens']:>9} in"
+              f" ({r['cached_tokens']} cached)  {r['output_tokens']:>8} out  ${r['cost_usd']:.4f}")
+    print(f"Total spent: ${mem.total_cost():.4f}")
 
 
 def print_task(mem: Memory, task_id: int) -> None:
     t = mem.get_task(task_id)
-    print(f"#{t.id} [{t.status}] {t.goal}\n")
+    u = mem.task_usage(task_id)
+    print(f"#{t.id} [{t.status}] {t.goal}  (${u['cost_usd']:.4f}, {u['calls']} model calls)\n")
     for s in mem.steps(task_id):
         print(f"  {fmt_time(s['created_at'])}  {s['kind']:<11} {s['content'][:160]}")
 
@@ -72,6 +86,7 @@ def main(argv=None) -> None:
     p.add_argument("--tasks", action="store_true", help="list recent tasks")
     p.add_argument("--task", type=int, help="show one task's full timeline")
     p.add_argument("--memory", action="store_true", help="show remembered facts")
+    p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
     p.add_argument("--persona", choices=sorted(PERSONAS))
     a = p.parse_args(argv)
 
@@ -84,6 +99,8 @@ def main(argv=None) -> None:
         return print_tasks(mem)
     if a.task:
         return print_task(mem, a.task)
+    if a.usage:
+        return print_usage(mem)
     if a.memory:
         facts = mem.facts()
         print("\n".join(f"- {k}: {v}" for k, v in facts.items()) or "Nothing remembered yet.")
