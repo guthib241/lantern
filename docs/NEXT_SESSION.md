@@ -1,15 +1,19 @@
 # Handoff: from "all milestones built" to "submitted"
 
-State (Oct 26, end of session 3):
-- **M0–M22 are all done** on branch `claude/determined-gates-ubpm6u`, with the PR into `main` superseding https://github.com/guthib241/lantern/pull/1. M18–M22 are the extras added after M17:
-  - reminders
-  - tidying a folder with one approval
-  - resume after restart
-  - the setup doctor
-  - packaging and CI
-- Tests: 348 offline Python tests (fake model, real Chromium on `demo/forms/`, real uvicorn) plus 17 desktop node tests. GitHub Actions runs them, pyflakes, the full rehearsal and the doctor on each PR.
-- `lantern --demo-run` plays the whole 3-minute story offline for $0. `lantern --doctor` lists what the laptop still needs.
-- Nothing has been called against the real Meta API yet ($0 of $150 spent).
+State (Oct 27, end of session 3):
+- **M0–M28 are all done** on branch `claude/determined-gates-ubpm6u`, PR https://github.com/guthib241/lantern/pull/2 (supersedes #1).
+  - M18–M22, extras: reminders, tidy a folder, resume after restart, `lantern --doctor`, packaging + CI.
+  - M23–M28, design pass:
+    - an Apple-style panel (light/dark, Today view, approval sheet with a field table)
+    - the live activity island with safe inline approve
+    - Quick Ask on Ctrl/Cmd+Shift+Space
+    - a menu bar icon, badge and notifications
+    - the welcome sheet and Preferences
+    - the submission kit (`docs/SUBMISSION.md`, `docs/slide/architecture.png`)
+- **Tests:** 354 Python tests plus 23 desktop node tests. They include `desktop/e2e/run.js`, which drives the **real Electron app** against the real server in rehearsal mode (needs `cd desktop && npm install`, plus Xvfb on a headless Linux).
+- **CI:** GitHub Actions jobs are refused by the account's Actions or billing settings, not by the code; the repo stays private at the user's choice. Run the checks by hand before every push.
+- **Real API:** nothing has been called against the real Meta API yet ($0 of $150). The cloud sandbox's network blocks `api.meta.ai`; the user will provide the key (laptop, or allow the domain and add `MODEL_API_KEY` to this environment).
+- **Calibration:** `scripts/smoke.py cua` now ends with the exact `LANTERN_CUA_PROTOCOL=… LANTERN_CUA_COORDS=…` line for `.env`. Those are the names `config.py` reads; earlier docs said `LANTERN_FORMS_*`, which was wrong.
 
 The remaining work is **laptop-side bring-up with real keys, calibration against the real API, polish, the video and the submission**. Deadline: Nov 4, 9:00 PM ET (Nov 5, 7:30 AM IST); aim to submit Nov 4 evening IST.
 
