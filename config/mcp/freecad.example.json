@@ -1,0 +1,18 @@
+{
+  "_about": "Lantern's FreeCAD connector (S17). Merge the 'freecad' entry into ~/.lantern/mcp.json, or let Lantern write it: python -c \"from lantern import config; from lantern.integrations.freecad.connector import add_to_mcp_json; print(add_to_mcp_json(config.load()))\". Paths below are examples for Windows; the env holds no secrets.",
+  "servers": {
+    "freecad": {
+      "command": "C:\\Users\\you\\lantern\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "lantern.integrations.freecad.server"],
+      "cwd": "C:\\Users\\you\\lantern",
+      "env": {
+        "LANTERN_FREECAD_BACKEND": "auto",
+        "LANTERN_FREECAD_CMD": "C:\\Program Files\\FreeCAD 1.0\\bin\\freecadcmd.exe",
+        "LANTERN_FREECAD_ZONES": "C:\\Users\\you\\.lantern\\zones.json",
+        "LANTERN_FREECAD_ROOTS": "C:\\Users\\you\\Documents",
+        "LANTERN_FREECAD_RENDERS": "C:\\Users\\you\\.lantern\\media\\freecad"
+      },
+      "read_only": ["check_model", "distance", "list_objects", "measure", "render_view"]
+    }
+  }
+}

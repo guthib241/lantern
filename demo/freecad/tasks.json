@@ -1,0 +1,220 @@
+{
+ "about": "S17 FreeCAD demo tasks: plain-English goal, the plan Muse Spark is expected to find, and the checks that must pass. Units mm.",
+ "tasks": [
+  {
+   "id": "enclosure",
+   "goal": "Make an enclosure 40x20x15 mm with 2 mm walls and two M3 mounting holes in the floor.",
+   "plan": [
+    [
+     "new_document",
+     {
+      "name": "enclosure_demo"
+     }
+    ],
+    [
+     "box",
+     {
+      "name": "enclosure",
+      "length": 40,
+      "width": 20,
+      "height": 15
+     }
+    ],
+    [
+     "hollow",
+     {
+      "target": "enclosure",
+      "thickness": 2,
+      "open_face": "top"
+     }
+    ],
+    [
+     "hole",
+     {
+      "target": "enclosure",
+      "diameter": 3.4,
+      "x": 6,
+      "y": 10
+     }
+    ],
+    [
+     "hole",
+     {
+      "target": "enclosure",
+      "diameter": 3.4,
+      "x": 34,
+      "y": 10
+     }
+    ],
+    [
+     "check_model",
+     {
+      "name": "enclosure",
+      "size_x": 40,
+      "size_y": 20,
+      "size_z": 15,
+      "hole_count": 2,
+      "hole_diameter": 3.4,
+      "wall": 2
+     }
+    ]
+   ],
+   "expect": {
+    "object": "enclosure",
+    "size": {
+     "x": 40,
+     "y": 20,
+     "z": 15
+    },
+    "holes": {
+     "count": 2,
+     "diameter": 3.4
+    },
+    "wall": 2,
+    "solids": 1
+   }
+  },
+  {
+   "id": "phone_stand",
+   "goal": "Make a phone stand that holds the phone at 60 degrees, 80 mm wide, with a small front lip.",
+   "plan": [
+    [
+     "new_document",
+     {
+      "name": "stand_demo"
+     }
+    ],
+    [
+     "sketch_extrude",
+     {
+      "name": "stand",
+      "points": [
+       [
+        0,
+        0
+       ],
+       [
+        70,
+        0
+       ],
+       [
+        70,
+        5
+       ],
+       [
+        25.77,
+        5.0
+       ],
+       [
+        60.77,
+        65.62
+       ],
+       [
+        55.0,
+        65.62
+       ],
+       [
+        20.0,
+        5.0
+       ],
+       [
+        8,
+        5
+       ],
+       [
+        8,
+        12
+       ],
+       [
+        4,
+        12
+       ],
+       [
+        4,
+        5
+       ],
+       [
+        0,
+        5
+       ]
+      ],
+      "height": 80,
+      "plane": "XZ"
+     }
+    ],
+    [
+     "check_model",
+     {
+      "name": "stand",
+      "size_y": 80,
+      "angle_deg": 60
+     }
+    ]
+   ],
+   "expect": {
+    "object": "stand",
+    "size": {
+     "x": 70,
+     "y": 80,
+     "z": 65.62
+    },
+    "angle_deg": 60,
+    "solids": 1
+   }
+  },
+  {
+   "id": "taller_export",
+   "goal": "Make the enclosure 10 mm taller and export it as an STL for 3D printing.",
+   "after": "enclosure",
+   "plan": [
+    [
+     "set_dimension",
+     {
+      "name": "enclosure",
+      "parameter": "height",
+      "value": 25
+     }
+    ],
+    [
+     "check_model",
+     {
+      "name": "enclosure",
+      "size_x": 40,
+      "size_y": 20,
+      "size_z": 25,
+      "hole_count": 2,
+      "hole_diameter": 3.4,
+      "wall": 2
+     }
+    ],
+    [
+     "export",
+     {
+      "names": [
+       "enclosure"
+      ],
+      "path": "{out}/enclosure.stl",
+      "format": "stl"
+     }
+    ]
+   ],
+   "expect": {
+    "object": "enclosure",
+    "size": {
+     "x": 40,
+     "y": 20,
+     "z": 25
+    },
+    "holes": {
+     "count": 2,
+     "diameter": 3.4
+    },
+    "wall": 2,
+    "solids": 1
+   },
+   "files": [
+    "{out}/enclosure.stl"
+   ]
+  }
+ ]
+}
