@@ -101,6 +101,7 @@ async function main() {
           await avatar.waitForSelector('#island-allow', { state: 'visible', timeout: 15000 });
           await sleep(500);
           await avatar.screenshot({ path: path.join(OUT, '8-island-approval.png') });
+          await avatar.locator('.stage').screenshot({ path: path.join(OUT, '8-island-cut.png'), omitBackground: true });
           await avatar.click('#island-allow');
           console.log('    ⏸ approved from the island');
           await until('the card to close', async () => !(await panel.$('.approval .allow')), 15000);
@@ -144,6 +145,7 @@ async function main() {
     const island = await until('the island', async () => (await avatar.textContent('#island-text')).trim());
     check(/Done/.test(island), `live activity island reports: “${island}” (${(await avatar.textContent('#island-detail')).slice(0, 50)}…)`);
     await avatar.screenshot({ path: path.join(OUT, '1-avatar.png') });
+    await avatar.locator('.stage').screenshot({ path: path.join(OUT, '1-island-cut.png'), omitBackground: true });
 
     // 2. private file on the local lane, 3. the planted key
     t = await finish('What base salary does the offer letter in my Private folder say?', 0);
@@ -230,7 +232,8 @@ async function main() {
     // dark appearance (macOS/Windows pass the system theme through; headless Linux can't, so emulate it)
     await panel.emulateMedia({ colorScheme: 'dark' });
     await panel.click('.tabs button[data-tab=tasks]');
-    await sleep(500);
+    await until('toasts to clear', async () => panel.isHidden('#toast'), 6000);
+    await sleep(300);
     const dark = await panel.evaluate(() => getComputedStyle(document.body).backgroundColor);
     check(dark === 'rgb(0, 0, 0)', `dark appearance applies (${dark})`);
     await panel.screenshot({ path: path.join(OUT, '7-dark.png') });

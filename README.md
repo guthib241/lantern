@@ -1,6 +1,6 @@
 # 🏮 Lantern
 
-[![tests](https://github.com/guthib241/lantern/actions/workflows/ci.yml/badge.svg)](https://github.com/guthib241/lantern/actions/workflows/ci.yml)
+![Lantern: the approval sheet, the Today view in dark mode, Quick Ask and the live activity island](docs/screenshots/hero.png)
 
 **I hate forms. Lantern is an AI that lives on my laptop, does the boring computer work for me (forms, email, files), asks before anything leaves the machine, and never reads my private folder in the cloud.**
 
@@ -84,6 +84,14 @@ flowchart LR
 All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-contributor` models on your data. No other AI provider is used anywhere in the product.
 
 ## On your desktop
+
+| Approve with the full picture | Live activity island | Quick Ask (Ctrl/Cmd+Shift+Space) |
+|---|---|---|
+| ![Approval sheet](docs/screenshots/approval-sheet.png) | ![Island asking for approval](docs/screenshots/island-approval-cut.png) | ![Quick Ask](docs/screenshots/quick-ask.png) |
+| **What left my laptop** | **First launch** | **Setup check and preferences** |
+| ![Privacy](docs/screenshots/privacy.png) | ![Welcome](docs/screenshots/welcome.png) | ![Setup](docs/screenshots/setup.png) |
+
+*Screenshots of the real app (`lantern --serve --demo`), captured by the end-to-end test.*
 
 - **Live activity island:** a black capsule above Lantern's face shows each step as it happens, and grows into a small card for approvals, results and reminders. Clean approvals can be answered right there. Anything that followed untrusted content (every form submit) asks you to **Review** the full sheet.
 - **Quick Ask:** press **Ctrl/Cmd+Shift+Space** anywhere, type, press Return. ↑/↓ for suggestions and recent tasks; "stop" stops everything.
