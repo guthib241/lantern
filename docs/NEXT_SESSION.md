@@ -1,6 +1,6 @@
 # Handoff: from "all milestones built" to "submitted"
 
-## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, S4 self-compiling routines, S0 security backbone, on branch `claude/phase2-core`
+## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, S4 self-compiling routines, S0 security backbone, S8 teach by demonstration, on branch `claude/phase2-core`
 Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albattani-18fmje` (session 5, everything below), plus the parallel session's `demo/portal`, `demo/attacks`, `desktop/board` and `tests/parallel` (PR #3). It goes to main as its own PR. **Do not merge without the user.**
 - **S1 scheduler** (`lantern/scheduler.py`, `lantern/taskrun.py`):
   - 3 tasks at once (`LANTERN_WORKERS`), round-robin.
@@ -34,6 +34,10 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
   - Recipients, links, commands and tool inputs that came from content are flagged on red cards; private values never reach a cloud model (the audited client refuses the request); red is never one tap.
   - `LANTERN_SCREENSHOTS=masked` and `scripts/eval_privacy.py` (raw vs masked on the clean and attack portal). **Run it with the key and put the measured table in the README** (`python scripts/eval_privacy.py --runs 5 --out eval.json`; a few runs with `--forms-model muse-wonder-1.0`). Decoy screens (S7) aren't built.
   - Tests: 17 security, 13 injection (A1-A7, the portal in attack mode in Chromium), 5 eval/masking.
+- **S8 teach once by demonstration** (`lantern/recorder.py`):
+  - The person does a web task once in Lantern's browser (desktop: Costs → *Show Lantern once*; or `lantern --teach URL TASK`); Lantern records labels and values locally and learns it with S4.
+  - Tested end to end on `demo/portal`: taught once, then the same goal runs with 0 model calls.
+  - **For the demo:** run the portal and a second portal as the sandbox, then show it once with `LANTERN_FORMS_HEADLESS=0`. Use the visible browser for the teaching; OS-wide hooks for other apps aren't built (see DECISIONS).
 - **Tested with scripted models only:**
   - 16 scheduler, 14 recovery and 10 ladder tests;
   - `tests/test_scheduler_portal.py`: three phone tasks at once against `demo/portal` in Chromium. One parks on a question while the other two finish, then all six portal pages are filled and the portal's own record checked. This run found and fixed a form-filler bug: it clicked Back instead of Next.
@@ -50,9 +54,9 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
   - **No avatar art for juggling:** there's no Muse Image "juggling" sprite yet. The avatar shows the thinking face with two orbiting lights; `scripts/make_avatar.py` can add one (~$0.01).
 
 ### What Session B must build next (spec order: Tier A; S4 and S0 are done)
-1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure.
+1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure. Then try `lantern --teach` on the laptop with a visible browser.
 2. **S5 extras on the portal:** compile file tasks (rules by pattern, not fixed paths), and a page-flow change, not just moved targets (re-plan one page with the agent, then recompile).
-3. **S8 teach by demonstration** (`lantern/recorder.py`): recorded event fixtures in the cloud, real hooks (pynput / UI Automation) behind a laptop-only flag. Its output is the same Routine Contract S4 compiles and verifies.
+3. **Tier B** (spec order): S9 glasses → laptop handoff with S10 photo-to-scan, S11 Sleep (nightly check and repair), S12 "Do this Reel", S6 Lantern Network.
 
 State (Oct 27, session 5: tested on the live API):
 - **Session 5 (live API testing)** continued on branch `claude/gallant-albattani-18fmje` (PR #1's branch, fast-forwarded to everything from PR #2 plus the fixes below). Which PR to keep is the user's call; see "Open questions".

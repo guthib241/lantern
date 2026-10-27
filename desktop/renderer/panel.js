@@ -171,6 +171,50 @@
     }
   }
 
+  // ---- teach once by demonstration (S8): the start form and the "watching you" card -------------------
+  let teaching = null;   // LanternTeach session while Lantern records
+
+  function renderTeach() {
+    const box = $('teaching');
+    box.textContent = '';
+    const goal = teaching && state.tasks[teaching.taskId] ? state.tasks[teaching.taskId].goal : '';
+    const c = LanternTeach.card(teaching, goal);
+    if (!c) return;
+    const note = h('input', { type: 'text', placeholder: 'Say something about a field (optional)', 'aria-label': 'Note' });
+    box.append(h('div', { class: 'approval teach', role: 'group', 'aria-label': c.title },
+      h('div', { class: 'meta' }, h('span', {}, `#${teaching.taskId}`), h('span', {}, c.count),
+        c.notes ? h('span', {}, c.notes) : null),
+      h('h3', {}, c.title),
+      h('p', { class: 'summary' }, c.text),
+      h('div', { class: 'row-btns' }, note,
+        h('button', { class: 'deny', onclick: () => teachNote(note) }, 'Add note'),
+        h('button', { class: 'allow', onclick: teachDone }, 'Done'))));
+  }
+
+  async function teachStart(ev) {
+    ev.preventDefault();
+    const url = $('teach-url').value.trim(), goal = $('teach-goal').value.trim();
+    const problem = LanternTeach.check(url, goal);
+    if (problem) return toast(problem);
+    try {
+      const r = await api.post('/teach', { url, goal });
+      toast(`Lantern's browser is opening (task #${r.task_id}). Do the task once, then press Done.`);
+    } catch (e) {
+      toast(`Couldn't start: ${e.message}`);
+    }
+  }
+
+  async function teachDone() {
+    try { await api.post('/teach/stop', { task_id: teaching ? teaching.taskId : null }); } catch (e) { toast(e.message); }
+  }
+
+  async function teachNote(input) {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try { await api.post('/teach/note', { task_id: teaching ? teaching.taskId : null, text }); } catch (e) { toast(e.message); }
+  }
+
   function routineChart(r) {   // SVG through DOM calls only
     const NS = 'http://www.w3.org/2000/svg';
     const d = LanternRoutines.chartData(r);
@@ -563,6 +607,8 @@
     }
   }
 
+  $('teach-form').addEventListener('submit', teachStart);
+
   $('phone-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const text = $('phone-text').value.trim();
@@ -643,6 +689,11 @@
     if (e.type === 'budget') toast(`Lantern has spent ${LanternAudit.money(e.spent_usd)} of its ${LanternAudit.money(e.limit_usd)} limit.`);
     if (e.type === 'done' || e.type === 'budget') loadCosts();
     if (e.type === 'learn_offer' && !e.auto) { offers.set(e.task_id, e.goal || ''); renderOffers(); }
+    if (e.type === 'teach') {
+      teaching = LanternTeach.apply(teaching, e);
+      renderTeach();
+      if (e.phase === 'recording') window.lantern.showPanel();
+    }
     if (e.type === 'routine_learned' || e.type === 'routine_healed' || e.type === 'routines' ||
         (e.type === 'done' && tab === 'costs')) loadRoutines();
     if (e.type === 'routine_healed') toast(`The page had changed: healed ${(e.steps || []).length} step(s), now v${e.version}.`);

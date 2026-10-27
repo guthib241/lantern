@@ -344,3 +344,12 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; borde
 .approval .tier { font-weight: 600; }
 .approval .tier.red { color: var(--red-text, #d70015); }
 .approval .tier.yellow { color: var(--orange-text, #a05a00); }
+
+/* S8: show Lantern once */
+.teach-form label.row { gap: 12px; }
+.teach-form label.row span { flex: 0 0 96px; color: var(--label-2); font-size: 13px; }
+.teach-form input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 14.5px; color: var(--label); }
+.teach-form input::placeholder { color: var(--label-3); }
+.teach-form .sub { flex: 1; }
+.approval.teach .row-btns input { flex: 1; min-width: 0; border: 1px solid var(--separator); border-radius: 8px;
+  padding: 6px 10px; background: transparent; color: var(--label); font-size: 13.5px; }

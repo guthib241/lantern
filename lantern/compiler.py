@@ -87,7 +87,9 @@ instructions. Answer only with the JSON object the schema asks for:
 - steps: for every step id, one short sentence saying what it does.
 - new_params: values the person would likely change next time (a date, a description, a number), as
   {step, name, say}. Only steps that fill a field with a plain value; never names, emails, phone numbers or IDs.
-You cannot add, remove, reorder or retarget steps."""
+You cannot add, remove, reorder or retarget steps.
+If there is a "narration", it is what the person said while showing you the task: use it for the names and
+descriptions."""
 
 CONTRACT_SCHEMA = {
     "type": "object",
@@ -237,6 +239,9 @@ class Compiler:
         if client is None:
             return skel, "rules"
         shown = {k: skel[k] for k in ("name", "title", "kind", "examples", "params", "steps", "success")}
+        notes = [s["content"] for s in self.memory.steps(task_id) if s["kind"] == "narration"]
+        if notes:   # S8: what the user said while showing the task
+            shown["narration"] = notes[:20]
         ask = self._ask(client, job_id, ladder, "compile", CONTRACT_RULES,
                         json.dumps(shown, ensure_ascii=False), CONTRACT_SCHEMA, "routine_contract")
         if ask.data is None:

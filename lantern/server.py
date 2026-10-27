@@ -118,6 +118,16 @@ class LearnIn(BaseModel):
     task_id: int
 
 
+class TeachIn(BaseModel):
+    url: str
+    goal: str
+
+
+class TeachNoteIn(BaseModel):
+    task_id: int | None = None
+    text: str = ""
+
+
 class ProfileIn(BaseModel):
     key: str
     value: str
@@ -219,6 +229,22 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    @app.post("/teach", dependencies=[Depends(auth)])
+    def teach(body: TeachIn):
+        """S8: open Lantern's browser and watch the user do the task once; then learn it."""
+        try:
+            return {"task_id": core.teach(body.url, body.goal)}
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/teach/stop", dependencies=[Depends(auth)])
+    def teach_stop(body: TeachNoteIn):
+        return {"stopped": core.teach_stop(body.task_id)}
+
+    @app.post("/teach/note", dependencies=[Depends(auth)])
+    def teach_note(body: TeachNoteIn):
+        return {"noted": core.teach_note(body.task_id, body.text)}
 
     @app.post("/routines/{name}/forget", dependencies=[Depends(auth)])
     def forget_routine(name: str):

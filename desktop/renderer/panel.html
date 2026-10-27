@@ -39,6 +39,7 @@
   <section id="approvals" class="approvals" aria-live="assertive"></section>
   <section id="questions" class="approvals" aria-live="polite" aria-label="Questions from your tasks"></section>
   <section id="offers" class="approvals" aria-live="polite" aria-label="Tasks Lantern can learn"></section>
+  <section id="teaching" class="approvals" aria-live="polite" aria-label="Showing Lantern a task"></section>
 
   <main>
     <section data-panel="tasks" class="on" aria-label="Today">
@@ -118,6 +119,12 @@
       </div>
       <h2 class="section">Learned routines</h2>
       <div class="group" id="routines" aria-live="polite"></div>
+      <h2 class="section">Show Lantern once</h2>
+      <form class="group teach-form" id="teach-form">
+        <label class="row"><span>Web address</span><input id="teach-url" type="url" placeholder="http://127.0.0.1:8770/apply/personal" autocomplete="off"></label>
+        <label class="row"><span>The task</span><input id="teach-goal" type="text" placeholder="apply for a city permit" autocomplete="off"></label>
+        <div class="row"><span class="sub">Lantern opens its browser and watches you do it once, then learns it.</span><button class="tinted" type="submit">Start</button></div>
+      </form>
     </section>
 
     <section data-panel="widgets" aria-label="Widgets">
@@ -203,6 +210,7 @@
   <script src="lib/today.js"></script>
   <script src="lib/receipt.js"></script>
   <script src="lib/routines.js"></script>
+  <script src="lib/teach.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

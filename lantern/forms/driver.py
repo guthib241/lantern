@@ -19,7 +19,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 WIDTH, HEIGHT = 1280, 800
 JPEG_QUALITY = 70
@@ -256,6 +256,40 @@ def prepare_profile(profile_dir: Path) -> None:
         prefs.write_text(json.dumps(PROFILE_PREFS), encoding="utf-8")
 
 
+# S8: what the user does in Lantern's browser while they teach it a task. Every page reports its fields when it
+# loads and again at each click on a button or link (values included, except password fields, which never leave
+# the page), plus each field the user changes. recorder.py turns this into the traces S4 compiles.
+RECORDER_JS = "(() => {\n" + HELPERS + r"""
+if (window.__lanternRecorder) return;
+window.__lanternRecorder = true;
+const send = (ev) => {
+  try { window.__lanternRecord(Object.assign({url: location.href, title: document.title, ts: Date.now()}, ev)); }
+  catch (e) { /* the page outlived the recording */ }
+};
+const fields = () => H.discover().fields.map(f => {
+  const out = {label: f.label, name: f.name, html_id: f.html_id, type: f.type, value: f.value,
+               autocomplete: f.autocomplete, placeholder: f.placeholder, aria_label: f.aria_label, captcha: f.captcha};
+  if (f.options) out.options = f.options.map(o => ({value: o.value, text: o.text}));
+  if (f.type === 'password') out.value = f.value ? '\u2022' : '';   // that it was typed, never what
+  return out;
+});
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!el || !el.matches || !el.matches('input, select, textarea')) return;
+  send({kind: 'field', name: el.getAttribute('name') || '', html_id: el.id || '', type: H.typeOf(el)});
+}, true);
+document.addEventListener('click', (e) => {
+  const b = e.target && e.target.closest && e.target.closest('button, input[type=submit], input[type=image], a, [role=button]');
+  if (!b) return;
+  send({kind: 'click', tag: b.tagName.toLowerCase(), text: (H.txt(b) || b.value || '').slice(0, 60),
+        html_id: b.id || '', name: b.getAttribute('name') || '', type: (b.getAttribute('type') || '').toLowerCase(),
+        href: b.getAttribute('href') || '', in_form: !!(b.form || b.closest('form')), fields: fields()});
+}, true);
+const loaded = () => send({kind: 'page', fields: fields()});
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loaded); else loaded();
+})();"""
+
+
 # S0.5: where the given values show on screen (form controls and text), as boxes in viewport pixels.
 ON_SCREEN = r"""
 const values = (arg || []).map(v => String(v).trim().toLowerCase()).filter(v => v.length >= 3);
@@ -299,9 +333,11 @@ class BrowserDriver:
     """One Chromium session. Use as a context manager."""
 
     def __init__(self, profile_dir: str | Path, *, headless: bool = True, executable_path: str | None = None,
-                 timeout_ms: int = 10_000):
+                 timeout_ms: int = 10_000, guard_submits: bool = True):
         self.profile_dir = Path(profile_dir).expanduser()
         self.headless = headless
+        # False only while a person drives the browser (S8 teaching): their own clicks submit as usual.
+        self.guard_submits = guard_submits
         self.executable_path = executable_path
         self.timeout_ms = timeout_ms
         self._pw = None
@@ -335,7 +371,8 @@ class BrowserDriver:
             self._pw.stop()
             self._pw = None
             raise DriverError(f"couldn't start Chromium: {str(e).splitlines()[0][:200]}") from e
-        self._ctx.add_init_script(SUBMIT_GUARD)
+        if self.guard_submits:
+            self._ctx.add_init_script(SUBMIT_GUARD)
         self._ctx.set_default_timeout(self.timeout_ms)
         self.page = self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
 
@@ -390,6 +427,20 @@ class BrowserDriver:
 
     def screenshot(self) -> bytes:
         return self.page.screenshot(type="jpeg", quality=JPEG_QUALITY, full_page=False)
+
+    def record(self, callback: Callable[[dict], None]) -> None:
+        """S8: call `callback(event)` for what the user does on every page from now on (RECORDER_JS).
+        Events arrive while the Playwright loop runs: keep calling `wait()` while the user works."""
+        self._ctx.expose_binding("__lanternRecord", lambda _source, event: callback(dict(event or {})))
+        self._ctx.add_init_script(RECORDER_JS)
+
+    def confirmation(self, selectors: tuple[str, ...]) -> str:
+        """The text of a visible confirmation element on this page, or ''."""
+        try:
+            el = self.page.query_selector(", ".join(selectors))
+            return (el.inner_text() or "").strip()[:300] if el is not None and el.is_visible() else ""
+        except Exception:   # the page is closing or navigating
+            return ""
 
     def on_screen(self, values: list[str]) -> list[dict]:
         """Boxes where any of these values shows in the viewport (S0.5: how much a screenshot would expose)."""

@@ -129,6 +129,7 @@ class Core:
         self._queue: queue.Queue = queue.Queue()
         self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
         self._undo_lock = threading.Lock()
+        self._teaching: dict[int, dict] = {}   # S8: teaching task -> {"stop": Event, "cancelled": bool}
         self.scheduler = None   # S1: with workers > 0, up to that many tasks run at once (scheduler.py)
         self.compiler = None    # S4: learned routines (compiler.py), with the scheduler
         if workers > 0:
@@ -256,6 +257,105 @@ class Core:
         agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
                                 "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
 
+    # ---- teach once by demonstration (S8, recorder.py) ------------------------------------------------
+    def teach(self, url: str, goal: str, *, act: Callable | None = None, driver_factory: Callable | None = None) -> int:
+        """Open Lantern's browser on `url` and record the user doing `goal` once; then learn it (S4).
+        Returns the teaching task. `teach_stop` ends the recording (the Done button)."""
+        from .forms.filler import url_problem
+        if self.compiler is None:
+            raise ValueError("teaching needs Lantern's scheduler (lantern --serve)")
+        url, goal = str(url).strip(), " ".join(str(goal).split())[:200]
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValueError("give the web address where the task starts (http or https)")
+        if not goal:
+            raise ValueError("say what the task is, for example 'apply for a city permit'")
+        if problem := url_problem(url, self.forms.settings):
+            raise ValueError(problem)
+        if self._teaching:
+            raise ValueError("Lantern is already watching you do a task; press Done (or STOP) first")
+        job = self.memory.start_task(goal)
+        session = {"stop": threading.Event(), "cancelled": False}
+        self._teaching[job.id] = session
+        self.memory.log_step(job.id, "plan", {"goal": goal, "teach": url})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._teach_job(agent, job.id, goal, url, session, act,
+                                                                              driver_factory))
+        return job.id
+
+    def teach_stop(self, task_id: int | None = None) -> bool:
+        """Done: stop recording (one teaching task, or whichever is running)."""
+        hits = [s for t, s in self._teaching.items() if task_id is None or t == task_id]
+        for s in hits:
+            s["stop"].set()
+        return bool(hits)
+
+    def teach_note(self, task_id: int | None, text: str) -> bool:
+        """Narration while teaching ("this is my passport number"): it helps name and describe the routine."""
+        text = " ".join(str(text).split())[:300]
+        ids = [t for t in self._teaching if task_id is None or t == task_id]
+        if not text or not ids:
+            return False
+        self.memory.log_step(ids[0], "narration", text)
+        self.emit({"type": "teach", "task_id": ids[0], "phase": "note"})
+        return True
+
+    def _teach_driver(self):
+        from .forms.driver import BrowserDriver, chromium_executable
+        st = self.forms.settings
+        headless = os.environ.get("LANTERN_TEACH_HEADLESS", "").strip().lower() in ("1", "true", "yes")
+        return BrowserDriver(st.profile_dir, headless=headless, executable_path=chromium_executable(st.chromium),
+                             guard_submits=False)   # the user drives: their own clicks submit
+
+    def _teach_job(self, agent, job_id: int, goal: str, url: str, session: dict, act, factory) -> None:
+        from .recorder import TeachError, record, traces_from
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, goal)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        seen = {"n": 0}
+
+        def on_event(ev: dict) -> None:   # the panel shows that it's watching; values never go in events
+            if ev.get("kind") in ("field", "click"):
+                seen["n"] += 1
+                self.emit({"type": "teach", "task_id": job_id, "phase": "event", "kind": ev["kind"],
+                           "count": seen["n"]})
+        self.emit({"type": "teach", "task_id": job_id, "phase": "recording", "url": url})
+        traces: list = []
+        try:
+            with self.scheduler.browser():
+                rec = record(factory or self._teach_driver, url, stop=session["stop"], act=act, on_event=on_event,
+                             confirm_selectors=self.forms.settings.confirm_selectors)
+            if session["cancelled"]:
+                raise TeachError("stopped; nothing was kept")
+            traces = traces_from(rec, self.policy)
+            left = sorted({x for t in traces for x in t.get("left_for_you") or []})
+            if left:
+                raise TeachError("the form has fields only you may fill (" + ", ".join(left[:3]) + "), so a "
+                                 "routine can't do it for you; nothing was kept")
+        except TeachError as e:
+            status, summary, traces = ("cancelled" if session["cancelled"] else "failed"), f"Not learned: {e}.", []
+        except Exception as e:   # the browser closed, or wouldn't start
+            status, summary, traces = "failed", f"The recording stopped: {explain(e)}", []
+        else:
+            fields = sum(len(t["fields"]) for t in traces)
+            status = "done"
+            summary = (f"You showed me how to {goal}: {len(traces)} page{'s' if len(traces) != 1 else ''}, "
+                       f"{fields} field{'s' if fields != 1 else ''}, {rec.seconds:.0f} s. Learning it now.")
+        finally:
+            self._teaching.pop(job_id, None)
+        for t in traces:
+            self.memory.log_step(job_id, "trace", t)
+        self.emit({"type": "teach", "task_id": job_id, "phase": "stopped", "status": status})
+        self.memory.log_step(job_id, "reply", summary)
+        self.memory.finish_task(job_id, status, summary)
+        agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": len(traces)})
+        if status == "done":
+            try:
+                self.learn(job_id, auto=True)
+            except ValueError as e:
+                self.memory.log_step(job_id, "note", f"couldn't learn it: {e}")
+                self.emit({"type": "teach", "task_id": job_id, "phase": "not_learned", "reason": str(e)[:200]})
+
     def routines(self) -> list[dict]:
         return self.compiler.list() if self.compiler is not None else []
 
@@ -298,6 +398,9 @@ class Core:
     def stop(self) -> dict:
         """Kill switch: stop the running task and deny every pending approval."""
         self.agent.cancel.set()
+        for session in list(self._teaching.values()):   # a recording in progress is thrown away, never learned
+            session["cancelled"] = True
+            session["stop"].set()
         stopped = self.scheduler.stop_all() if self.scheduler is not None else []
         denied = self.bus.cancel_all("stopped")
         self.emit({"type": "stopped", "denied_approvals": denied})

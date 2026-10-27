@@ -194,6 +194,32 @@ def safe_console() -> None:
             stream.reconfigure(errors="replace")
 
 
+def teach(cfg, mem: Memory, url: str, goal: str) -> None:
+    """S8 from the terminal: Lantern's browser opens on URL; the user does TASK once; Enter ends the recording."""
+    from .core import Core
+    mem.close()
+    core = Core(cfg, workers=max(1, cfg.workers))
+    try:
+        try:
+            task_id = core.teach(url, goal)
+        except ValueError as e:
+            sys.exit(f"✗ {e}")
+        print("🏮 Lantern's browser is opening. Do the task once, wait for its confirmation page, "
+              "then press Enter here (Ctrl+C to throw the recording away).")
+        try:
+            input()
+        except KeyboardInterrupt:
+            core.stop()
+        core.teach_stop(task_id)
+        core.wait_idle(600)
+        print(core.memory.get_task(task_id).summary)
+        learned = [t for t in core.memory.recent_tasks(5) if t.goal.startswith(f"Learn task #{task_id} ")]
+        if learned:
+            print(learned[0].summary)
+    finally:
+        core.shutdown()
+
+
 def main(argv=None) -> None:
     safe_console()
     p = argparse.ArgumentParser(prog="lantern")
@@ -205,6 +231,8 @@ def main(argv=None) -> None:
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
     p.add_argument("--router", action="store_true", help="the model ladder: kind x rung -> success, cost, time")
     p.add_argument("--routines", action="store_true", help="learned routines: version, runs, money saved, last healed")
+    p.add_argument("--teach", nargs=2, metavar=("URL", "TASK"),
+                   help="show Lantern a web task once in its browser; it learns it as a routine")
     p.add_argument("--zones", action="store_true", help="show privacy zones")
     p.add_argument("--audit", action="store_true", help="what left this laptop today")
     p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
@@ -261,6 +289,8 @@ def main(argv=None) -> None:
         from .routines.store import RoutineStore
         store = RoutineStore(Path(cfg.db_path).expanduser().parent / "routines")
         return print(format_routines([store.summary(n) for n in store.names()]))
+    if a.teach:
+        return teach(cfg, mem, *a.teach)
     if a.audit:
         return print_audit(AuditLog(cfg.audit_path, mem.cipher))
     if a.forget_task:
