@@ -203,6 +203,12 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     def questions():
         return core.questions()
 
+    @app.get("/router", dependencies=[Depends(auth)])
+    def router_table():
+        from .ladder import RUNGS, Ladder
+        return {"rungs": [{"n": r.n, "name": r.name, "badge": r.badge, "cloud": r.cloud} for r in RUNGS],
+                "table": Ladder(core.memory).table()}
+
     @app.get("/scheduler", dependencies=[Depends(auth)])
     def scheduler_view():
         snap = core.scheduler.snapshot() if core.scheduler is not None else {"workers": 0}

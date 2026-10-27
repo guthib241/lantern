@@ -45,3 +45,13 @@ test('hello restores open questions after the panel reconnects', () => {
   assert.equal(s.questions.length, 1);
   assert.equal(X.pick(s, 2), 'needs-approval');
 });
+
+test('steps show the ladder rung that did them', () => {
+  const s = run([
+    { type: 'task', id: 4, goal: 'g', task_id: 4, ts: 1 },
+    { type: 'usage', task_id: 4, model: 'muse-spark-1.3', badge: 'Muse Spark', rung: 3, rung_badge: 'Muse Spark · low', cost_usd: 0.001, ts: 2 },
+    { type: 'tool', task_id: 4, name: 'list_folders', args: {}, result: {}, badge: 'on this computer', rung: 1, rung_badge: 'Rule', ts: 3 },
+  ]);
+  assert.deepEqual(s.tasks[4].steps.map((x) => x.badge), ['Muse Spark · low', 'Rule']);
+  assert.equal(s.usage.byBadge['Muse Spark · low'].calls, 1);
+});

@@ -308,3 +308,20 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - the same email never sent twice, including across an `ask_user` pause and across a restart that cut a send off (the new process sends nothing);
   - a move that provably didn't happen may be retried.
 - Real-API check: not possible in this container (no key, api.meta.ai blocked); see `scripts/phase2_live.py`.
+
+## Oct 27 (Phase 2, S3: model ladder and learning router)
+- `lantern/ladder.py`: rungs 0 routine, 1 rules, 2 Glimmer (local), 3 Spark low, 4 Spark high, 5 Wonder. Step kinds: plan, reply, file_op, lookup, extract, classify, form_fill, gui_action, generate. How a rung is picked:
+  - the lowest rung with ≥ 80% recent success (optimistic start of 4 imaginary successes), within the task's budget;
+  - one rung up on failure for the rest of the task;
+  - the rung below gets another try after 5 straight successes;
+  - private content capped at rung 2.
+- In the scheduler: every agent turn runs on its rung (model plus `reasoning.effort`). Moving to Wonder starts a fresh chain with a recap. Recovery's model_confused moves the planner up; a fill that didn't verify moves computer use from Spark to Wonder. Outcomes go to `memory.ladder_stats`.
+- Every usage and tool event carries `rung` and `rung_badge` ("Rule", "Muse Glimmer (local)", "Muse Spark · low", "Muse Wonder"), and the desktop shows them on each step. `lantern --router` and `GET /router` print kind × rung → success %, average cost, average time.
+- Tests: 10 in `tests/test_ladder.py`:
+  - the rule (escalate, de-escalate, budget);
+  - a failed fill moves computer use to Wonder;
+  - rungs on every event;
+  - a private question stays on rung 2 when the local model is down, and the file never reaches a cloud payload;
+  - the CLI and API table.
+  - Plus the escalation path in `tests/test_recovery.py` (Spark low → Spark high → Wonder with a recap) and 1 desktop test.
+- Real-API check: not possible in this container (no key, api.meta.ai blocked); see `scripts/phase2_live.py`.

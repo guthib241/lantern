@@ -203,6 +203,7 @@ def main(argv=None) -> None:
     p.add_argument("--receipt", type=int, metavar="TASK", help="a task's receipt: changes, checks, approvals, data sent, cost")
     p.add_argument("--memory", action="store_true", help="show remembered facts")
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
+    p.add_argument("--router", action="store_true", help="the model ladder: kind x rung -> success, cost, time")
     p.add_argument("--zones", action="store_true", help="show privacy zones")
     p.add_argument("--audit", action="store_true", help="what left this laptop today")
     p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
@@ -251,6 +252,9 @@ def main(argv=None) -> None:
             sys.exit(f"No task #{a.receipt}.")
     if a.usage:
         return print_usage(mem)
+    if a.router:
+        from .ladder import Ladder, format_table
+        return print(format_table(Ladder(mem).table()))
     if a.audit:
         return print_audit(AuditLog(cfg.audit_path, mem.cipher))
     if a.forget_task:

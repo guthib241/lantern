@@ -136,8 +136,12 @@ def test_unreadable_arguments_twice_and_loops_escalate(tmp_path):
     core.submit("list my folders")
     assert core.wait_idle(5)
     assert [e["result"] for e in escalations] == ["unreadable tool arguments twice", "the same call three times"]
-    third = outputs(client.fakes["folders"], 5)[0]
-    assert third["recovery"]["class"] == "model_confused"
+    assert [e["to_rung"] for e in escalations] == [4, 5]                 # Spark high, then Wonder (S3)
+    reqs = client.fakes["folders"].requests
+    assert (reqs[0]["model"], reqs[0]["reasoning"]) == ("muse-spark-1.3", {"effort": "low"})
+    assert (reqs[2]["model"], reqs[2]["reasoning"]) == ("muse-spark-1.3", {"effort": "high"})
+    assert reqs[5]["model"] == "muse-wonder-1.0" and "previous_response_id" not in reqs[5]
+    assert "Continuing task" in reqs[5]["input"] and "refused: this would be the 3rd identical call" in reqs[5]["input"]
     core.shutdown()
 
 

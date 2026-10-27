@@ -21,6 +21,7 @@ slots gives the scheduling the spec asks for without rewriting them (docs/DECISI
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 from collections import deque
@@ -29,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .approvals import PENDING, ApprovalBus, Gate
+from .ladder import Ladder, TaskLadder
 from .recovery import Recovery
 from .taskrun import Parked, ResumableAgent
 
@@ -124,11 +126,12 @@ class _PrivateLane:
 
 
 class _SharedBrowser:
-    """Lantern has one browser profile, so form fills take turns. A task waiting for the browser parks,
-    and while it fills, the form filler uses this task's audited, budgeted client."""
+    """Lantern has one browser profile, so form fills take turns. A task waiting for the browser parks.
+    While it fills, the form filler uses this task's audited, budgeted client, and the computer-use model
+    the ladder picks for this task (S3: Spark first; Wonder after a fill that didn't work)."""
 
-    def __init__(self, forms: Any, sched: "Scheduler", client: Any):
-        self._forms, self._sched, self._client = forms, sched, client
+    def __init__(self, forms: Any, sched: "Scheduler", client: Any, ladder: Any = None):
+        self._forms, self._sched, self._client, self._ladder = forms, sched, client, ladder
 
     def fill(self, *args, **kw):
         lock = self._sched._browser
@@ -136,12 +139,20 @@ class _SharedBrowser:
             with self._sched.parked("waiting_browser"):
                 lock.acquire()
         try:
-            saved = self._forms.client
+            saved = self._forms.client, getattr(self._forms, "settings", None)
             self._forms.client = self._client
+            rung = self._ladder.pick("gui_action") if self._ladder is not None and saved[1] is not None else None
+            if rung is not None:
+                self._forms.settings = dataclasses.replace(saved[1], model=rung.model)
             try:
-                return self._forms.fill(*args, **kw)
+                result = self._forms.fill(*args, **kw)
             finally:
-                self._forms.client = saved
+                self._forms.client = saved[0]
+                if saved[1] is not None:
+                    self._forms.settings = saved[1]
+            if rung is not None and isinstance(result, dict):
+                result = {**result, "rung": rung.n}
+            return result
         finally:
             lock.release()
 
@@ -167,6 +178,7 @@ class Scheduler:
         self.approval_timeout = approval_timeout
         self.retry = dict(retry or {})        # RetryingClient options (tests make backoff fast)
         self.recovery_limits = None           # recovery.Limits (tests make waits short)
+        self.ladder = Ladder(core.memory)     # S3: which rung does each kind of step well
         self.runs: dict[int, Run] = {}
         self.closing = threading.Event()
         self._lock = threading.RLock()
@@ -292,18 +304,23 @@ class Scheduler:
                                 on_retry=lambda info: core.emit({"type": "retry", "task_id": run.id, **info}),
                                 before_call=budget.check, **self.retry)
         events = self._events(run.id)
+        limit = core.budget.limits.task
+        ladder = TaskLadder(self.ladder, budget_left=lambda: None if limit is None else
+                            limit - core.memory.task_usage(run.id)["cost_usd"])
         toolbox = Toolbox(core.policy, core.memory, TaskGate(self, core.bus, self.approval_timeout),
                           router=_PrivateLane(core.router, self._private, run.id),
-                          forms=_SharedBrowser(core.forms, self, client) if core.forms is not None else None,
+                          forms=_SharedBrowser(core.forms, self, client, ladder) if core.forms is not None else None,
                           email=core.email, envmap=core.envmap, widgets=core.widgets, mcp=core.mcp)
         toolbox.client = client
         toolbox.command_runner = getattr(core.toolbox, "command_runner", None)
         toolbox.on_event = events
         agent = ResumableAgent(client, core.memory, toolbox, model=core.agent.model, persona=core.agent.persona,
                                max_steps=core.agent.max_steps, on_event=events, checkpoint=self._checkpoint(run),
-                               on_turn=self._on_turn)
+                               on_turn=self._on_turn, ladder=ladder)
         agent.recovery = Recovery(core.memory, run.id, emit=core.emit, policy=core.policy,
-                                  limits=self.recovery_limits, sleep=lambda s: self._backoff(run, s))
+                                  limits=self.recovery_limits, sleep=lambda s: self._backoff(run, s),
+                                  rung=lambda: agent.rung_now.n if agent.rung_now is not None else None,
+                                  escalate=agent.escalate)
         return agent
 
     def _events(self, task_id: int) -> Callable[[str, dict], None]:

@@ -143,8 +143,8 @@
         const t = ensureTask(s, e.task_id, '', at);
         if (e.name === 'finish') break;
         const r = e.result || {};
-        addStep(t, { kind: 'tool', name: e.name, label: toolLabel(e), badge: e.badge || 'on this computer',
-                     ok: !r.error && r.done !== false && r.sent !== false, at });
+        addStep(t, { kind: 'tool', name: e.name, label: toolLabel(e), badge: e.rung_badge || e.badge || 'on this computer',
+                     rung: e.rung, ok: !r.error && r.done !== false && r.sent !== false, at });
         if (r.verified === true) t.verified = true;
         if (MOVES.includes(e.name) && (r.verified === true || r.moved > 0)) t.undoable = true;
         break;
@@ -157,7 +157,7 @@
         break;
       }
       case 'usage': {
-        const badge = e.badge || e.model || 'model';
+        const badge = e.rung_badge || e.badge || e.model || 'model';   // with the ladder (S3): "Muse Spark · low"
         const u = s.usage.byBadge[badge] || { calls: 0, cost: 0, input: 0, output: 0 };
         u.calls += 1;
         u.cost += e.cost_usd || 0;

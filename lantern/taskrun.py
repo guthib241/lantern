@@ -11,6 +11,10 @@ without holding a worker, and pick up where it was after Lantern restarts.
     that was running when Lantern stopped goes to recovery.py, which never repeats a send, submit or move
     blindly.
 
+With a ladder (ladder.py, S3), every model turn runs on the rung picked for its kind of step: Spark at low
+or high reasoning effort, or Wonder. A switch to another model starts a fresh chain with a recap, because
+chaining responses across models isn't documented. Each turn's and each tool's outcome is recorded.
+
 The checkpoint holds the task's own data (results, the question, the answer), so memory stores it encrypted.
 """
 from __future__ import annotations
@@ -19,6 +23,7 @@ import json
 import time
 from typing import Any, Callable
 
+from . import models
 from .agent import Agent, Result
 from .tools import AskUser, ToolError
 
@@ -54,12 +59,45 @@ def chain_lost(exc: BaseException) -> bool:
 
 class ResumableAgent(Agent):
     def __init__(self, client, memory, toolbox, *, checkpoint: Checkpoint | None = None,
-                 on_turn: Callable[[int], None] | None = None, recovery: Any = None, **kw):
+                 on_turn: Callable[[int], None] | None = None, recovery: Any = None, ladder: Any = None, **kw):
         super().__init__(client, memory, toolbox, **kw)
         toolbox.can_park = True
         self.checkpoint = checkpoint or (lambda task_id, state, phase, reason: None)
         self.on_turn = on_turn or (lambda task_id: None)   # scheduler: share the worker, stop on shutdown
         self.recovery = recovery                           # recovery.Recovery (S2), optional
+        self.ladder = ladder                               # ladder.TaskLadder (S3), optional
+        self.rung_now: Any = None                          # the rung of the latest model call
+        self.kind_now = "plan"
+        self._turn_meta: tuple | None = None               # (kind, rung, seconds, cost) of the latest call
+        self._tool_seconds = 0.0
+        inner = self.on_event
+
+        def on_event(kind: str, data: dict) -> None:       # usage events carry the rung for the model badge
+            if kind == "usage" and self.rung_now is not None:
+                data = {**data, "rung": self.rung_now.n, "rung_badge": self.rung_now.badge, "kind": self.kind_now}
+            inner(kind, data)
+        self.on_event = on_event
+
+    def _model(self, task_id: int, kind: str, rung: Any = None, **kw):
+        """One model call on the ladder's rung for this kind of step (or the agent's model without a ladder)."""
+        if rung is None and self.ladder is not None:
+            rung = self.ladder.pick(kind)
+        if rung is not None and rung.model:
+            self.model = models.check_model(rung.model)
+            if rung.effort:
+                kw["reasoning"] = {"effort": rung.effort}
+        self.rung_now, self.kind_now = rung, kind
+        t0, cost0 = time.monotonic(), self.memory.task_usage(task_id)["cost_usd"]
+        response = self._create(task_id, **kw)
+        self._turn_meta = (kind, rung, time.monotonic() - t0, self.memory.task_usage(task_id)["cost_usd"] - cost0)
+        return response
+
+    def escalate(self, why: str) -> int | None:
+        """Recovery found the model confused: the agent's turns go one rung up. None at the top."""
+        if self.ladder is None:
+            return None
+        nxt = self.ladder.failed("plan", self.rung_now.n if self.rung_now is not None else 3)
+        return nxt.n if nxt is not None else None
 
     def _create(self, task_id: int, **kw):
         """A model call; when it still fails after the client's retries, recovery may wait (parked) and try again."""
@@ -84,6 +122,8 @@ class ResumableAgent(Agent):
     def _save(self, task_id: int, state: dict, phase: str = "running", reason: str = "") -> None:
         state["tainted"] = bool(getattr(self.toolbox, "tainted", False))
         state["untrusted_emails"] = sorted(getattr(self.toolbox, "untrusted_emails", set()) or set())
+        if self.ladder is not None:
+            state["floors"] = dict(self.ladder.floor)   # escalations made in this task survive a pause
         self.checkpoint(task_id, state, phase, reason)
 
     def _restore_taint(self, state: dict) -> None:
@@ -105,7 +145,8 @@ class ResumableAgent(Agent):
         state = {"v": STATE_VERSION, "goal": goal, "instructions": instructions, "step": 1, "response_id": None,
                  "calls": [], "results": {}, "in_flight": None, "ask": None}
         self._save(task_id, state)
-        response = self._create(task_id, instructions=instructions, input=goal, tools=self.tools)
+        response = self._model(task_id, "plan", instructions=instructions, input=goal, tools=self.tools)
+        state["model"] = self.model
         return self._loop(task_id, state, response)
 
     # ---- resume (after an answer, or after a restart) -----------------------------------
@@ -122,13 +163,16 @@ class ResumableAgent(Agent):
         if hasattr(self.toolbox, "begin_task"):
             self.toolbox.begin_task(task_id, goal)
         self._restore_taint(state)
+        if self.ladder is not None:
+            self.ladder.floor.update(state.get("floors") or {})
         if hasattr(self.client, "set_task"):
             self.client.set_task(task_id)
         state.setdefault("results", {})
         if not state.get("response_id"):   # stopped before the first model answer: nothing ran yet
             state.update(step=1, calls=[], results={}, in_flight=None, ask=None)
             self._save(task_id, state)
-            response = self._create(task_id, instructions=state["instructions"], input=goal, tools=self.tools)
+            response = self._model(task_id, "plan", instructions=state["instructions"], input=goal, tools=self.tools)
+            state["model"] = self.model
             return self._loop(task_id, state, response)
         ask = state.get("ask")
         if ask:
@@ -163,17 +207,20 @@ class ResumableAgent(Agent):
                              calls=[{"name": fc.name, "call_id": fc.call_id, "arguments": fc.arguments or "{}"}
                                     for fc in fcalls])
                 self._save(task_id, state)
+            new_turn = response is not None
             try:
                 outputs, finished = self._calls(task_id, state, calls_made)
             except _Cancelled:
                 return self._stop(task_id, "cancelled", "stopped by the user", step, calls_made)
+            if new_turn:
+                self._plan_outcome(state)
             if self.recovery is not None and not finished:
                 self.recovery.end_turn()
                 if self.recovery.give_up:   # impossible: stop with the report of everything tried
                     return self._stop(task_id, "failed", self.recovery.give_up, step, calls_made)
             if finished:
                 status, summary = finished
-                response = self._turn(task_id, state, outputs)   # the in-character closing line
+                response = self._turn(task_id, state, outputs, "reply")   # the in-character closing line
                 reply = getattr(response, "output_text", "") or summary
                 self.memory.log_step(task_id, "reply", reply)
                 self.memory.finish_task(task_id, status, summary)
@@ -186,26 +233,86 @@ class ResumableAgent(Agent):
         return self._stop(task_id, "failed", self.recovery.failed_summary(why) if self.recovery else why,
                           self.max_steps, calls_made)
 
-    def _turn(self, task_id: int, state: dict, outputs: list[dict]) -> Any:
-        """The next model call on the saved chain; a recap starts a fresh chain if the API lost the old one."""
+    def _turn(self, task_id: int, state: dict, outputs: list[dict], kind: str = "plan") -> Any:
+        """The next model call on the saved chain. A recap starts a fresh chain when the ladder moves to another
+        model (chaining across models isn't documented) or when the API no longer has the old chain."""
         kw = dict(instructions=state["instructions"], tools=self.tools)
-        if not state.pop("chain_check", False):
-            return self._create(task_id, previous_response_id=state["response_id"], input=outputs, **kw)
-        try:
-            return self._create(task_id, previous_response_id=state["response_id"], input=outputs, **kw)
-        except Exception as e:
-            if not chain_lost(e):
-                raise
-            self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; "
-                                                  "continued with a recap")
-            return self._create(task_id, input=self._recap(task_id, state, outputs), **kw)
+        rung = None
+        if self.ladder is not None:   # the closing line stays on the rung that did the work
+            rung = self.rung_now if kind == "reply" and self.rung_now is not None else self.ladder.pick(kind)
+        if rung is not None and rung.model and state.get("model") and rung.model != state["model"]:
+            self.memory.log_step(task_id, "note", f"moved up to {rung.badge}; continuing with a recap")
+            response = self._model(task_id, kind, rung, input=self._recap(task_id, state, outputs, "moved to "
+                                                                          "another model"), **kw)
+        elif not state.pop("chain_check", False):
+            response = self._model(task_id, kind, rung, previous_response_id=state["response_id"], input=outputs, **kw)
+        else:
+            try:
+                response = self._model(task_id, kind, rung, previous_response_id=state["response_id"], input=outputs,
+                                       **kw)
+            except Exception as e:
+                if not chain_lost(e):
+                    raise
+                self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; "
+                                                      "continued with a recap")
+                response = self._model(task_id, kind, rung, input=self._recap(task_id, state, outputs), **kw)
+        state["model"] = self.model
+        return response
 
-    def _recap(self, task_id: int, state: dict, outputs: list[dict]) -> str:
+    def _recap(self, task_id: int, state: dict, outputs: list[dict], why: str = "a pause") -> str:
         names = {c["call_id"]: c["name"] for c in state.get("calls", [])}
         latest = "; ".join(f"{names.get(o['call_id'], '?')} -> {o['output'][:600]}" for o in outputs)
-        return (f"{state['goal']}\n\n[Continuing task #{task_id} after a pause; the earlier turns are no longer "
-                f"available. Results of the last step: {latest or 'none'}. Check before repeating anything that "
-                "changes something.]")
+        done = []
+        for step in self.memory.steps(task_id):
+            if step["kind"] == "tool_result":
+                try:
+                    data = json.loads(step["content"])
+                except (TypeError, ValueError):
+                    continue
+                r = data.get("result") if isinstance(data, dict) else None
+                if isinstance(r, dict) and data.get("name") not in (None, "finish"):
+                    mark = "verified" if r.get("verified") else ("error" if r.get("error") else "ok")
+                    done.append(f"{data['name']} ({mark})")
+        return (f"{state['goal']}\n\n[Continuing task #{task_id} after {why}; the earlier turns are not available "
+                f"here. Steps so far: {'; '.join(done[-12:]) or 'none'}. Results of the last step: {latest or 'none'}. "
+                "Check before repeating anything that changes something.]")
+
+    # ---- the ladder's records (S3) ----------------------------------------------------
+    def _plan_outcome(self, state: dict) -> None:
+        """A model turn did well when its calls could run: no unreadable arguments, nothing refused as a loop
+        or a duplicate. (A tool failing is that tool's outcome, not the planner's.)"""
+        if self.ladder is None or self._turn_meta is None or self._turn_meta[1] is None:
+            return
+        kind, rung, seconds, cost = self._turn_meta
+        bad = [r for r in state["results"].values() if isinstance(r, dict) and (
+            r.get("refused_by_recovery") or str(r.get("error", "")).startswith("could not parse arguments"))]
+        self.ladder.ladder.record(kind, rung.n, not bad, cost, seconds)
+        self._turn_meta = None
+
+    def _tool_rung(self, name: str, result: Any) -> tuple[int | None, str]:
+        from .ladder import tool_kind
+        kind = tool_kind(name)
+        if isinstance(result, dict) and isinstance(result.get("rung"), int):
+            return result["rung"], kind
+        return {"extract": 2, "lookup": 1, "file_op": 1, "form_fill": 3, "generate": 3}.get(kind), kind
+
+    def _tool_outcome(self, name: str, result: Any, rung: int | None, kind: str) -> None:
+        if self.ladder is None or rung is None or name in ("finish", "ask_user") or not isinstance(result, dict):
+            return
+        from .recovery import Recovery
+        cls = Recovery.classify(name, result)
+        if result.get("refused_by_recovery") or cls == "needs_human":
+            return   # not the rung's doing
+        ok = cls is None
+        if name == "fill_form":   # the planning call, and computer use for whatever the page needed beyond it
+            self.ladder.ladder.record("form_fill", 3, ok, 0.0, self._tool_seconds)
+            self.ladder.ladder.record("gui_action", rung, ok, 0.0, self._tool_seconds)
+            if not ok:
+                self.ladder.failed("gui_action", rung)
+            return
+        self.ladder.ladder.record(kind, rung, ok, 0.0, self._tool_seconds)
+        if not ok and kind == "extract":
+            self.ladder.failed(kind, rung, private=True)   # private content: never above the local rung
 
     def _calls(self, task_id: int, state: dict, calls_made: list) -> tuple[list[dict], tuple | None]:
         """Run the turn's function calls that haven't run yet. Returns the outputs and (status, summary) if
@@ -264,12 +371,15 @@ class ResumableAgent(Agent):
             refused = self.recovery.before_call(task_id, name, args)
             if refused is not None:
                 return refused
+        t0 = time.monotonic()
         try:
             result = self.toolbox.call(name, args)
         except ToolError as e:
             result = {"error": str(e)}
         except AskUser as q:
             return q
+        finally:
+            self._tool_seconds = time.monotonic() - t0
         if self.recovery is not None:
             result = self.recovery.after_call(task_id, name, args, result)
         return result
@@ -297,4 +407,10 @@ class ResumableAgent(Agent):
         calls_made.append({"name": name, "args": args, "result": result})
         self.memory.log_step(task_id, "tool_call", {"name": name, "args": args})
         self.memory.log_step(task_id, "tool_result", {"name": name, "result": result})
-        self.on_event("tool", {"name": name, "args": args, "result": result, "badge": self.tool_badge(name, result)})
+        rung, kind = self._tool_rung(name, result)
+        self._tool_outcome(name, result, rung, kind)
+        event = {"name": name, "args": args, "result": result, "badge": self.tool_badge(name, result)}
+        if rung is not None and name not in ("finish", "ask_user"):
+            from .ladder import RUNGS
+            event.update(rung=rung, rung_badge=RUNGS[rung].badge, kind=kind)
+        self.on_event("tool", event)
