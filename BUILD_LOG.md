@@ -133,3 +133,10 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **e2e:** Electron app data can be isolated with `LANTERN_USER_DATA`. The e2e sees the welcome sheet, dismisses it, switches the personality and checks it was saved.
   - **Also:** the calibration variable names were fixed (see above).
   - 1 new Python test; 354 passing.
+- M28: Submission kit. `docs/SUBMISSION.md` has:
+  - a pre-recording checklist (doctor, smoke checks, calibration line, planted files, settings);
+  - a shot-by-shot 3-minute script matched to the real UI (island, Quick Ask, approval sheet, Privacy tab, menu bar);
+  - an honest fallback rule: rehearsal footage is never presented as live model output;
+  - a write-up draft and final checks.
+
+  `docs/slide/architecture.html`, rendered to `architecture.png` at 1920×1080, is the architecture and Meta-model-map slide for the video.

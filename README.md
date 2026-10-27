@@ -200,4 +200,4 @@ GitHub Actions runs the lint, every test, the full offline rehearsal and the doc
 7. Lantern's face: `python scripts/make_avatar.py`, or import from MetaMuse.
 8. Allow the OS keychain prompt the first time, which stores the memory key.
 
-More: [docs/SPEC.md](docs/SPEC.md) · [docs/DECISIONS.md](docs/DECISIONS.md) · [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) · [BUILD_LOG.md](BUILD_LOG.md) · [desktop/README.md](desktop/README.md)
+Submitting: [docs/SUBMISSION.md](docs/SUBMISSION.md) (video script, slide, write-up). More: [docs/SPEC.md](docs/SPEC.md) · [docs/DECISIONS.md](docs/DECISIONS.md) · [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) · [BUILD_LOG.md](BUILD_LOG.md) · [desktop/README.md](desktop/README.md)
