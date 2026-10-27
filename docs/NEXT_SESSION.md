@@ -1,6 +1,6 @@
 # Handoff: from "all milestones built" to "submitted"
 
-## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, S4 self-compiling routines, on branch `claude/phase2-core`
+## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, S4 self-compiling routines, S0 security backbone, on branch `claude/phase2-core`
 Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albattani-18fmje` (session 5, everything below), plus the parallel session's `demo/portal`, `demo/attacks`, `desktop/board` and `tests/parallel` (PR #3). It goes to main as its own PR. **Do not merge without the user.**
 - **S1 scheduler** (`lantern/scheduler.py`, `lantern/taskrun.py`):
   - 3 tasks at once (`LANTERN_WORKERS`), round-robin.
@@ -29,13 +29,18 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
   - **Heal.** When the site moves a field or button, one Muse Spark call picks the new target; the run goes on, and v<N+1> is verified and saved.
   - **Where to see it:** `lantern --routines`, `GET /routines`, "learn [N]" on the phone, and the desktop (offer card; Costs → Learned routines with a cost-per-run chart and heal marks).
   - **For the demo:** run a second portal as the sandbox (`python demo/portal/server.py --port 8771`, `LANTERN_ROUTINE_SANDBOX=http://127.0.0.1:8771`). To show the heal, switch the portal's layout with its footer link or `?layout=v2`.
+- **S0 security backbone** (`lantern/labels.py`, `lantern/reader.py`, `lantern/security.py`; details in DECISIONS):
+  - The planner never reads content from files, pages, emails, commands or other programs: it gets `$doc` handles and asks the tool-less Reader (`ask_reader`) typed questions. Text answers and private answers are handles too.
+  - Recipients, links, commands and tool inputs that came from content are flagged on red cards; private values never reach a cloud model (the audited client refuses the request); red is never one tap.
+  - `LANTERN_SCREENSHOTS=masked` and `scripts/eval_privacy.py` (raw vs masked on the clean and attack portal). **Run it with the key and put the measured table in the README** (`python scripts/eval_privacy.py --runs 5 --out eval.json`; a few runs with `--forms-model muse-wonder-1.0`). Decoy screens (S7) aren't built.
+  - Tests: 17 security, 13 injection (A1-A7, the portal in attack mode in Chromium), 5 eval/masking.
 - **Tested with scripted models only:**
   - 16 scheduler, 14 recovery and 10 ladder tests;
   - `tests/test_scheduler_portal.py`: three phone tasks at once against `demo/portal` in Chromium. One parks on a question while the other two finish, then all six portal pages are filled and the portal's own record checked. This run found and fixed a form-filler bug: it clicked Back instead of Next.
   - a dry run of the live script, all 6 checks;
   - S4: 34 tests in `tests/test_routines.py`. The full story runs on `demo/portal` in Chromium: the agent fills it; it's learned and verified on a fresh portal; the rerun takes 0 model calls; the layout flips to v2; the routine heals into v2; the next run is back at 0 model calls.
   - 6 desktop tests.
-  - Totals: 531 Python tests and 33 desktop tests green, pyflakes clean.
+  - Totals after S0: 566 Python tests and 34 desktop tests green, pyflakes clean.
 - **Not yet run on the real API.** This session's container had no `MODEL_API_KEY`, and its network policy refused api.meta.ai (session 5's environment had the network secret). Run it where the key works: `python scripts/phase2_live.py` (6 checks, the 6th being S4 on the portal; $0.25 per-task limit, stops starting checks after `--max-usd`, default $1). Put the measured numbers in BUILD_LOG; quote nothing about Lantern that wasn't measured.
 - **dev.meta.ai didn't resolve from this container.** Reasoning effort follows the cookbook's reasoning notebook and session 5's live use of `reasoning.effort: low`. `"high"` and chaining across efforts are untested live; check 4 of the live script covers them. How the API reports an expired `previous_response_id` isn't documented; `taskrun.chain_lost` guesses a 400/404 that names the previous response, and check 5 shows whether the chain survives a restart.
 - **Known limits, recorded in DECISIONS:**
@@ -44,18 +49,8 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
   - **Healing scope:** heals re-target fields and buttons, but don't re-plan a page that changed its flow.
   - **No avatar art for juggling:** there's no Muse Image "juggling" sprite yet. The avatar shows the thinking face with two orbiting lights; `scripts/make_avatar.py` can add one (~$0.01).
 
-### What Session B must build next (spec order: Tier A; S4 is done)
-1. **S0 security backbone.** Today:
-   - untrusted content reaches the planner wrapped (`untrusted.wrap`) and taints the task;
-   - every change needs an approval;
-   - routines are fixed plans, with targets cross-checked in the DOM and branches only on params.
-
-   To build:
-   - **Planner/Reader split:** a tool-less Reader (Spark low, or Glimmer for private content) with structured output (Chat Completions `response_format`, as the compiler does) and opaque handles.
-   - **Taint labels per value.**
-   - **Risk tiers per tool:** green, yellow, red. Red ≈ `recovery.NON_IDEMPOTENT` plus approvals; the routine contract already tags green, yellow and red per action.
-   - **`scripts/eval_privacy.py`** on `demo/portal` + `demo/attacks/manifest.json`.
-   - **Injection tests** asserting that the planner never saw the raw text.
+### What Session B must build next (spec order: Tier A; S4 and S0 are done)
+1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure.
 2. **S5 extras on the portal:** compile file tasks (rules by pattern, not fixed paths), and a page-flow change, not just moved targets (re-plan one page with the agent, then recompile).
 3. **S8 teach by demonstration** (`lantern/recorder.py`): recorded event fixtures in the cloud, real hooks (pynput / UI Automation) behind a laptop-only flag. Its output is the same Routine Contract S4 compiles and verifies.
 

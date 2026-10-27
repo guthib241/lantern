@@ -121,13 +121,15 @@ class FormSettings:
     max_steps: int = MAX_STEPS
     confirm_selectors: tuple[str, ...] = CONFIRM_SELECTORS
     confirm_wait_ms: int = 4_000
+    screenshots: str = "raw"                  # S0.5: raw | masked (black boxes over the profile's values)
 
     @classmethod
     def from_config(cls, cfg) -> "FormSettings":
         return cls(model=models.check_model(cfg.forms_model), plan_model=cfg.model, protocol=cfg.forms_protocol,
                    coords=cfg.forms_coords, headless=cfg.forms_headless, chromium=cfg.chromium_path,
                    domains=tuple(cfg.forms_domains), profile_dir=Path(cfg.browser_profile_dir),
-                   media_dir=Path(cfg.media_dir), vault_path=Path(cfg.profile_path))
+                   media_dir=Path(cfg.media_dir), vault_path=Path(cfg.profile_path),
+                   screenshots=cfg.forms_screenshots)
 
 
 def sha(text: str) -> str:
@@ -200,6 +202,8 @@ class _Run:
     screenshots: int = 0
     used_loop: bool = False
     protocol: str = ""
+    masked: int = 0
+    exposed: int = 0
 
 
 class FormService:
@@ -308,6 +312,8 @@ class FormService:
             out = {"url": url, "page": page.get("title", ""), "filled": run.filled, "left_for_you": run.left,
                    "refused": run.refused, "problems": run.problems, "steps": run.steps,
                    "screenshots": run.screenshots,
+                   "screen_privacy": {"mode": self.settings.screenshots, "masked": run.masked,
+                                      "shown": run.exposed},
                    "model": models.badge(self.settings.model if run.used_loop else self.settings.plan_model)}
             if run.used_loop:
                 out["protocol"] = run.protocol
@@ -479,10 +485,12 @@ class FormService:
             on_step=lambda info: emit("form", {"phase": "step", "badge": badge, **info}),
             on_usage=usage, cancel=cancel,
             url_guard=lambda current: url_problem(current, self.settings),
+            private_values=self._screen_values, mask=self.settings.screenshots == "masked",
         )
         result = loop.run(goal)
         run.used_loop, run.protocol = True, result.protocol
         run.steps, run.screenshots = result.steps, result.screenshots
+        run.masked, run.exposed = result.masked, result.exposed
         run.refused.extend(result.refused)
         if result.status in ("done", "submit_requested"):
             for f, value in run.visual:
@@ -492,6 +500,12 @@ class FormService:
         if result.status == "hard_stop":
             out["needs_user"] = True
         return out
+
+    def _screen_values(self) -> list[str]:
+        """The user's own values (profile and saved answers): masked in screenshots in "masked" mode, counted in
+        "raw" mode."""
+        data = self.vault.load()
+        return [str(v) for sec in ("profile", "answers") for v in data[sec].values() if len(str(v).strip()) >= 3]
 
     def _save_shot(self, d: BrowserDriver) -> str:
         self.settings.media_dir.mkdir(parents=True, exist_ok=True)

@@ -256,6 +256,45 @@ def prepare_profile(profile_dir: Path) -> None:
         prefs.write_text(json.dumps(PROFILE_PREFS), encoding="utf-8")
 
 
+# S0.5: where the given values show on screen (form controls and text), as boxes in viewport pixels.
+ON_SCREEN = r"""
+const values = (arg || []).map(v => String(v).trim().toLowerCase()).filter(v => v.length >= 3);
+const boxes = [];
+if (!values.length) return boxes;
+const W = window.innerWidth, Hh = window.innerHeight;
+const shows = (t) => { t = String(t || '').toLowerCase(); return values.some(v => t.includes(v)); };
+const add = (r) => {
+  if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.right < 0 || r.top > Hh || r.left > W) return;
+  boxes.push({x: Math.max(0, r.left - 2), y: Math.max(0, r.top - 2), w: r.width + 4, h: r.height + 4});
+};
+const seen = (el) => { const s = getComputedStyle(el); return s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity !== 0; };
+for (const el of document.querySelectorAll('input, textarea, select')) {
+  const type = (el.type || '').toLowerCase();
+  if (['checkbox', 'radio', 'hidden', 'file', 'submit', 'button', 'image', 'reset'].includes(type) || !seen(el)) continue;
+  let shown = el.value;
+  if (el.tagName === 'SELECT' && el.selectedIndex >= 0) shown = el.options[el.selectedIndex].text + ' ' + el.value;
+  if (shows(shown)) add(el.getBoundingClientRect());
+}
+const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+  const el = n.parentElement;
+  if (!el || el.closest('[data-lantern-mask], script, style, noscript, template') || !shows(n.nodeValue) || !seen(el)) continue;
+  const range = document.createRange();
+  range.selectNodeContents(n);
+  for (const r of range.getClientRects()) add(r);
+}
+return boxes;
+"""
+PAINT_MASKS = """(boxes) => { for (const b of boxes) {
+  const d = document.createElement('div');
+  d.setAttribute('data-lantern-mask', '');
+  d.style.cssText = `position:fixed;left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;` +
+                    'background:#000;z-index:2147483647;pointer-events:none';
+  document.documentElement.appendChild(d);
+} }"""
+CLEAR_MASKS = "() => document.querySelectorAll('[data-lantern-mask]').forEach(e => e.remove())"
+
+
 class BrowserDriver:
     """One Chromium session. Use as a context manager."""
 
@@ -351,6 +390,21 @@ class BrowserDriver:
 
     def screenshot(self) -> bytes:
         return self.page.screenshot(type="jpeg", quality=JPEG_QUALITY, full_page=False)
+
+    def on_screen(self, values: list[str]) -> list[dict]:
+        """Boxes where any of these values shows in the viewport (S0.5: how much a screenshot would expose)."""
+        return list(self._js(ON_SCREEN, [str(v) for v in values])) if values else []
+
+    def masked_screenshot(self, values: list[str]) -> tuple[bytes, int]:
+        """A screenshot with a black box over every place these values show. Returns (jpeg, boxes painted)."""
+        boxes = self.on_screen(values)
+        if boxes:
+            self.page.evaluate(PAINT_MASKS, boxes)
+        try:
+            return self.screenshot(), len(boxes)
+        finally:
+            if boxes:
+                self.page.evaluate(CLEAR_MASKS)
 
     # ---- filling by DOM ------------------------------------------------------------
     def set_value(self, field: dict, value: str) -> bool:

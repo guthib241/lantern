@@ -228,6 +228,8 @@ class LoopResult:
     screenshots: int = 0
     protocol: str = "native"
     captcha: bool = False
+    masked: int = 0          # S0.5: private values covered in the screenshots sent
+    exposed: int = 0         # S0.5: private values that showed, uncovered, in the screenshots sent
 
 
 class _Stop(Exception):
@@ -244,7 +246,8 @@ class ComputerLoop:
                  on_step: Callable[[dict], None] | None = None,
                  on_usage: Callable[[str, models.Usage], None] | None = None,
                  cancel: threading.Event | None = None,
-                 url_guard: Callable[[str], str | None] | None = None):
+                 url_guard: Callable[[str], str | None] | None = None,
+                 private_values: Callable[[], list[str]] | None = None, mask: bool = False):
         if protocol == "auto":  # what the live API accepts for this model (models.CUA_PROTOCOL)
             protocol = models.cua_protocol(model)
         if protocol not in ("native", "function"):
@@ -260,6 +263,8 @@ class ComputerLoop:
         self.on_usage = on_usage or (lambda model, usage: None)
         self.cancel = cancel or threading.Event()
         self.url_guard = url_guard or (lambda url: None)
+        self.private_values = private_values   # values that shouldn't show in a screenshot (S0.5)
+        self.mask = mask                       # True: black boxes over them; False: only count them
         self._result = LoopResult("error")
 
     # ---- public --------------------------------------------------------------------
@@ -290,6 +295,13 @@ class ComputerLoop:
 
     def _shot(self) -> str:
         self._result.screenshots += 1
+        values = self.private_values() if self.private_values is not None else []
+        if values and hasattr(self.driver, "on_screen"):
+            if self.mask:
+                data, n = self.driver.masked_screenshot(values)
+                self._result.masked += n
+                return data_url(data)
+            self._result.exposed += len(self.driver.on_screen(values))
         return data_url(self.driver.screenshot())
 
     def _run(self, goal: str, protocol: str) -> LoopResult:

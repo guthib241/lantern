@@ -125,6 +125,14 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
 - **Approvals** are single-use, expire in 10 minutes and are bound to a hash of the exact payload. If anything changes after you say yes (a field, an attachment), Lantern refuses and asks again.
 - **Hard stops:** Lantern never types into password, OTP, card, CVV, PIN or government-ID fields, and stops at CAPTCHAs ("you do this part").
 - **Untrusted content:** anything read from files, web pages, emails or MCP is wrapped as untrusted data. Once it's in context, every risky tool needs approval, and instructions inside it are ignored.
+- **The model that acts never reads the content** (with `lantern --serve`; after the published CaMeL and FIDES designs, arxiv.org/abs/2503.18813 and arxiv.org/abs/2505.23643):
+  - **Handles, not text.** A file's text, a page, an email or another program's result reaches the planner as a handle like `$doc1`. To learn something from it, the planner asks the **Reader**: a separate call with no tools whose answer must fit a type (yes/no, one of given options, a number, a date). A text answer becomes another handle the planner can pass on but can't read. The Reader also says whether the content tried to give instructions, and Lantern checks for that in code too.
+  - **Labels on values.** Every handle carries where it came from (trusted or untrusted) and how private it is (public, private or secret). A recipient, web address, command or tool input that came from content shows on a red card as "came from a file, not from you: approve only if you meant it"; a form at such an address needs its own yes before the browser even opens it.
+  - **Private stays here.** An answer from your Private folder is a private handle: it's filled in on your own screen only, your phone gets "‹private: shown on your computer›" instead, it can't go into memory, and the audited client refuses any cloud request that would carry it ("Nothing was sent").
+  - **Risk tiers on every tool:** green (reads, no card), yellow (reversible local changes, one tap), red (send, submit, run, share: the full card bound to the payload hash, never one tap).
+  - **Learned routines are fixed plans** with every target cross-checked in the page: injection-resistant by construction, with branch-steering checks. Not injection-proof: a typed answer (a number, a choice) read from content can still be wrong on purpose, which is why it shows on the card before anything uses it.
+  - **Tested** on the attack pack in [`demo/attacks/`](demo/attacks) (hidden text, fake SYSTEM banners, zero-width tricks, planted secrets, a spoofed email, a poisoned search result, the portal in attack mode), with honest, compromised-planner and compromised-reader scripts: `tests/test_injection.py`.
+  - **Measured, not claimed:** `python scripts/eval_privacy.py --runs 5` runs the portal tasks with raw and masked screenshots (`LANTERN_SCREENSHOTS=masked` puts black boxes over your own values before a screenshot leaves) and reports success, steps, cost, what showed in screenshots, any private value found in any request that left, and whether every payload is in the audit log. Its numbers go here once it has been run with the real models.
 - **Verified, or it says so:** every action checks its result on disk or via the API and reports `verified: true/false`.
 - **A receipt for every task:** tap **Receipt** on a task (or send "receipt" from your phone, or `lantern --receipt 12`). It shows what changed and whether each change was checked, what you approved (and the payload hash it was bound to), every byte that left and where it went, what was redacted, what stayed on the local lane, and the cost. It's built from Lantern's own logs, never written by a model.
 - **Other rules:** Lantern never deletes. The server listens on 127.0.0.1 only, with a token. **STOP** (button, Ctrl/Cmd+Shift+X, or the word STOP on WhatsApp) cancels everything.
@@ -216,7 +224,7 @@ Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's 
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q          # ~350 tests, offline: fake model, real Chromium on demo/forms, real uvicorn, desktop node tests
+python -m pytest -q          # ~570 tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
 python -m pyflakes lantern scripts tests
 cd desktop && npm test       # the panel's logic and the mock server on their own
 cd desktop && npm install && npm run e2e   # the real Electron app against the real server, whole story (Linux without a screen: xvfb-run -a npm run e2e)

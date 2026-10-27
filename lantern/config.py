@@ -41,6 +41,7 @@ class Config:
     forms_coords: str = ""                # "" = protocol default; pixel | normalized
     forms_headless: bool = True           # False on the laptop to watch the browser work
     forms_domains: list[str] = field(default_factory=list)  # sites (besides localhost/demo) Lantern may fill
+    forms_screenshots: str = "raw"        # S0.5: raw | masked (scripts/eval_privacy.py measures both)
     chromium_path: str = ""
     profile_path: str = str(HOME / "profile.json")
     browser_profile_dir: str = str(HOME / "browser-profile")
@@ -120,6 +121,9 @@ def load() -> Config:
     cfg.model = os.environ.get("LANTERN_MODEL", cfg.model)
     cfg.forms_model = os.environ.get("LANTERN_FORMS_MODEL", cfg.forms_model)
     cfg.forms_protocol = os.environ.get("LANTERN_CUA_PROTOCOL", cfg.forms_protocol)
+    cfg.forms_screenshots = os.environ.get("LANTERN_SCREENSHOTS", cfg.forms_screenshots).strip().lower()
+    if cfg.forms_screenshots not in ("raw", "masked"):
+        raise ValueError("LANTERN_SCREENSHOTS must be raw or masked")
     cfg.forms_coords = os.environ.get("LANTERN_CUA_COORDS", cfg.forms_coords)
     if os.environ.get("LANTERN_FORMS_HEADLESS"):
         cfg.forms_headless = _flag(os.environ["LANTERN_FORMS_HEADLESS"])

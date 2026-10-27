@@ -354,3 +354,14 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - Plus `scripts/phase2_live.py` check 6, dry-run on a scripted model.
 - Guards that caught things on the way: the renderer lockdown test (no `innerHTML`: the chart is built with DOM calls), the "only policy.py touches files" test (a routine is forgotten through `erase_lantern_data`), and the matcher test (a model could have set `base_url`; now urls, paths and secrets are never a model's pick).
 - Real-API check: not possible in this container (no key, api.meta.ai blocked). `python scripts/phase2_live.py --only 6` runs it where the key works.
+
+## Oct 27 (Phase 2, S0: security backbone)
+- `lantern/labels.py` (labels that join, per-task handles), `lantern/reader.py` (the tool-less Reader with typed answers), `lantern/security.py` (the scheduler's guarded toolbox, risk tiers, target checks):
+  - **Planner/Reader split.** Content from files, pages, emails, commands and other programs reaches the planner only as `$doc` handles; it learns from them through `ask_reader` (new tool, added at the end of the list). Text answers are handles too.
+  - **Labels.** Recipients, links, commands and tool inputs that came from content are flagged on red cards; a form at such an address, or a read-only tool with such input, asks first.
+  - **Private answers** (`ask_private`) are handles that stay on this computer: filled in on the user's screen, a placeholder on the phone, refused by memory, and refused by the audited client if a cloud request would carry one.
+  - **Tiers** green/yellow/red on every tool and card; red is never one tap on the desktop.
+- Scrubber: env-style secret names and one-time codes. Reader + code check for instruction-shaped text.
+- `LANTERN_SCREENSHOTS=masked`: black boxes over the user's own values before a screenshot goes to the computer-use model (counted in raw mode).
+- `scripts/eval_privacy.py`: raw vs masked on the clean and attack portal; success, steps, cost, screenshot exposure, leaks of private values or planted secrets in any payload that left, payloads matched to the audit log by hash. Dry-run checked here (4 runs, 13/13 payloads per run in the audit log); **the real run is still to do** (no key in this container).
+- Tests: `tests/test_security.py` (17), `tests/test_injection.py` (13: attacks A1-A7 with honest, compromised-planner and compromised-reader scripts, the portal in attack mode in Chromium), `tests/test_eval_privacy.py` (5: masking checked pixel by pixel in Chromium, the eval dry run). Found and fixed on the way: handle names were filled in before `ask_reader` saw them, and the resulting error quoted the document back to the planner; MCP tools are called by their own names, so their inputs weren't checked; the local reader path lost the instructions flag; the scrubber missed `LANTERN_DEMO_API_KEY=` and `last OTP:`.
