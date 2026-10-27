@@ -140,3 +140,17 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - a write-up draft and final checks.
 
   `docs/slide/architecture.html`, rendered to `architecture.png` at 1920×1080, is the architecture and Meta-model-map slide for the video.
+- Wire tests (preparing for the real key).
+  - **What they are:** `tests/fake_meta_api.py` is a local HTTP stand-in for the Meta Model API: Responses API JSON, server-sent-event streams, voice transcription, scripted HTTP errors with Retry-After. `tests/test_wire.py` drives Lantern through the **real OpenAI SDK** over HTTP with the same layering Core uses (SDK → audited → retrying).
+  - **What they cover:**
+    - an agent task with a 429 retry, function calls and `previous_response_id`
+    - Meta's `computer_call.actions` and safety checks surviving the SDK's response objects
+    - screenshots sent untouched
+    - a planted key absent from the raw HTTP bytes
+    - 401/404 failing fast and 503 retried, all with plain sentences
+    - the widget writer
+    - voice multipart
+    - a SAM 3.1 check-in over a real SSE stream through Meta's parser
+    - Core building its own client from `MODEL_API_KEY`
+  - All passed on the first run, so the remaining unknowns for tomorrow are the real API's behaviour, not our plumbing.
+  - 9 new tests; 363 passing.
