@@ -118,7 +118,9 @@ def test_http_errors_become_sentences_and_only_temporary_ones_retry(tmp_path, st
 
 def test_widget_writer_and_voice_over_http(tmp_path):
     html = "<!doctype html><title>Tea timer</title><button id=go>Start</button><script>let n = 0;</script>"
-    with FakeMetaAPI([reply_text(f"Here you go.\n```html\n{html}\n```")], transcript="remind me at six") as api:
+    from fake_meta_api import stream_text
+    with FakeMetaAPI([stream_text(f"Here you go.\n```html\n{html}\n```", model=models.SPARK)],
+                     transcript="remind me at six") as api:
         client, _ = stack(api, tmp_path)
         got, attempts = Widgets(tmp_path / "widgets").generate(client, "a tea timer")
         assert got == html and attempts == 1
@@ -129,7 +131,9 @@ def test_widget_writer_and_voice_over_http(tmp_path):
             w.setframerate(16000)
             w.writeframes(struct.pack("<h", 0) * 1600)
         result = transcribe(wav, api_key=KEY, base_url=api.url, keywords=["Lantern"])
-    assert api.bodies()[0]["instructions"] == WIDGET_RULES
+    body = api.bodies()[0]
+    assert body["instructions"] == WIDGET_RULES
+    assert body["stream"] is True and body["reasoning"] == {"effort": "low"}   # live API: unstreamed died at 30 s
     assert result["transcript"] == "remind me at six"
     voice = [req for req in api.requests if req["path"].endswith("/asr/transcribe")][0]
     assert voice["headers"]["authorization"] == f"Bearer {KEY}" and models.VOICE.encode() in voice["raw"]

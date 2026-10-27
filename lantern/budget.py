@@ -24,6 +24,11 @@ DEFAULTS = {"total": 150.0, "daily": None, "task": 3.0}
 ENV = {"total": "LANTERN_BUDGET_USD", "daily": "LANTERN_DAILY_BUDGET_USD", "task": "LANTERN_TASK_BUDGET_USD"}
 
 
+def usd(x: float) -> str:
+    """$150.00, $3.00, but $0.002 for tiny limits (never a misleading "$0.00")."""
+    return f"${x:.2f}" if x >= 0.995 or x == 0 or round(x, 2) == x else f"${x:.4f}".rstrip("0")
+
+
 class BudgetError(UserFacingError):
     """A spending limit stopped a model call. The message says which, and how to raise it."""
 
@@ -77,7 +82,7 @@ class BudgetGuard:
         if lim.total is not None:
             spent = self.memory.spent()
             if spent >= lim.total:
-                raise BudgetError(f"Lantern has spent ${spent:.2f} of its ${lim.total:.2f} limit, so it stopped before "
+                raise BudgetError(f"Lantern has spent {usd(spent)} of its {usd(lim.total)} limit, so it stopped before "
                                   f"calling the model. Raise {ENV['total']} in .env to go on.")
             if spent >= WARN_AT * lim.total and not self._warned:
                 self._warned = True
@@ -86,13 +91,13 @@ class BudgetGuard:
         if lim.daily is not None:
             today = self.memory.spent(time.strftime("%Y-%m-%d"))
             if today >= lim.daily:
-                raise BudgetError(f"Today's spending reached the ${lim.daily:.2f} daily limit ({ENV['daily']}); "
+                raise BudgetError(f"Today's spending reached the {usd(lim.daily)} daily limit ({ENV['daily']}); "
                                   "Lantern will call the model again tomorrow, or raise the limit in .env.")
         task_id = self.current_task()
         if lim.task is not None and task_id is not None:
             cost = self.memory.task_usage(task_id)["cost_usd"]
             if cost >= lim.task:
-                raise BudgetError(f"This task reached its ${lim.task:.2f} limit ({ENV['task']}) and was stopped so it "
+                raise BudgetError(f"This task reached its {usd(lim.task)} limit ({ENV['task']}) and was stopped so it "
                                   "can't run up the bill. Try again, or raise the limit in .env.")
 
     def status(self) -> dict:

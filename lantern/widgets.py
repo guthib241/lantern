@@ -52,8 +52,12 @@ BANNED: list[tuple[str, re.Pattern]] = [(why, re.compile(rx, flags)) for why, rx
     ("location changes", r"\blocation\s*(\.\s*(href|assign|replace)|=)", 0),
     ("window.open", r"\bopen\s*\(\s*['\"`]", 0),
 ]]
-HEALTH = re.compile(r"\b(dehydrat\w*|you should drink|litres? (a|per) day|liters? (a|per) day|"
-                    r"glasses (a|per) day|kidney|diagnos\w*|calorie\w*|medical advice)\b", re.I)
+WIDGET_EFFORT = "low"
+# Health guidance stays out (CLAUDE.md rule 5): a water timer is a timer. Live run, Oct 27: the model
+# added a daily "8 glasses" goal and the old pattern missed it, so intake amounts and goals are caught too.
+HEALTH = re.compile(r"\b(\w*hydrat\w*|you should drink|litres? (a|per) day|liters? (a|per) day|"
+                    r"glasses (a|per) day|\d+\s*(glasses|cups|litres?|liters?|ml|oz)\b|daily (goal|intake)|"
+                    r"kidney|diagnos\w*|calorie\w*|medical advice)\b", re.I)
 
 WIDGET_RULES = """You write one small widget for Lantern's desktop panel: a single self-contained HTML document.
 Hard rules (a checker enforces them; breaking one means the widget is rejected):
@@ -64,8 +68,11 @@ Hard rules (a checker enforces them; breaking one means the widget is rejected):
     lantern.notify(text)                     show a short message to the user
     await lantern.storage.get(key)           read a saved value (null if none)
     lantern.storage.set(key, value)          save a small JSON value
-- It renders in about 420x340 pixels. Friendly, rounded, warm colours. Readable at a glance.
-- No health, medical or nutrition advice of any kind. Jokes are fine.
+- Write every character directly: no \\u or \\x escapes, no atob, fromCharCode or .constructor.
+- It renders in a 420x340 pixel frame and must fit without scrolling. Under 150 lines.
+  Friendly, rounded, warm colours. Readable at a glance.
+- No health, medical or nutrition advice of any kind: a water or break timer is a plain countdown,
+  with no drinking goals, intake counts, amounts or "stay hydrated" lines. Jokes are fine.
 Reply with the HTML document only."""
 
 Approve = Callable[[str, str, dict], Any]
@@ -109,6 +116,26 @@ def title_of(html: str, default: str) -> str:
     return re.sub(r"\s+", " ", m.group(1)).strip()[:60] if m else default
 
 
+def _complete(client: Any, **kw) -> Any:
+    """One widget-writing call, streamed with low reasoning effort.
+    Live API, Oct 27: the non-streamed call failed every time after 30 s ("upstream request failed")
+    while the model reasoned through ~23k tokens; streamed at effort "low" it takes ~14 s and ~3k
+    tokens. Returns the final response (a fake client in tests may return it directly)."""
+    result = client.responses.create(stream=True, reasoning={"effort": WIDGET_EFFORT}, **kw)
+    if hasattr(result, "output_text"):
+        return result
+    final = None
+    for event in result:
+        kind = getattr(event, "type", "")
+        if kind == "response.completed":
+            final = event.response
+        elif kind in ("response.failed", "response.incomplete", "error"):
+            raise WidgetError(f"the model couldn't finish the widget ({kind})")
+    if final is None:
+        raise WidgetError("the widget stream ended without a result")
+    return final
+
+
 @dataclass
 class Widgets:
     user_dir: Path
@@ -145,8 +172,8 @@ class Widgets:
     def generate(self, client: Any, description: str, *, model: str = models.SPARK,
                  on_usage: Callable[[str, models.Usage], None] | None = None) -> tuple[str, int]:
         """Ask the model for the widget; one retry with the checker's findings. Returns (html, attempts)."""
-        response = client.responses.create(model=models.check_model(model), instructions=WIDGET_RULES,
-                                           input=f"Make this widget: {description}")
+        response = _complete(client, model=models.check_model(model), instructions=WIDGET_RULES,
+                             input=f"Make this widget: {description}")
         for attempt in (1, 2):
             if on_usage:
                 on_usage(model, models.Usage.from_response(getattr(response, "usage", None)))
@@ -156,8 +183,8 @@ class Widgets:
                 return html, attempt
             if attempt == 2:
                 raise WidgetError("the widget still failed the safety check: " + ", ".join(problems))
-            response = client.responses.create(
-                model=model, instructions=WIDGET_RULES, previous_response_id=response.id,
+            response = _complete(
+                client, model=model, instructions=WIDGET_RULES, previous_response_id=response.id,
                 input="The safety checker rejected it for: " + "; ".join(problems)
                       + ". Return the corrected full HTML document only.")
         raise WidgetError("unreachable")

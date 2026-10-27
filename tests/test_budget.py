@@ -119,3 +119,9 @@ def test_doctor_reports_the_limits():
     off = row({"LANTERN_BUDGET_USD": "off"})
     assert off.status == "warn" and "LANTERN_BUDGET_USD=150" in off.fix
     assert "isn't a number" in row({"LANTERN_TASK_BUDGET_USD": "three"}).detail
+
+
+def test_tiny_limits_are_shown_exactly():
+    """Live run, Oct 27: a $0.002 per-task limit was reported as "$0.00"."""
+    from lantern.budget import usd
+    assert [usd(x) for x in (150, 3, 0.002, 0.25, 0.0125, 0)] == ["$150.00", "$3.00", "$0.002", "$0.25", "$0.0125", "$0.00"]

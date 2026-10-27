@@ -216,3 +216,37 @@ lantern.storage.get('n').then((v) => lantern.notify('stored ' + v));
     finally:
         page.close()
         server.shutdown()
+
+
+def test_generation_streams_with_low_effort():
+    """Live API, Oct 27: unstreamed widget calls died at 30 s; streamed at effort "low" they take ~14 s."""
+    from types import SimpleNamespace as NS
+    from lantern.widgets import WIDGET_EFFORT, WidgetError, Widgets
+    html = "<!doctype html><html><body><p>tick</p><script>let n = 0;</script></body></html>"
+    seen = []
+
+    class Streaming:
+        def __init__(self, events):
+            self.events, self.responses = events, self
+
+        def create(self, **kw):
+            seen.append(kw)
+            return iter(self.events)
+    done = NS(type="response.completed", response=NS(id="r1", output_text=html, usage=None))
+    out, attempts = Widgets.generate(Widgets.__new__(Widgets), Streaming([NS(type="response.created"), done]), "a timer")
+    assert out.startswith("<!doctype html>") and attempts == 1
+    assert seen[0]["stream"] is True and seen[0]["reasoning"] == {"effort": WIDGET_EFFORT} == {"effort": "low"}
+    with pytest.raises(WidgetError, match="couldn't finish"):
+        Widgets.generate(Widgets.__new__(Widgets), Streaming([NS(type="response.failed")]), "a timer")
+
+
+@pytest.mark.parametrize("text", ["Goal reached! 8 glasses!", "Stay hydrated, obviously.", "Drink 2 litres", "daily goal: 6 cups"])
+def test_intake_goals_count_as_health_advice(text):
+    """Live run, Oct 27: a generated water timer set a daily "8 glasses" goal and passed the old pattern."""
+    from lantern.widgets import check
+    assert "health or medical advice" in check(f"<!doctype html><html><body><p>{text}</p></body></html>")
+
+
+def test_agent_rules_forbid_health_advice():
+    from lantern.agent import BASE_RULES
+    assert "Never give health, medical or nutrition advice" in BASE_RULES

@@ -115,6 +115,7 @@ def main(argv: list[str]) -> int:
     from openai import OpenAI
     data = Path(tempfile.mkdtemp(prefix="lantern-live-"))
     cfg = demo.prepare(data)
+    cfg.base_url = models.BASE_URL   # prepare() points the audit at rehearsal://; this run is live
     cfg.forms_model = models.WONDER if a.wonder else models.SPARK
     cfg.forms_headless = True
     (Path(cfg.roots[0]) / "Documents" / "meeting_minutes.txt").write_text(INJECTION, encoding="utf-8")
@@ -139,12 +140,13 @@ def main(argv: list[str]) -> int:
         start_evt, t0, cost0, body0 = len(events), time.time(), core.memory.total_cost(), len(recorder.bodies)
         msg0 = len(phone.messages())
         print(f"── {n}. [{beat.via}] {beat.goal}")
+        task_id = None
         if beat.via == "voice":
             hub.receive(phone.incoming(audio=speak(beat.goal, data / f"beat{n}"), ext=".ogg"))
         elif beat.via == "phone":
             hub.receive(phone.incoming(text=beat.goal))
         else:
-            core.submit(beat.goal)
+            task_id = core.submit(beat.goal)
         asked, answered, finished = [], set(), None
         end = time.time() + a.timeout
         while time.time() < end and finished is None:
@@ -162,7 +164,10 @@ def main(argv: list[str]) -> int:
                 finished = {"status": "voice failed", "reply": phone.messages()[-1].get("text", "")}
                 break
             with done:
-                finished = next((e for e in events[start_evt:] if e.get("type") == "done"), None)
+                if task_id is None:   # phone/voice: the task the hub queued for this beat
+                    task_id = next((e.get("task_id") for e in events[start_evt:] if e.get("type") == "queued"), None)
+                finished = next((e for e in events[start_evt:] if e.get("type") == "done"
+                                 and task_id is not None and e.get("id") == task_id), None)
                 if finished is None:
                     done.wait(0.2)
         tools = [e for e in events[start_evt:] if e.get("type") == "tool" and e.get("name") != "finish"]
@@ -171,12 +176,16 @@ def main(argv: list[str]) -> int:
             flag = "✗" if isinstance(r, dict) and r.get("error") else "•"
             print(f"   {flag} {e.get('name')} [{e.get('badge', '')}]"
                   + (f" → {str(r.get('error'))[:120]}" if isinstance(r, dict) and r.get("error") else ""))
+        if finished is None and task_id is not None:   # don't let a slow task bleed into the next beat
+            core.agent.cancel.set()
+            core.bus.cancel_all("live check timeout")
+            core.wait_idle(60)
         status = finished.get("status") if finished else "timeout"
         reply = (finished or {}).get("reply") or (finished or {}).get("summary") or ""
         cost = core.memory.total_cost() - cost0
         print(f"   🏮 [{status}] {reply.strip()[:400]}")
         print(f"   ⏱ {time.time() - t0:.1f}s · ${cost:.4f}\n")
-        tid = (finished or {}).get("id") or (finished or {}).get("task_id")
+        tid = task_id
         report.append({"n": n, "goal": beat.goal, "via": beat.via, "expect": beat.expect, "status": status,
                        "reply": reply, "seconds": round(time.time() - t0, 1), "cost_usd": round(cost, 5),
                        "approvals_asked": asked, "tools": [e.get("name") for e in tools],
@@ -194,7 +203,12 @@ def main(argv: list[str]) -> int:
     tidy = next((r for r in report if r["goal"].startswith("Tidy") and r["task_id"]), None)
     if tidy:
         before = sorted(p.name for p in (Path(cfg.roots[0]) / "Downloads").iterdir())
-        uid = core.undo(tidy["task_id"])
+        try:
+            uid = core.undo(tidy["task_id"])
+        except Exception as e:   # e.g. the tidy was declined, so nothing moved
+            print(f"↩︎ undo of task #{tidy['task_id']} not possible: {e}")
+            uid = None
+    if tidy and uid:
         end = time.time() + 60
         while time.time() < end:
             for ap_ in core.bus.pending():
