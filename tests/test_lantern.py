@@ -214,3 +214,23 @@ def test_plain_chat_reply_finishes_task(home):
     tb, _ = toolbox(root, mem)
     r = Agent(FakeClient([([], "Hey. What do you need?")]), mem, tb).run("hi")
     assert r.status == "done" and mem.active_tasks() == []
+
+
+def test_the_cacheable_prefix_is_identical_across_tasks(tmp_path):
+    """Prompt caching needs a byte-identical start: tools, rules and persona never change between tasks;
+    what does change (memory, the time) comes after them (CLAUDE.md)."""
+    from fakes import FakeClient, call
+    from lantern.agent import BASE_RULES
+    root = tmp_path / "docs"
+    root.mkdir()
+    mem = Memory(tmp_path / "m.db")
+    fake = FakeClient([([call("remember", "c1", key="editor", value="vim")], ""), ([], "Noted."), ([], "Hi.")])
+    agent = Agent(fake, mem, Toolbox([root], mem, lambda summary: True))
+    agent.run("remember that I use vim")
+    agent.run("hello")
+    first, later = fake.requests[0], fake.requests[-1]
+    assert json.dumps(first["tools"]) == json.dumps(later["tools"])
+    cut = first["instructions"].index("# Your memory")
+    assert first["instructions"][:cut] == later["instructions"][:cut] and first["instructions"].startswith(BASE_RULES)
+    assert first["instructions"] != later["instructions"]          # the memory moved on, after the stable part
+    assert "vim" in later["instructions"][cut:] and "vim" not in later["instructions"][:cut]
