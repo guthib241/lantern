@@ -80,3 +80,9 @@
   - **Event source:** the main process follows the event stream itself (Node 24's built-in WebSocket) instead of relaying through a renderer, which Chromium throttles while hidden.
 - Oct 27 (M27): Preferences are saved into `config.json` beside `memory.db`, the same folder `config.load()` reads. A rehearsal therefore writes into its own temp folder and never into the user's real `~/.lantern`. Only allowlisted keys (`persona`) can be written from the app, so a compromised renderer can't change roots, zones or models through it. `LANTERN_PERSONA` in the environment still wins at startup. The "welcome seen" flag lives in the app's local storage: a per-machine convenience, and losing it only shows the sheet again.
 - Oct 27: Before the real key arrives, the plumbing is proven over HTTP against a local fake of the API, using the real OpenAI SDK, rather than only with in-process fakes. The fake lives in `tests/` and is never used by the product; tests still never call the real API (CLAUDE.md). What it cannot prove is the real server's behaviour (exact action fields, coordinate space, model limits); `scripts/smoke.py` and `smoke.py cua` cover that on day one.
+- Oct 27 (review fixes):
+  - **No silent stand-ins in real runs.** If the private lane isn't configured, Lantern says so and refuses, rather than answering with the rehearsal stand-in.
+  - **Rules on every turn.** Instructions are part of every request, because chained Responses calls don't inherit them.
+  - **Taint is broad on purpose.** Names that come from disk (file names, project folders, package scripts) can be chosen by whoever made the files, so they count as untrusted text. A tidy-up therefore asks for a full Review rather than a one-tap Allow. That costs a tap and buys a guarantee.
+  - **MCP goals.** Goals from other programs are marked `[mcp]` and treated the same way.
+  - **Symlinks.** They are never moved; moving one would act on what it points to.

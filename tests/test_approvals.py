@@ -169,3 +169,27 @@ def test_strip_hidden_text():
     assert "Pay invoice" in clean and "ok" in clean
     w = wrap(html, "/tmp/x.html")
     assert w["untrusted"] and w["removed_hidden_chars"] > 0
+
+
+def test_two_answers_at_once_only_one_wins():
+    import threading
+    from lantern.approvals import ApprovalBus, ApprovalError
+    bus = ApprovalBus()
+    for _ in range(200):
+        a = bus.request("send_email", "Send it?", {"to": "x"})
+        start = threading.Barrier(2)
+        results = []
+
+        def answer(approve):
+            start.wait()
+            try:
+                bus.decide(a.id, a.nonce, approve)
+                results.append(approve)
+            except ApprovalError:
+                results.append("refused")
+        threads = [threading.Thread(target=answer, args=(v,)) for v in (True, False)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        winners = [r for r in results if r != "refused"]
+        assert len(winners) == 1 and results.count("refused") == 1
+        assert a.status == ("approved" if winners[0] else "denied")

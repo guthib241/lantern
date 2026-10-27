@@ -337,7 +337,9 @@ class ComputerLoop:
             if acked:
                 out["acknowledged_safety_checks"] = acked
             outputs.append(out)
-        return self._create(False, previous_response_id=response.id, input=outputs, tools=[NATIVE_TOOL])
+        # instructions don't carry over with previous_response_id: resend the same rules every turn
+        return self._create(False, instructions=CUA_RULES, previous_response_id=response.id, input=outputs,
+                            tools=[NATIVE_TOOL])
 
     def _function_step(self, response, units: str, step: int):
         fcalls = [o for o in response.output if _get(o, "type") == "function_call"]
@@ -365,8 +367,8 @@ class ComputerLoop:
                             "output": [{"type": "input_text", "text": note},
                                        {"type": "input_text", "text": "Screen after the action:"},
                                        {"type": "input_image", "image_url": self._shot()}]})
-        return self._create(False, previous_response_id=response.id, input=outputs, tools=FUNCTION_TOOLS,
-                            parallel_tool_calls=False)
+        return self._create(False, instructions=CUA_RULES + FUNCTION_EXTRA, previous_response_id=response.id,
+                            input=outputs, tools=FUNCTION_TOOLS, parallel_tool_calls=False)
 
     # ---- acting, with hard stops ------------------------------------------------------
     def _px(self, x: float, y: float, units: str) -> tuple[int, int]:

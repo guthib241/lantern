@@ -108,7 +108,7 @@ def build_server(toolbox: Toolbox, *, audit=None, forward: Forward | None = None
     @server.tool(description="Ask Lantern to do something (fill a form, send an email, move files...). "
                              "The user approves every change on their desktop or phone. Returns a task id.")
     def submit_task(goal: str) -> dict:
-        r = forwarded("POST", "/task", {"goal": goal})
+        r = forwarded("POST", "/task", {"goal": goal, "source": "mcp"})
         return {"task_id": r.get("task_id"), "note": "Queued. The user approves any change on their desktop or phone."}
 
     @server.tool(description="Status and summary of a task started with submit_task.")

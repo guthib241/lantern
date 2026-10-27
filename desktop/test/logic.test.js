@@ -289,3 +289,17 @@ test('menu bar status, badge and terse notifications', () => {
   assert.equal(N.notice({ type: 'done', status: 'failed', summary: 'no internet' }, s, {}).title, 'Lantern couldn’t finish');
   assert.equal(N.notice({ type: 'done', status: 'done', reply: 'ok' }, s, {}), null);
 });
+
+test('widget storage: no key can reach the index, and the cap holds', () => {
+  const mem = new Map();
+  const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v) };
+  const s = W.storage(store, 'w');
+  s.set('index', 5);           // a widget key named like the index is just data
+  s.set('__keys', []);
+  assert.equal(s.get('index'), 5);
+  for (let i = 0; i < 48; i++) s.set(`k${i}`, i);
+  assert.throws(() => s.set('one-too-many', 1), /full/);
+  mem.set('lantern.widget.w.index', '5');   // a corrupted index can't break later writes
+  s.set('again', 1);
+  assert.equal(s.get('again'), 1);
+});

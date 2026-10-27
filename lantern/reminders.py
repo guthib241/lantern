@@ -45,7 +45,10 @@ def parse_when(when: str, now: dt.datetime | None = None) -> dt.datetime:
         unit = _UNITS.get(m.group(2))
         if unit is None:
             raise ReminderError(f"unknown unit '{m.group(2)}': use minutes, hours or days")
-        due = now + dt.timedelta(seconds=float(m.group(1)) * unit)
+        seconds = float(m.group(1)) * unit
+        if seconds > MAX_AHEAD.total_seconds():
+            raise ReminderError("that's more than a year away")
+        due = now + dt.timedelta(seconds=seconds)
     elif m := _CLOCK.match(text):
         hour, minute, half = int(m.group(1)), int(m.group(2) or 0), m.group(3)
         if half:

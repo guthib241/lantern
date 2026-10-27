@@ -62,13 +62,18 @@ def load_token(home: Path) -> str:
         return path.read_text().strip()
     home.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(32)
-    path.write_text(token)
-    os.chmod(path, 0o600)
+    try:   # created owner-only in one step: never readable by others, not even briefly
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:   # another Lantern process made it a moment ago
+        return path.read_text().strip()
+    with os.fdopen(fd, "w") as f:
+        f.write(token)
     return token
 
 
 class TaskIn(BaseModel):
     goal: str
+    source: str = ""   # "mcp" when another program submits it (lantern --mcp)
 
 
 class DecisionIn(BaseModel):
@@ -131,8 +136,12 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
 
     @app.post("/task", dependencies=[Depends(auth)])
     def post_task(body: TaskIn):
+        from .tools import EXTERNAL_PREFIX
+        goal = body.goal.strip()
+        if body.source == "mcp" and goal:
+            goal = EXTERNAL_PREFIX + goal   # tainted from the start; its addresses aren't trusted
         try:
-            return {"task_id": core.submit(body.goal)}
+            return {"task_id": core.submit(goal)}
         except ValueError as e:
             raise HTTPException(400, str(e))
 

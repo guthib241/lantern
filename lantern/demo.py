@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 import re
 import tempfile
 import threading
@@ -461,8 +462,12 @@ def build(cfg: config_mod.Config, *, locate: Callable[[], dict] | None = None):
     policy = Policy.load(cfg.zones_file, cfg.roots)
     email = EmailService(EmailSettings(mode="fake", from_addr="asha.rao@example.com"), policy, audit,
                          outbox_dir=Path(cfg.media_dir) / "outbox")
+    # Rehearsal uses the offline stand-in for the private lane, unless a real local Glimmer is configured.
+    from .router import FakeGlimmer, Router, RouterConfig, make_backend
+    lane = RouterConfig.from_env(dict(os.environ))
+    router = Router(policy, make_backend(lane, audit) if lane.mode == "openai" else FakeGlimmer(audit))
     core = Core(cfg, DemoModel(locate or (lambda: measure_form(cfg.chromium_path))), memory=memory, audit=audit,
-                policy=policy, email=email)
+                policy=policy, email=email, router=router)
     core.demo = True
 
     def converter(src: Path, dst: Path) -> Path:

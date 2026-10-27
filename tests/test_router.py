@@ -9,7 +9,7 @@ from lantern.agent import Agent
 from lantern.audit import AuditLog, GuardedClient
 from lantern.memory import Memory
 from lantern.policy import OPEN, PRIVATE, WRITABLE, Policy, PolicyError, Rule
-from lantern.router import (FakeGlimmer, OpenAIGlimmer, PrivateLaneError, Router, RouterConfig,
+from lantern.router import (FakeGlimmer, OffGlimmer, OpenAIGlimmer, PrivateLaneError, Router, RouterConfig,
                             lane_for_url, make_backend)
 from lantern.tools import Toolbox
 
@@ -140,7 +140,11 @@ def test_modal_url_is_selfhosted_lane(tmp_path):
 
 
 def test_config_flags():
-    assert isinstance(make_backend(RouterConfig.from_env({})), FakeGlimmer)
+    off = make_backend(RouterConfig.from_env({}))   # no URL: off, never the stand-in by surprise
+    assert isinstance(off, OffGlimmer) and off.name == "private lane off"
+    with pytest.raises(PrivateLaneError, match="LANTERN_GLIMMER_URL"):
+        off.ask("s", "u")
+    assert isinstance(make_backend(RouterConfig.from_env({"LANTERN_GLIMMER_MODE": "fake"})), FakeGlimmer)
     cfg = RouterConfig.from_env({"LANTERN_GLIMMER_URL": "http://127.0.0.1:8080/v1"})
     assert cfg.mode == "openai" and cfg.model == "muse-glimmer"
     with pytest.raises(ValueError):

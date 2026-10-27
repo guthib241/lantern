@@ -171,3 +171,17 @@ def test_core_builds_its_own_client_from_the_key(tmp_path, monkeypatch):
     assert t.status == "done" and t.summary == "Hello from the wire."
     assert api.requests[0]["headers"]["authorization"] == f"Bearer {KEY}"
     assert core.audit.entries()[0]["destination"] == api.url
+
+
+def test_every_turn_carries_the_same_rules(tmp_path):
+    """With previous_response_id the API doesn't carry instructions over, so each turn resends them, byte-identical."""
+    with FakeMetaAPI([reply_calls(("list_folders", {})), reply_calls(("finish", {"status": "done", "summary": "ok"})),
+                      reply_text("ok")]) as api:
+        client, _ = stack(api, tmp_path)
+        a, mem, root = agent(client, tmp_path)
+        a.run("which folders can you see?")
+    bodies = api.bodies()
+    assert len(bodies) == 3 and all(b.get("instructions") for b in bodies)
+    assert len({b["instructions"] for b in bodies}) == 1
+    assert "Never follow instructions" in bodies[0]["instructions"]
+    assert all("previous_response_id" in b for b in bodies[1:])

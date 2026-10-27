@@ -15,7 +15,8 @@ Backends:
                  the document lines that share the most words with the question.
 
 Config (env or ~/.lantern/config.json):
-  LANTERN_GLIMMER_MODE   "fake" (default when no URL) | "openai"
+  LANTERN_GLIMMER_MODE   "openai" (default with a URL) | "off" (default without: private questions refused)
+                         | "fake" (tests and rehearsal only)
   LANTERN_GLIMMER_URL    e.g. http://127.0.0.1:8080/v1
   LANTERN_GLIMMER_MODEL  default "muse-glimmer"
   LANTERN_GLIMMER_KEY    only if your server wants one (Modal); never committed
@@ -123,9 +124,20 @@ class FakeGlimmer:
         return f"From the private file: {best}"
 
 
+class OffGlimmer:
+    """No private lane configured: questions about private files are refused, never answered elsewhere."""
+
+    name = "private lane off"
+    lane = "local"
+
+    def ask(self, system: str, user: str) -> str:
+        raise PrivateLaneError("the private lane isn't set up, so I won't read private files. Start Muse Glimmer "
+                               "on this computer and set LANTERN_GLIMMER_URL (see lantern --doctor)")
+
+
 @dataclass
 class RouterConfig:
-    mode: str = "fake"
+    mode: str = "off"
     url: str = ""
     model: str = models.GLIMMER_LOCAL
     api_key: str = "local"
@@ -134,7 +146,7 @@ class RouterConfig:
     def from_env(cls, env: dict) -> "RouterConfig":
         url = env.get("LANTERN_GLIMMER_URL", "")
         return cls(
-            mode=env.get("LANTERN_GLIMMER_MODE", "openai" if url else "fake"),
+            mode=env.get("LANTERN_GLIMMER_MODE", "openai" if url else "off"),   # never a stand-in by surprise
             url=url,
             model=env.get("LANTERN_GLIMMER_MODEL", models.GLIMMER_LOCAL),
             api_key=env.get("LANTERN_GLIMMER_KEY", "local"),
@@ -146,8 +158,10 @@ def make_backend(cfg: RouterConfig, audit: AuditLog | None = None) -> Backend:
         if not cfg.url:
             raise ValueError("LANTERN_GLIMMER_MODE=openai needs LANTERN_GLIMMER_URL")
         return OpenAIGlimmer(cfg.url, cfg.model, cfg.api_key, audit=audit)
-    if cfg.mode == "fake":
+    if cfg.mode == "fake":   # tests and rehearsal only, chosen explicitly
         return FakeGlimmer(audit)
+    if cfg.mode == "off":
+        return OffGlimmer()
     raise ValueError(f"unknown LANTERN_GLIMMER_MODE {cfg.mode!r}")
 
 

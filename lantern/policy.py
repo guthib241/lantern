@@ -149,6 +149,13 @@ class Policy:
             p = (default_root or roots[0]) / p
         return p.resolve()
 
+    def is_link(self, path: str | Path) -> bool:
+        """Is the path itself (before resolving) a symlink? Moving one would move what it points to."""
+        p = Path(os.path.expanduser(str(path)))
+        if not p.is_absolute():
+            p = self.roots[0] / p
+        return p.is_symlink()
+
     def _deny(self, path: str | Path) -> PolicyError:
         # Same message for hidden and outside, so hidden paths are not revealed.
         return PolicyError(

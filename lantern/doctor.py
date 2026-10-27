@@ -132,7 +132,7 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     url = v.get("LANTERN_GLIMMER_URL", "")
     if not url:
         add(Check("glimmer", "Private lane (Muse Glimmer)", WARN,
-                  "not set: an offline stand-in answers questions about private files",
+                  "not set: questions about private files are refused until it is",
                   "Serve Muse Glimmer with llama.cpp (llama-server ... --port 8080), then set "
                   "LANTERN_GLIMMER_URL=http://127.0.0.1:8080/v1"))
     else:

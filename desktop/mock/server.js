@@ -211,7 +211,7 @@ function createMock() {
         { id: 'python', title: 'Python 3.11+', status: 'ok', detail: '3.12.4', fix: '', needed_for: ['rehearsal', 'demo'] },
         { id: 'key', title: 'Meta Model API key', status: 'fail', detail: 'MODEL_API_KEY is not set',
           fix: 'Add MODEL_API_KEY=<your key from dev.meta.ai> to .env, then run python scripts/smoke.py', needed_for: ['demo'] },
-        { id: 'glimmer', title: 'Private lane (Muse Glimmer)', status: 'warn', detail: 'not set: an offline stand-in answers',
+        { id: 'glimmer', title: 'Private lane (Muse Glimmer)', status: 'warn', detail: 'not set: private questions are refused until it is',
           fix: 'Set LANTERN_GLIMMER_URL=http://127.0.0.1:8080/v1', needed_for: ['demo'] },
       ],
       ready: { rehearsal: { blocked_by: [], to_do: [] }, demo: { blocked_by: ['key'], to_do: ['glimmer'] } },

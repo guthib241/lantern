@@ -157,6 +157,7 @@ def test_reimbursement_form_end_to_end(tmp_path, chromium, at):
     first, second = client.requests[1], client.requests[2]
     assert first["tools"] == [{"type": "computer"}]
     assert first["input"][0]["content"][1]["image_url"].startswith("data:image/jpeg;base64,")
+    assert second["instructions"] == first["instructions"]   # the rules ride along on every chained turn
     out = second["input"][0]
     assert out["type"] == "computer_call_output" and out["call_id"] == "c1" and second["previous_response_id"] == "resp_2"
     assert out["output"]["type"] == "computer_screenshot" and out["output"]["image_url"].startswith("data:image/jpeg")

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import json
 import threading
 from pathlib import Path
 from typing import Callable
@@ -63,10 +64,12 @@ class Toolbox:
         self.cancel = threading.Event()  # the agent swaps in its own (STOP / kill switch)
         self.on_event: Callable[[str, dict], None] = lambda kind, data: None
 
-    def begin_task(self, task_id: int | None = None) -> None:
+    def begin_task(self, task_id: int | None = None, goal: str = "") -> None:
         self.tainted = False
         self.untrusted_emails = set()
         self.task_id = task_id
+        if goal.startswith(EXTERNAL_PREFIX):   # written by another program, not typed by the user
+            self._saw_untrusted(goal)
 
     def _saw_untrusted(self, text: str) -> None:
         """Untrusted text reached the model: taint the task and note any addresses in it."""
@@ -122,6 +125,8 @@ class Toolbox:
             })
             if len(entries) >= 200:
                 break
+        if entries:   # file names are chosen by whoever made the files (think Downloads): untrusted text
+            self._saw_untrusted(" ".join(e["name"] for e in entries))
         return {"path": str(p), "zone": zone, "entries": entries}
 
     def search_files(self, query: str, in_content: bool = False) -> dict:
@@ -153,6 +158,8 @@ class Toolbox:
                     hits.append({"path": str(full), "matched_in": where, "zone": zone,
                                  "size": st.st_size, "modified": st.st_mtime})
         hits.sort(key=lambda h: h["modified"], reverse=True)
+        if hits:
+            self._saw_untrusted(" ".join(Path(h["path"]).name for h in hits[:MAX_RESULTS]))
         return {"query": q, "count": len(hits), "results": hits[:MAX_RESULTS]}
 
     def read_file(self, path: str) -> dict:
@@ -211,10 +218,12 @@ class Toolbox:
             raise ToolError(str(e)) from e
         if not src.exists():
             raise ToolError(f"{src} does not exist")
+        if self.policy.is_link(source):
+            raise ToolError(f"{source} is a shortcut (symlink); moving it would move the file it points to")
         if src.is_dir() and (inner := self.policy.nested_zones(src)):  # refuse before asking, not after
             raise ToolError(f"'{src}' contains a {inner[0].zone} folder ({inner[0].path}); "
                             "moving it would take that folder out of its zone. Move the files instead.")
-        if dst.is_dir():
+        if dst.is_dir() or str(destination).endswith(("/", "\\")):   # "Receipts/" means into that folder
             dst = dst / src.name
         if dst.exists():
             raise ToolError(f"{dst} already exists; pick another name")
@@ -254,6 +263,8 @@ class Toolbox:
                 raise ToolError(str(e)) from e
             if not src.is_file():
                 raise ToolError(f"{src} is not a file (organize_files moves files only)")
+            if self.policy.is_link(m["source"]):
+                raise ToolError(f"{m['source']} is a shortcut (symlink); I won't move what it points to")
             if dst.is_dir() or str(m["destination"]).endswith(("/", "\\")):
                 dst = dst / src.name
             if dst.exists() or dst in seen_dst:
@@ -335,7 +346,9 @@ class Toolbox:
             known |= emails_in(value)
         if self.task_id:
             try:
-                known |= emails_in(self.memory.get_task(self.task_id).goal)
+                goal = self.memory.get_task(self.task_id).goal
+                if not goal.startswith(EXTERNAL_PREFIX):   # an MCP client's goal doesn't vouch for addresses
+                    known |= emails_in(goal)
             except KeyError:
                 pass
         try:
@@ -369,6 +382,8 @@ class Toolbox:
 
     def find_project(self, name: str) -> dict:
         hits = self._envmap().find(name)
+        if hits:
+            self._saw_untrusted(" ".join(p.name for p in hits[:30]))   # folder names: untrusted text
         return {"query": name, "count": len(hits), "projects": [p.summary() for p in hits[:30]]}
 
     def project_info(self, path: str) -> dict:
@@ -383,6 +398,7 @@ class Toolbox:
             envs.append({"path": e["path"], "python": e["python"], "installed": len(e["packages"]),
                          "declared_but_missing": missing[:50]})
         info["envs"] = envs
+        self._saw_untrusted(json.dumps(p.scripts) + " " + p.name)   # package.json scripts are file content
         return info
 
     def which_projects_use(self, package: str) -> dict:
@@ -558,6 +574,8 @@ class Toolbox:
             raise ToolError(str(e)) from e
         except OSError as e:
             raise ToolError(f"{name} failed: {e}") from e
+        except (ValueError, OverflowError, LookupError) as e:   # bad input the model can correct: tell it, don't crash
+            raise ToolError(f"{name}: {e}") from e
 
 
 def _fn(name: str, description: str, props: dict, required: list[str]) -> dict:
@@ -572,6 +590,7 @@ def _fn(name: str, description: str, props: dict, required: list[str]) -> dict:
 
 S = {"type": "string"}
 MAX_ORGANIZE = 200
+EXTERNAL_PREFIX = "[mcp] "   # goals submitted by another program over MCP
 TOOL_SPECS = [
     _fn("list_folders", "List the folders Lantern may see and their privacy zone (private / open / writable).", {}, []),
     _fn("list_dir", "List files and subfolders in a folder.", {"path": {**S, "description": "Folder path; empty for the main folder"}}, []),

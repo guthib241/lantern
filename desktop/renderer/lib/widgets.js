@@ -34,12 +34,20 @@
 
   /** Per-widget storage on top of any {getItem, setItem} store, namespaced and capped. */
   function storage(store, widgetName) {
+    // Values live under "<widget>.v.<key>" and the index under "<widget>.index": no widget key can reach the index.
     const prefix = `lantern.widget.${widgetName}.`;
-    const keysKey = prefix + '__keys';
-    const keys = () => JSON.parse(store.getItem(keysKey) || '[]');
+    const indexKey = prefix + 'index';
+    const keys = () => {
+      try {
+        const k = JSON.parse(store.getItem(indexKey) || '[]');
+        return Array.isArray(k) ? k : [];
+      } catch (e) {
+        return [];
+      }
+    };
     return {
       get(key) {
-        const raw = store.getItem(prefix + key);
+        const raw = store.getItem(prefix + 'v.' + key);
         return raw == null ? null : JSON.parse(raw);
       },
       set(key, value) {
@@ -47,9 +55,9 @@
         if (!k.includes(key)) {
           if (k.length >= MAX_KEYS) throw new Error('widget storage is full');
           k.push(key);
-          store.setItem(keysKey, JSON.stringify(k));
+          store.setItem(indexKey, JSON.stringify(k));
         }
-        store.setItem(prefix + key, JSON.stringify(value));
+        store.setItem(prefix + 'v.' + key, JSON.stringify(value));
       },
     };
   }

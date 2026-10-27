@@ -142,7 +142,7 @@ def test_lantern_mcp_server_tools_and_privacy(lantern_server):
     assert hidden.is_error and "outside the folders" in hidden.content[0].text
     assert "42 lakh" in answer.content[0].text      # the local model's answer, by design
     assert json.loads(task.content[0].text)["task_id"] == 7
-    assert sent[0] == ("POST", "/task", {"goal": "email the notes to Priya"})
+    assert sent[0] == ("POST", "/task", {"goal": "email the notes to Priya", "source": "mcp"})   # marked as another program's
     assert "secret" not in status.content[0].text
     summary = audit.summary()
     assert summary["cloud"]["by_model"]["mcp"]["calls"] >= 3 and summary["cloud"]["redactions"]["aws_access_key"] == 1

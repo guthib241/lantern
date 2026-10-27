@@ -182,3 +182,14 @@ def test_forgetting_a_task_forgets_its_reminders(tmp_path):
     assert mem.forget_task(t.id)["reminders"] == 1
     assert [r.text for r in mem.reminders()] == ["keep me"]
     assert mem.forget_everything()["reminders"] == 1
+
+
+def test_bad_tool_input_comes_back_as_an_error_not_a_crash(tmp_path):
+    tb, mem, _ = toolbox(tmp_path)
+    with pytest.raises(ToolError, match="year"):
+        tb.call("set_reminder", {"text": "x", "when": "in 99999999999 days"})
+    with pytest.raises(ToolError, match="empty"):
+        tb.call("remember", {"key": " ", "value": "x"})
+    fake = FakeClient([([call("remember", "c1", key=" ", value="x")], ""), ([], "Fixed it.")])
+    r = Agent(fake, mem, tb).run("remember something")
+    assert r.status == "done" and "error" in r.tool_calls[0]["result"]   # the model saw the error and carried on

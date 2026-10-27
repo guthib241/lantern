@@ -66,6 +66,9 @@ class ApprovalBus:
         self.clock = clock
         self._items: dict[str, Approval] = {}
         self._lock = threading.Lock()
+        # Check-then-set on an approval's status happens under this lock, so two answers arriving at once
+        # (desktop + phone) can't both pass the "still pending" check. Events are emitted outside it.
+        self._state = threading.RLock()
         self._listeners: list[Listener] = []
 
     def subscribe(self, fn: Listener) -> None:
@@ -107,8 +110,11 @@ class ApprovalBus:
         return [a for a in items if a.status == PENDING]
 
     def _expire_if_due(self, a: Approval) -> None:
-        if a.status in (PENDING, APPROVED) and self.clock() > a.expires_at:
-            a.status = EXPIRED
+        with self._state:
+            due = a.status in (PENDING, APPROVED) and self.clock() > a.expires_at
+            if due:
+                a.status = EXPIRED
+        if due:
             a._event.set()
             self._emit("expired", a)
 
@@ -119,12 +125,13 @@ class ApprovalBus:
         a = self.get(approval_id)
         if not secrets.compare_digest(a.nonce, nonce or ""):
             raise ApprovalError("this approval link is not valid")
-        if a.status != PENDING:
-            raise ApprovalError(f"approval {a.id} is already {a.status}")
-        if expected_hash is not None and expected_hash != a.payload_hash:
-            raise ApprovalError("the action changed since it was shown; ask again")
-        a.status = APPROVED if approve else DENIED
-        a.decided_by, a.decided_at = by, self.clock()
+        with self._state:
+            if a.status != PENDING:
+                raise ApprovalError(f"approval {a.id} is already {a.status}")
+            if expected_hash is not None and expected_hash != a.payload_hash:
+                raise ApprovalError("the action changed since it was shown; ask again")
+            a.status = APPROVED if approve else DENIED
+            a.decided_by, a.decided_at = by, self.clock()
         a._event.set()
         self._emit("decided", a)
         return a
@@ -141,18 +148,22 @@ class ApprovalBus:
         """Call right before acting. Refuses unless approved, unexpired, unused and the
         payload about to be executed hashes to exactly what was approved."""
         a = self.get(approval_id)
-        if a.status != APPROVED:
-            raise ApprovalError(f"approval {a.id} is {a.status}, not approved")
-        if payload_hash(payload) != a.payload_hash:
-            raise ApprovalError("the action changed after it was approved; it needs a new approval")
-        a.status = USED
+        with self._state:
+            if a.status != APPROVED:
+                raise ApprovalError(f"approval {a.id} is {a.status}, not approved")
+            if payload_hash(payload) != a.payload_hash:
+                raise ApprovalError("the action changed after it was approved; it needs a new approval")
+            a.status = USED
         self._emit("used", a)
 
     def cancel_all(self, reason: str = "cancelled") -> int:
         """Kill switch: deny everything pending."""
         n = 0
         for a in self.pending():
-            a.status, a.decided_by, a.decided_at = DENIED, reason, self.clock()
+            with self._state:
+                if a.status != PENDING:   # answered in the meantime
+                    continue
+                a.status, a.decided_by, a.decided_at = DENIED, reason, self.clock()
             a._event.set()
             self._emit("decided", a)
             n += 1
