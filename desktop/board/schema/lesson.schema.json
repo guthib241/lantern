@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lantern.local/board/lesson.schema.json",
+  "title": "Lantern teaching board lesson",
+  "description": "A timeline of board actions. The board is 1600 x 900 units; x and y are the top-left of written items. Each action may carry a 'say' line, spoken by the computer's own speech engine (not a Meta model). Math lines show a check mark only when 'verified' is true, which the lesson planner sets after SymPy accepts the step; 'check' carries the step in SymPy syntax so anyone can re-verify it.",
+  "type": "object",
+  "required": ["version", "title", "actions"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "title": {"type": "string", "minLength": 1, "maxLength": 120},
+    "subject": {"enum": ["algebra", "calculus", "geometry", "other"]},
+    "language": {"type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$", "description": "BCP 47 tag for the voice, e.g. en-IN"},
+    "summary": {"type": "string", "maxLength": 300},
+    "actions": {"type": "array", "minItems": 1, "maxItems": 200, "items": {"$ref": "#/$defs/action"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,31}$"},
+    "say": {"type": "string", "minLength": 1, "maxLength": 400},
+    "color": {"type": "string", "pattern": "^(#[0-9a-fA-F]{6}|chalk|yellow|blue|orange|green|pink|red)$"},
+    "x": {"type": "number", "minimum": 0, "maximum": 1600},
+    "y": {"type": "number", "minimum": 0, "maximum": 900},
+    "point": {"type": "array", "prefixItems": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/y"}], "minItems": 2, "maxItems": 2},
+    "datapoint": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "minItems": 2, "maxItems": 2},
+    "range": {"type": "array", "prefixItems": [{"type": "number"}, {"type": "number"}], "minItems": 2, "maxItems": 2},
+    "seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 60},
+    "check": {
+      "type": "object",
+      "description": "The step in SymPy syntax, and how it relates to an earlier line (by id).",
+      "required": ["sympy", "relation"],
+      "additionalProperties": false,
+      "properties": {
+        "sympy": {"type": "string", "minLength": 1, "maxLength": 300},
+        "relation": {"enum": ["given", "same_solutions", "equal", "derivative_of", "derivatives"]},
+        "of": {"$ref": "#/$defs/id"},
+        "variable": {"type": "string", "pattern": "^[a-z]$"}
+      },
+      "allOf": [{"if": {"properties": {"relation": {"enum": ["same_solutions", "equal", "derivative_of"]}}},
+                 "then": {"required": ["of"]}}]
+    },
+    "action": {
+      "type": "object",
+      "required": ["do"],
+      "properties": {"do": {"enum": ["write_math", "write_text", "draw", "highlight", "erase", "pause"]}},
+      "allOf": [
+        {"if": {"properties": {"do": {"const": "write_math"}}}, "then": {"$ref": "#/$defs/write_math"}},
+        {"if": {"properties": {"do": {"const": "write_text"}}}, "then": {"$ref": "#/$defs/write_text"}},
+        {"if": {"properties": {"do": {"const": "draw"}}}, "then": {"$ref": "#/$defs/draw"}},
+        {"if": {"properties": {"do": {"const": "highlight"}}}, "then": {"$ref": "#/$defs/highlight"}},
+        {"if": {"properties": {"do": {"const": "erase"}}}, "then": {"$ref": "#/$defs/erase"}},
+        {"if": {"properties": {"do": {"const": "pause"}}}, "then": {"$ref": "#/$defs/pause"}}
+      ]
+    },
+    "write_math": {
+      "type": "object",
+      "required": ["do", "latex"],
+      "additionalProperties": false,
+      "properties": {
+        "do": {"const": "write_math"}, "id": {"$ref": "#/$defs/id"}, "say": {"$ref": "#/$defs/say"},
+        "latex": {"type": "string", "minLength": 1, "maxLength": 400},
+        "x": {"$ref": "#/$defs/x"}, "y": {"$ref": "#/$defs/y"},
+        "size": {"type": "number", "minimum": 16, "maximum": 120},
+        "color": {"$ref": "#/$defs/color"},
+        "step": {"type": "string", "maxLength": 80, "description": "The transformation, shown small beside the line, e.g. 'factor'"},
+        "verified": {"type": "boolean"},
+        "check": {"$ref": "#/$defs/check"},
+        "seconds": {"$ref": "#/$defs/seconds"}
+      }
+    },
+    "write_text": {
+      "type": "object",
+      "required": ["do", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "do": {"const": "write_text"}, "id": {"$ref": "#/$defs/id"}, "say": {"$ref": "#/$defs/say"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 300},
+        "x": {"$ref": "#/$defs/x"}, "y": {"$ref": "#/$defs/y"},
+        "size": {"type": "number", "minimum": 16, "maximum": 120},
+        "color": {"$ref": "#/$defs/color"},
+        "seconds": {"$ref": "#/$defs/seconds"}
+      }
+    },
+    "draw": {
+      "type": "object",
+      "required": ["do", "shape"],
+      "properties": {"do": {"const": "draw"}, "shape": {"enum": ["line", "arrow", "circle", "axes", "plot"]}},
+      "allOf": [
+        {"if": {"properties": {"shape": {"enum": ["line", "arrow"]}}}, "then": {
+          "required": ["from", "to"], "additionalProperties": false,
+          "properties": {"do": true, "shape": true, "id": {"$ref": "#/$defs/id"}, "say": {"$ref": "#/$defs/say"},
+                         "from": {"$ref": "#/$defs/point"}, "to": {"$ref": "#/$defs/point"},
+                         "color": {"$ref": "#/$defs/color"}, "width": {"type": "number", "minimum": 1, "maximum": 20},
+                         "seconds": {"$ref": "#/$defs/seconds"}}}},
+        {"if": {"properties": {"shape": {"const": "circle"}}}, "then": {
+          "additionalProperties": false,
+          "oneOf": [{"required": ["center", "r"]}, {"required": ["around"]}],
+          "properties": {"do": true, "shape": true, "id": {"$ref": "#/$defs/id"}, "say": {"$ref": "#/$defs/say"},
+                         "center": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}},
+                         "r": {"type": "number", "exclusiveMinimum": 0, "maximum": 800},
+                         "axes": {"$ref": "#/$defs/id", "description": "If set, center is in that axes' data coordinates"},
+                         "around": {"$ref": "#/$defs/id", "description": "Circle an earlier item"},
+                         "color": {"$ref": "#/$defs/color"}, "width": {"type": "number", "minimum": 1, "maximum": 20},
+                         "seconds": {"$ref": "#/$defs/seconds"}}}},
+        {"if": {"properties": {"shape": {"const": "axes"}}}, "then": {
+          "required": ["id", "x", "y", "w", "h", "xrange", "yrange"], "additionalProperties": false,
+          "properties": {"do": true, "shape": true, "id": {"$ref": "#/$defs/id"}, "say": {"$ref": "#/$defs/say"},
+                         "x": {"$ref": "#/$defs/x"}, "y": {"$ref": "#/$defs/y"},
+                         "w": {"type": "number", "minimum": 100, "maximum": 1600}, "h": {"type": "number", "minimum": 100, "maximum": 900},
+                         "xrange": {"$ref": "#/$defs/range"}, "yrange": {"$ref": "#/$defs/range"},
+                         "xlabel": {"type": "string", "maxLength": 20}, "ylabel": {"type": "string", "maxLength": 20},
+                         "ticks": {"type": "number", "exclusiveMinimum": 0},
+                         "color": {"$ref": "#/$defs/color"}, "seconds": {"$ref": "#/$defs/seconds"}}}},
+        {"if": {"properties": {"shape": {"const": "plot"}}}, "then": {
+          "required": ["axes", "points"], "additionalProperties": false,
+          "properties": {"do": true, "shape": true, "id": {"$ref": "#/$defs/id"}, "say": {"$ref": "#/$defs/say"},
+                         "axes": {"$ref": "#/$defs/id"},
+                         "points": {"type": "array", "minItems": 2, "maxItems": 2000, "items": {"$ref": "#/$defs/datapoint"}},
+                         "label": {"type": "string", "maxLength": 40},
+                         "label_at": {"$ref": "#/$defs/datapoint", "description": "Where the label goes, in data coordinates"},
+                         "color": {"$ref": "#/$defs/color"}, "width": {"type": "number", "minimum": 1, "maximum": 20},
+                         "seconds": {"$ref": "#/$defs/seconds"}}}}
+      ]
+    },
+    "highlight": {
+      "type": "object",
+      "required": ["do", "target"],
+      "additionalProperties": false,
+      "properties": {"do": {"const": "highlight"}, "say": {"$ref": "#/$defs/say"}, "target": {"$ref": "#/$defs/id"},
+                     "color": {"$ref": "#/$defs/color"}, "seconds": {"$ref": "#/$defs/seconds"}}
+    },
+    "erase": {
+      "type": "object",
+      "required": ["do", "target"],
+      "additionalProperties": false,
+      "properties": {"do": {"const": "erase"}, "say": {"$ref": "#/$defs/say"},
+                     "target": {"oneOf": [{"const": "all"}, {"$ref": "#/$defs/id"},
+                                          {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}}]},
+                     "seconds": {"$ref": "#/$defs/seconds"}}
+    },
+    "pause": {
+      "type": "object",
+      "required": ["do", "seconds"],
+      "additionalProperties": false,
+      "properties": {"do": {"const": "pause"}, "say": {"$ref": "#/$defs/say"}, "seconds": {"$ref": "#/$defs/seconds"}}
+    }
+  }
+}
