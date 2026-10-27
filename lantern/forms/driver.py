@@ -60,7 +60,9 @@ const H = {
   },
   txt(el) { return el ? (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim() : ''; },
   isControl(el) { return el.matches('input, select, textarea, [contenteditable=""], [contenteditable=true], [role=combobox], [role=textbox]'); },
-  label(el) {
+  // "Customer name:" and "Email *" read as "Customer name" / "Email" (live site, Oct 27)
+  label(el) { return H.labelRaw(el).replace(/[\s:\uFF1A*]+$/, ''); },
+  labelRaw(el) {
     if (el.labels && el.labels.length) return H.txt(el.labels[0]);
     const lb = el.getAttribute('aria-labelledby');
     if (lb) { const t = lb.split(/\s+/).map(i => H.txt(document.getElementById(i))).join(' ').trim(); if (t) return t; }

@@ -280,8 +280,10 @@ class FormService:
         payload = submit_payload(d.url, submit["label"], current, d.hidden_values())
         emit("form", {"phase": "approval", "badge": "on this computer"})
         ok = approve("submit_form", summary, payload)
-        if ok is None:
-            return base(done=False, verified=False, submitted=False, reason="user declined")
+        if ok is None:   # say exactly what happened (live run, Oct 27: "wasn't filled" was reported here)
+            return base(done=False, verified=False, submitted=False, filled_ok=True, screenshot=self._save_shot(d),
+                        reason=f"filled {len(run.filled)} field{'s' if len(run.filled) != 1 else ''}, then the user "
+                               "declined Submit, so nothing was sent")
         final = submit_payload(d.url, submit["label"], d.field_values(), d.hidden_values())
         if refused := commit(ok, final):
             return base(done=False, verified=False, submitted=False, reason=refused["reason"])

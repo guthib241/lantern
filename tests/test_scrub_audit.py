@@ -149,3 +149,23 @@ def test_wire_ids_are_never_redacted(tmp_path):
     item = fake.requests[0]["input"][0]
     assert item["call_id"] == cid and item["type"] == "function_call_output"
     assert CARD not in item["output"] and FAKE_AWS not in item["output"]  # nested ids still scrubbed
+
+
+@pytest.mark.parametrize("text,secret,kind", [
+    ("My password is hunter2pass", "hunter2pass", "password"),
+    ("the verification code is 482913", "482913", "otp"),
+    ("OTP: 482913", "482913", "otp"),
+    ("card security: CVC 123", "123", "card_cvv"),
+    ("UPI PIN 9090", "9090", "pin"),
+    ("my atm pin is 4321", "4321", "pin"),
+])
+def test_secrets_said_in_plain_words_are_redacted(text, secret, kind):
+    """Live run, Oct 27: these reached the cloud inside a request to fill a form."""
+    r = scrub(text)
+    assert secret not in r.text and r.redactions[kind] == 1
+
+
+@pytest.mark.parametrize("text", ["Bengaluru, PIN code 560034", "pincode 560034", "leave the password field empty",
+                                  "We met at 4:30", "Invoice #42 total 1200"])
+def test_plain_words_patterns_leave_ordinary_text_alone(text):
+    assert scrub(text).text == text

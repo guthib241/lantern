@@ -428,3 +428,24 @@ def test_wav_voice_note_is_converted_not_overwritten(tmp_path):
         assert not any("couldn't hear" in m.get("text", "") for m in phone.messages())
     finally:
         core.shutdown()
+
+
+def test_voice_languages_are_sent_as_language_bias(tmp_path, monkeypatch):
+    """Live API, Oct 27: Hindi/Hinglish notes transcribed perfectly with languageBias ["Hindi"], badly without."""
+    from lantern import config as config_mod, demo
+    monkeypatch.setenv("LANTERN_VOICE_LANGUAGES", "hindi")
+    assert config_mod.load().voice_languages == ["Hindi"]
+    got = {}
+
+    def fake_transcribe(wav, keywords=None, language_bias=None):
+        got["language_bias"] = language_bias
+        return {"transcript": "status", "audioDurationMs": 1000}
+    cfg = demo.prepare(tmp_path / "data")
+    core, hub, phone = demo.build(cfg, transcriber=fake_transcribe)
+    hub.start(listen=False)
+    try:
+        hub.receive(phone.incoming(audio=b"OggS fake", ext=".ogg"))
+        hub.wait_idle(10)
+        assert got["language_bias"] == ["Hindi"]
+    finally:
+        core.shutdown()

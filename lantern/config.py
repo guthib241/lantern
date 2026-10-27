@@ -42,6 +42,7 @@ class Config:
     forms_headless: bool = True           # False on the laptop to watch the browser work
     forms_domains: list[str] = field(default_factory=list)  # sites (besides localhost/demo) Lantern may fill
     chromium_path: str = ""
+    voice_languages: list[str] = field(default_factory=list)   # e.g. ["Hindi"]: languageBias for voice notes
     profile_path: str = str(HOME / "profile.json")
     browser_profile_dir: str = str(HOME / "browser-profile")
     media_dir: str = str(HOME / "media")
@@ -125,6 +126,8 @@ def load() -> Config:
     if os.environ.get("LANTERN_FORMS_DOMAINS"):
         cfg.forms_domains = [d.strip() for d in os.environ["LANTERN_FORMS_DOMAINS"].split(",") if d.strip()]
     cfg.chromium_path = os.environ.get("LANTERN_CHROMIUM", cfg.chromium_path)
+    if os.environ.get("LANTERN_VOICE_LANGUAGES"):
+        cfg.voice_languages = [x.strip().title() for x in os.environ["LANTERN_VOICE_LANGUAGES"].split(",") if x.strip()]
     if os.environ.get("LANTERN_TIMEOUT"):
         cfg.timeout = float(os.environ["LANTERN_TIMEOUT"])
     if os.environ.get("LANTERN_ENCRYPT"):

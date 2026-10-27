@@ -56,6 +56,26 @@ FINISH_SPEC = _fn(
 )
 
 
+def lost_thread(exc: BaseException) -> bool:
+    """The API no longer has the response we chain from (previous_response_id)."""
+    text = str(getattr(exc, "message", "") or exc).lower()
+    return getattr(exc, "status_code", None) in (400, 404) and (
+        "referenced response" in text or "previous_response" in text or "response not found" in text)
+
+
+def recap(goal: str, calls: list, limit: int = 600) -> str:
+    """A fresh first turn that says what this task already did, for when the server lost the thread."""
+    lines = [goal, "", "(Lantern note: the server lost this conversation. Steps already done in this task, "
+             "with their results. Continue from here and don't repeat actions that already succeeded.)"]
+    for c in calls:
+        if c["name"] == "finish":
+            continue
+        args = json.dumps(c["args"], ensure_ascii=False, default=str)[:200]
+        result = json.dumps(c["result"], ensure_ascii=False, default=str)[:limit]
+        lines.append(f"- {c['name']}({args}) -> {result}")
+    return "\n".join(lines)
+
+
 @dataclass
 class Result:
     task_id: int
@@ -117,6 +137,20 @@ class Agent:
         self.memory.log_step(task_id, "note", summary)
         self.memory.finish_task(task_id, status, summary)
         return self._result(task_id, status, summary, summary, steps, calls)
+
+    def _follow(self, task_id: int, instructions: str, previous: str, outputs: list, goal: str, calls: list):
+        """The next turn, chained with previous_response_id. Live API, Oct 27: once, the server answered
+        "referenced response not found or expired" mid-task. Then the task goes on from a recap of what it
+        already did (once), instead of failing; approvals still guard anything it does again."""
+        try:
+            return self._create(task_id, instructions=instructions, previous_response_id=previous,
+                                input=outputs, tools=self.tools)
+        except Exception as e:
+            if not lost_thread(e):
+                raise
+            self.memory.log_step(task_id, "note", "the API lost this conversation; continuing from a recap")
+            self.on_event("note", {"id": task_id, "text": "the API lost the conversation; continuing from a recap"})
+            return self._create(task_id, instructions=instructions, input=recap(goal, calls), tools=self.tools)
 
     @staticmethod
     def tool_badge(name: str, result) -> str:
@@ -213,19 +247,13 @@ class Agent:
             if finished:
                 status, summary = finished
                 # Let the model say its in-character closing line.
-                response = self._create(
-                    task_id, instructions=instructions, previous_response_id=response.id,
-                    input=outputs, tools=self.tools,
-                )
+                response = self._follow(task_id, instructions, response.id, outputs, goal, calls_made)
                 reply = getattr(response, "output_text", "") or summary
                 self.memory.log_step(task_id, "reply", reply)
                 self.memory.finish_task(task_id, status, summary)
                 return self._result(task_id, status, summary, reply, step, calls_made)
 
-            response = self._create(
-                task_id, instructions=instructions, previous_response_id=response.id,
-                input=outputs, tools=self.tools,
-            )
+            response = self._follow(task_id, instructions, response.id, outputs, goal, calls_made)
 
         return self._stop(task_id, "failed", f"stopped after {self.max_steps} steps without finishing",
                           self.max_steps, calls_made)

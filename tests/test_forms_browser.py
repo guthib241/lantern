@@ -171,7 +171,8 @@ def test_declined_submit_sends_nothing(tmp_path, chromium, site):
     client = FakeClient([([call("set_values", "p", values=[{"field": "Nickname", "value": "robin"}])], "")])
     tb, bus, asked, _ = toolbox(tmp_path, client, chromium, answer=False, demo_dir=site)
     r = tb.fill_form((site / "simple.html").as_uri(), "sign me up as robin")
-    assert r == {**r, "done": False, "submitted": False, "verified": False, "reason": "user declined"}
+    assert r == {**r, "done": False, "submitted": False, "verified": False, "filled_ok": True}
+    assert r["reason"] == "filled 1 field, then the user declined Submit, so nothing was sent"   # not "wasn't filled"
     assert "final_url" not in r and len(asked) == 1
 
 
@@ -471,3 +472,14 @@ def test_fill_form_task_with_http_approval(tmp_path, chromium, site):
     assert result["verified"] and "REF-1234" in result["confirmation"]["content"]
     assert task["usage"]["calls"] == 4   # agent calls + the form planner, all on this task
     core.shutdown()
+
+
+
+def test_labels_lose_trailing_colons_and_asterisks(tmp_path, chromium):
+    """Live site, Oct 27: httpbin's labels end in ':' and the approval card read 'Customer name::'."""
+    d = BrowserDriver(tmp_path / "p", executable_path=chromium)
+    with d:
+        d.page.set_content('<form><label>Customer name: <input name="c"></label>'
+                           '<label for="e">Email *</label><input id="e" name="e"></form>')
+        labels = sorted(f["label"] for f in d.discover()["fields"])
+    assert labels == ["Customer name", "Email"]

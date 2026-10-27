@@ -234,3 +234,44 @@ def test_the_cacheable_prefix_is_identical_across_tasks(tmp_path):
     assert first["instructions"][:cut] == later["instructions"][:cut] and first["instructions"].startswith(BASE_RULES)
     assert first["instructions"] != later["instructions"]          # the memory moved on, after the stable part
     assert "vim" in later["instructions"][cut:] and "vim" not in later["instructions"][:cut]
+
+
+def test_lost_conversation_continues_from_a_recap(home):
+    """Live API, Oct 27: 'referenced response not found or expired' mid-task used to fail the task."""
+    root, mem = home
+    tb, _ = toolbox(root, mem)
+
+    class LosesThread(FakeClient):
+        def create(self, **kw):
+            if kw.get("previous_response_id") == "resp_1" and not getattr(self, "lost", False):
+                self.lost = True
+                self.requests.append(kw)
+                err = RuntimeError("referenced response not found or expired")
+                err.status_code = 400
+                raise err
+            return super().create(**kw)
+    client = LosesThread([
+        ([call("search_files", "c1", query="invoice")], ""),
+        ([call("finish", "c2", status="done", summary="found the invoice")], ""),
+        ([], "Found it."),
+    ])
+    r = Agent(client, mem, tb).run("find my invoice")
+    assert r.status == "done" and r.reply == "Found it."
+    fresh = client.requests[2]
+    assert "previous_response_id" not in fresh and "search_files" in fresh["input"] and "find my invoice" in fresh["input"]
+    assert any("lost this conversation" in s["content"] for s in mem.steps(r.task_id))
+
+
+def test_other_errors_still_fail_the_task(home):
+    root, mem = home
+    tb, _ = toolbox(root, mem)
+
+    class Broken(FakeClient):
+        def create(self, **kw):
+            if kw.get("previous_response_id"):
+                err = RuntimeError("bad request: tools malformed")
+                err.status_code = 400
+                raise err
+            return super().create(**kw)
+    with pytest.raises(RuntimeError):
+        Agent(Broken([([call("list_dir", "c1")], "")]), mem, tb).run("x")

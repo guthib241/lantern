@@ -103,6 +103,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--timeout", type=float, default=420)
     ap.add_argument("--out", default="", help="write the JSON report here")
+    ap.add_argument("--goal", action="append", default=[], help="run this request instead of the beats (repeatable)")
+    ap.add_argument("--deny", action="store_true", help="with --goal: deny every approval")
+    ap.add_argument("--domains", default="", help="extra sites forms may open (LANTERN_FORMS_DOMAINS)")
     a = ap.parse_args(argv)
     if a.list:
         for i, b in enumerate(BEATS, 1):
@@ -118,6 +121,8 @@ def main(argv: list[str]) -> int:
     cfg.base_url = models.BASE_URL   # prepare() points the audit at rehearsal://; this run is live
     cfg.forms_model = models.WONDER if a.wonder else models.SPARK
     cfg.forms_headless = True
+    if a.domains:
+        cfg.forms_domains = [d.strip() for d in a.domains.split(",") if d.strip()]
     (Path(cfg.roots[0]) / "Documents" / "meeting_minutes.txt").write_text(INJECTION, encoding="utf-8")
     recorder = Recorder(OpenAI(base_url=models.BASE_URL, api_key=os.environ[models.API_KEY_ENV],
                                timeout=180, max_retries=2))
@@ -133,7 +138,8 @@ def main(argv: list[str]) -> int:
     events: list[dict] = []
     done = threading.Condition()
     core.subscribe(lambda e: (events.append(e), done.acquire(), done.notify_all(), done.release()))
-    picks = [BEATS[i - 1] for i in a.only] if a.only else BEATS
+    picks = ([Check(g, "desktop", not a.deny, "custom") for g in a.goal] if a.goal
+             else [BEATS[i - 1] for i in a.only] if a.only else BEATS)
     report = []
     print(f"🏮 live run in {data} · forms model {cfg.forms_model}\n")
     for n, beat in enumerate(picks, 1):

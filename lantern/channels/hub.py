@@ -272,7 +272,11 @@ class ChannelHub:
             self.core.audit.record(lane="cloud", destination=getattr(self.core.cfg, "base_url", models.BASE_URL),
                                    endpoint="asr.transcribe",
                                    model=models.VOICE, payload=Path(wav).read_bytes(), preview="[voice note]")
-            result = self.transcriber(wav, keywords=self.keywords())
+            # Live API, Oct 27: Hindi and Hinglish notes came back perfectly with languageBias ["Hindi"],
+            # and garbled or empty on autodetect, so the user's language goes along when it's configured.
+            langs = list(getattr(getattr(self.core, "cfg", None), "voice_languages", None) or [])
+            result = (self.transcriber(wav, keywords=self.keywords(), language_bias=langs) if langs
+                      else self.transcriber(wav, keywords=self.keywords()))
         except Exception as e:  # download, ffmpeg (CalledProcessError), transcription: all end the same way
             self._error(f"{ch.name} voice", e)
             self.say(ch.name, f"I couldn't hear that voice note ({type(e).__name__}). Try again or type it.")
