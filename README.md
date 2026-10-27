@@ -13,7 +13,7 @@ git clone https://github.com/guthib241/lantern && cd lantern
 pip install -e . && python -m playwright install chromium   # gives you the `lantern` command
 lantern --demo-run                                 # the whole 3-minute story, offline, no key, $0
 echo "MODEL_API_KEY=your-key-from-dev.meta.ai" > .env && python scripts/smoke.py
-lantern --serve                                    # then, in a 2nd terminal: cd desktop && npm install && npm start
+cd desktop && npm install && npm start             # the desktop app; it starts the Lantern server too
 ```
 
 On Windows (PowerShell 5.1 has no `&&`; `py -m lantern` works even when pip's Scripts folder isn't on PATH):
@@ -23,7 +23,7 @@ git clone https://github.com/guthib241/lantern; cd lantern
 py -m pip install -e .; py -m playwright install chromium
 py -m lantern --demo-run
 Set-Content .env "MODEL_API_KEY=your-key-from-dev.meta.ai"; py scripts\smoke.py
-py -m lantern --serve                              # 2nd window: cd desktop; npm install; npm start
+cd desktop; npm install; npm start                 # the desktop app; it starts the Lantern server too
 ```
 
 A `.env` saved by `echo … > .env` (UTF-16 in PowerShell 5.1) or by Notepad with a BOM loads fine too.
@@ -34,7 +34,7 @@ A `.env` saved by `echo … > .env` (UTF-16 in PowerShell 5.1) or by Notepad wit
 - a real Chromium filling [`demo/forms/`](demo/forms)
 - the email outbox, the project map, the widget checker and every verification
 
-Use `python -m lantern --serve --demo` to click through the same story in the desktop app. `python -m lantern --doctor` tells you what this laptop still needs for the real thing, with the exact fix for each item.
+Use `npm run rehearsal` (in `desktop/`) to click through the same story in the desktop app; it starts `lantern --serve --demo` for you and stops it when you quit. If a server is already running (`lantern --serve` in a terminal), the app uses that one instead. `python -m lantern --doctor` tells you what this laptop still needs for the real thing, with the exact fix for each item.
 
 ## The demo (3 minutes)
 

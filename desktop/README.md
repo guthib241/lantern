@@ -6,8 +6,10 @@ The face of Lantern on your laptop: an always-on-top avatar, plus a panel for ta
 cd desktop
 npm install          # Electron 44.5.1
 npm run mock         # no Python, no API key: a scripted story (form → approval → verified)
-npm start            # the real thing: needs `python -m lantern --serve` running
-                     # (or `python -m lantern --serve --demo`: real server, scripted model, $0)
+npm start            # the real thing: starts `lantern --serve` itself if none is running (and stops it on quit)
+npm run rehearsal    # the same with `--serve --demo`: real server, scripted model, $0
+                     # server output: server.log in the app's data folder; LANTERN_NO_AUTOSTART=1 to opt out,
+                     # LANTERN_PYTHON to pick the interpreter (default: py on Windows, python3 elsewhere)
 npm test             # logic + mock server tests (node --test)
 npm run e2e          # the real app against the real server (rehearsal), clicking through the whole story
 ```

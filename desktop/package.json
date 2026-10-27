@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "rehearsal": "electron . --rehearsal",
     "mock": "electron . --mock",
     "mock:server": "node mock/server.js",
     "test": "node --test \"test/**/*.test.js\"",

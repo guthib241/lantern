@@ -248,3 +248,12 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - model chips mix their hue toward the label colour, so they pass in both modes
     - Quick Ask and the island got the same treatment
   - **Result:** 0 violations. The README hero and gallery were re-captured from this run.
+- One command for the desktop.
+  - **What changed:** when nothing answers `/health`, the desktop starts the server itself before opening its windows, so a first run's token already exists.
+    - command: `py -m lantern --serve` on Windows, `python3` elsewhere, with `LANTERN_PYTHON` to override, on the port from `LANTERN_API`
+    - `npm run rehearsal` adds `--demo`
+    - the server's output goes to `server.log` in the app's data folder
+    - quitting stops only a server the app started
+    - a server you started yourself is used as is; `LANTERN_NO_AUTOSTART=1` opts out
+  - **Checks:** the e2e launches the app with no server running and checks three things: the panel reaches the server it started, quitting stops that server, and the log was kept.
+  - **Docs:** the README, desktop README and submission checklist now say `npm start` / `npm run rehearsal`.

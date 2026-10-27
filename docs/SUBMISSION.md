@@ -10,10 +10,10 @@ Slide for the video: [`docs/slide/architecture.png`](slide/architecture.png) (19
 lantern --doctor                      # every line ✓ for "Real demo" (or you know why not)
 python scripts/smoke.py               # one real call per model: all OK
 python scripts/smoke.py cua           # paste the LANTERN_CUA_… line it prints into .env
-lantern --serve --demo                # rehearse the whole story with the desktop app, $0
+cd desktop && npm run rehearsal       # rehearse the whole story with the desktop app, $0
 ```
 
-Then set these for recording (in `.env`): `LANTERN_FORMS_MODEL=muse-wonder-1.0`, `LANTERN_FORMS_HEADLESS=0` (the browser is visible), `LANTERN_CHANNELS=whatsapp` (plus the WhatsApp variables), and `LANTERN_GLIMMER_URL` (local Glimmer running). Start `lantern --serve`, the tunnel (`cloudflared tunnel --url http://127.0.0.1:8765`), and `cd desktop && npm start`.
+Then set these for recording (in `.env`): `LANTERN_FORMS_MODEL=muse-wonder-1.0`, `LANTERN_FORMS_HEADLESS=0` (the browser is visible), `LANTERN_CHANNELS=whatsapp` (plus the WhatsApp variables), and `LANTERN_GLIMMER_URL` (local Glimmer running). Start the tunnel (`cloudflared tunnel --url http://127.0.0.1:8765`) and `cd desktop && npm start`, which starts `lantern --serve` too. Starting the server in its own terminal also works, and keeps its log in view.
 
 On the screen:
 - 1920×1080, light mode, Do Not Disturb on, an empty desktop, and the browser window on the left half.

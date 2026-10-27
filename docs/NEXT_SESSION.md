@@ -69,7 +69,7 @@ The remaining work is **laptop-side bring-up with real keys, calibration against
   - Glimmer via llama.cpp (`LANTERN_GLIMMER_URL`)
   - WhatsApp test number and tunnel
   - Gmail app password
-  - `cd desktop && npm install && npm start`
+  - `cd desktop && npm install && npm start` (starts the server too; `npm run rehearsal` for the scripted story)
   - `python -m playwright install chromium`
 - **Lantern's face:** `python scripts/make_avatar.py` (~$0.07), or the user exports art and Vibes clips from the MetaMuse app and runs `scripts/import_avatar.py`.
 - **Polish for the video:**

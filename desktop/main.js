@@ -4,6 +4,7 @@
 // sandboxed with context isolation; they talk to the local Lantern server on 127.0.0.1 with
 // the per-install token from ~/.lantern/token. Ctrl/Cmd+Shift+X is the global STOP.
 const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
+const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -26,6 +27,37 @@ const nativeStatus = { line: 'Starting…', badge: 0, notified: [] };
 global.lanternNative = nativeStatus;
 let quitting = false;
 let cameraUntil = 0;   // the camera is allowed for one check-in right after the user clicks
+let serverProc = null; // the Lantern server this app started (and stops on quit), if none was running
+
+async function healthy() {
+  try {
+    return (await fetch(`${config.apiBase}/health`, { signal: AbortSignal.timeout(1000) })).ok;
+  } catch {
+    return false;
+  }
+}
+
+// `npm start` is the only command: with no Lantern server answering, start one from this checkout on the
+// configured local port (`npm run rehearsal` starts it in --demo mode). LANTERN_NO_AUTOSTART=1 opts out.
+async function ensureServer() {
+  if (MOCK || process.env.LANTERN_NO_AUTOSTART === '1') return 'off';
+  if (await healthy()) return 'running';
+  const url = new URL(config.apiBase);
+  if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return 'remote';
+  const python = process.env.LANTERN_PYTHON || (process.platform === 'win32' ? 'py' : 'python3');
+  const args = ['-m', 'lantern', '--serve', '--port', url.port || '8765'];
+  if (process.argv.includes('--rehearsal')) args.push('--demo');
+  const log = fs.openSync(path.join(app.getPath('userData'), 'server.log'), 'w');   // why it failed, if it does
+  serverProc = spawn(python, args, { cwd: path.resolve(__dirname, '..'), env: process.env, stdio: ['ignore', log, log], windowsHide: true });
+  fs.closeSync(log);
+  serverProc.on('error', () => { serverProc = null; });   // no Python: the panel shows how to start it by hand
+  serverProc.on('exit', () => { serverProc = null; });
+  for (let i = 0; i < 60 && serverProc; i++) {
+    if (await healthy()) return 'started';
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return 'failed';
+}
 
 function readToken() {
   const home = process.env.LANTERN_HOME || path.join(os.homedir(), '.lantern');
@@ -240,7 +272,12 @@ app.whenReady().then(async () => {
     const mock = await require('./mock/server.js').start(Number(process.env.LANTERN_MOCK_PORT || 8766));
     Object.assign(config, { apiBase: mock.url, token: mock.token, mock: true });
   } else {
-    config.token = process.env.LANTERN_TOKEN || readToken();
+    const server = await ensureServer();
+    if (server === 'failed') {
+      console.warn(`Lantern: could not start the server (see ${path.join(app.getPath('userData'), 'server.log')}); ` +
+                   'run `lantern --serve` and `lantern --doctor`.');
+    }
+    config.token = process.env.LANTERN_TOKEN || readToken();   // after the start: a first run creates the token
   }
   createAvatar();
   createPanel();
@@ -253,5 +290,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => { quitting = true; });
-app.on('will-quit', () => globalShortcut.unregisterAll());
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+  if (serverProc) serverProc.kill();   // only a server this app started; one you started yourself keeps running
+});
 app.on('window-all-closed', () => app.quit());

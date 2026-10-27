@@ -303,6 +303,30 @@ async function main() {
     await panel.click('#stop');
     await until('the stop event', async () => /Stopped/.test(await avatar.textContent('#island-text')), 10000);
     check(true, 'STOP reaches the server and the avatar');
+    await app.close();
+    app = null;
+
+    // one command: with no server running, the app starts one itself (here in rehearsal) and stops it on quit
+    const port2 = await freePort();
+    const api2 = `http://127.0.0.1:${port2}`;
+    app = await electron.launch({ executablePath: require('electron'), args: [...args, '--rehearsal'],
+                                  env: { ...env, LANTERN_API: api2, LANTERN_PYTHON: PYTHON, LANTERN_HOME: path.join(tmp, 'home-2'),
+                                         LANTERN_USER_DATA: path.join(tmp, 'electron-data-2') } });
+    const panel2 = await until('the panel of the self-starting app', async () => app.windows().find((w) => w.url().endsWith('panel.html')), 60000);
+    const conn2 = await until('the panel to reach the server it started', async () => {
+      const t = await panel2.textContent('#conn');
+      return /Rehearsal/.test(t) && t;
+    }, 60000);
+    check((await fetch(`${api2}/health`)).ok, `npm start alone: the app started its own server (${conn2})`);
+    await app.close();
+    app = null;
+    const gone = await until('the server to stop with the app', async () => {
+      try { await fetch(`${api2}/health`, { signal: AbortSignal.timeout(500) }); return false; } catch { return true; }
+    }, 15000);
+    check(gone, 'quitting the app stops the server it started');
+    const log2 = path.join(tmp, 'electron-data-2', 'server.log');
+    check(fs.existsSync(log2) && /Uvicorn|Lantern|127\.0\.0\.1/.test(fs.readFileSync(log2, 'utf8')),
+          "the started server's output is kept in server.log for when something goes wrong");
     console.log(`\nall end-to-end checks passed · screenshots in ${OUT}`);
   } catch (e) {
     console.error(`\n✗ ${e.message}\n--- server log ---\n${serverLog.slice(-3000)}`);
