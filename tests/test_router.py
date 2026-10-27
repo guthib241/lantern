@@ -76,6 +76,28 @@ def test_full_agent_flow_cloud_never_sees_private_text(setup, tmp_path):
     assert r.status == "done"
 
 
+
+def test_private_answer_is_not_resent_in_later_briefings(setup, tmp_path):
+    """Live run, Oct 27: the salary Glimmer read came back in the task summary, and the briefing
+    re-sent it with every later request. Private-lane tasks now show only that they happened."""
+    root, policy, audit = setup
+    mem = Memory(tmp_path / "m.db")
+    tb = Toolbox(policy, mem, lambda d: True, router=Router(policy, FakeGlimmer(audit)))
+    first = FakeClient([
+        ([call("ask_private", "c1", path=str(root / "Private/offer_letter.txt"), question="What is the salary?")], ""),
+        ([call("finish", "c2", status="done", summary="salary is 42 lakh")], ""),
+        ([], "42 lakh."),
+    ])
+    Agent(GuardedClient(first, audit), mem, tb).run("what's my salary?")
+    later = FakeClient([([], "Sure.")])
+    Agent(GuardedClient(later, audit), mem, tb).run("what did you do today?")
+    briefing = later.requests[0]["instructions"]
+    assert "42 lakh" not in briefing and "private file" in briefing and "what's my salary?" in briefing
+    task = mem.recent_tasks(2)[1]
+    assert mem.is_private_task(task.id) and mem.get_task(task.id).summary == "salary is 42 lakh"  # kept locally
+    mem.forget_task(task.id)
+    assert not mem.is_private_task(task.id)
+
 def test_lane_down_never_falls_back_to_cloud(setup, tmp_path):
     root, policy, _ = setup
 

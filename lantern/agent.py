@@ -196,6 +196,8 @@ class Agent:
                         except ToolError as e:
                             result = {"error": str(e)}
 
+                if fc.name == "ask_private" and isinstance(result, dict) and "answer" in result:
+                    self.memory.mark_private(task_id)   # keep this task's summary out of later briefings
                 calls_made.append({"name": fc.name, "args": args, "result": result})
                 self.memory.log_step(task_id, "tool_call", {"name": fc.name, "args": args})
                 self.memory.log_step(task_id, "tool_result", {"name": fc.name, "result": result})

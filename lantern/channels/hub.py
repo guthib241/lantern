@@ -268,7 +268,7 @@ class ChannelHub:
             stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")  # short digit runs: never card-shaped
             src = self.media_dir / f"{ch.name}-voice-{stamp}{ext}"
             src.write_bytes(data)
-            wav = self.converter(src, src.with_suffix(".wav"))
+            wav = self.converter(src, src.with_name(src.stem + ".16k.wav"))   # never onto itself (.wav in)
             self.core.audit.record(lane="cloud", destination=getattr(self.core.cfg, "base_url", models.BASE_URL),
                                    endpoint="asr.transcribe",
                                    model=models.VOICE, payload=Path(wav).read_bytes(), preview="[voice note]")

@@ -450,8 +450,11 @@ def _copy_fixtures(src: Path, dst: Path) -> None:
             target.write_bytes(f.read_bytes())
 
 
-def build(cfg: config_mod.Config, *, locate: Callable[[], dict] | None = None):
-    """The rehearsal Core and channel hub (simulated phone only; voice notes 'transcribe' to the script)."""
+def build(cfg: config_mod.Config, *, locate: Callable[[], dict] | None = None, client=None,
+          transcriber: Callable | None = None, converter: Callable | None = None):
+    """The rehearsal Core and channel hub (simulated phone only; voice notes 'transcribe' to the script).
+    scripts/live_story.py passes a real model client, transcriber and converter to play the same
+    story against the live Meta API."""
     from .channels import ChannelHub, FakeChannel
     from .core import Core
     data = Path(cfg.db_path).parent
@@ -466,16 +469,18 @@ def build(cfg: config_mod.Config, *, locate: Callable[[], dict] | None = None):
     from .router import FakeGlimmer, Router, RouterConfig, make_backend
     lane = RouterConfig.from_env(dict(os.environ))
     router = Router(policy, make_backend(lane, audit) if lane.mode == "openai" else FakeGlimmer(audit))
-    core = Core(cfg, DemoModel(locate or (lambda: measure_form(cfg.chromium_path))), memory=memory, audit=audit,
-                policy=policy, email=email, router=router)
-    core.demo = True
+    model = client if client is not None else DemoModel(locate or (lambda: measure_form(cfg.chromium_path)))
+    core = Core(cfg, model, memory=memory, audit=audit, policy=policy, email=email, router=router)
+    core.demo = client is None
 
-    def converter(src: Path, dst: Path) -> Path:
+    def copy_audio(src: Path, dst: Path) -> Path:
         dst.write_bytes(src.read_bytes())
         return dst
 
-    def transcriber(wav, keywords=None) -> dict:  # the voice note says the first beat, every time
+    def script_transcript(wav, keywords=None) -> dict:  # the voice note says the first beat, every time
         return {"transcript": STORY[0].goal, "audioDurationMs": 0}
+    converter = converter or copy_audio
+    transcriber = transcriber or script_transcript
     phone = FakeChannel()
     hub = ChannelHub(core, [phone], transcriber=transcriber, converter=converter)
     return core, hub, phone

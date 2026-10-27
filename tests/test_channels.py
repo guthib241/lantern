@@ -402,3 +402,29 @@ def test_channels_from_env():
         channels_from_env({"LANTERN_CHANNELS": "whatsapp"})
     with pytest.raises(ValueError):
         channels_from_env({"LANTERN_CHANNELS": "pigeon"})
+
+
+def test_wav_voice_note_is_converted_not_overwritten(tmp_path):
+    """Live run, Oct 27: a .wav voice note was converted onto itself and ffmpeg refused.
+    (The API only takes mono s16 WAV at 16 or 24 kHz, so 22.05 kHz input must be converted.)"""
+    from lantern import demo, voice
+    src = tmp_path / "in.wav"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:duration=1",
+                    "-ar", "22050", str(src)], check=True)
+    got = {}
+
+    def fake_transcribe(wav, keywords=None):
+        import wave
+        with wave.open(str(wav)) as w:
+            got["format"] = (w.getnchannels(), w.getframerate(), w.getsampwidth())
+        return {"transcript": "status", "audioDurationMs": 1000}
+    cfg = demo.prepare(tmp_path / "data")
+    core, hub, phone = demo.build(cfg, transcriber=fake_transcribe, converter=voice.to_wav16k)
+    hub.start(listen=False)
+    try:
+        hub.receive(phone.incoming(audio=src.read_bytes(), ext=".wav"))
+        hub.wait_idle(10)
+        assert got["format"] == (1, 16000, 2)
+        assert not any("couldn't hear" in m.get("text", "") for m in phone.messages())
+    finally:
+        core.shutdown()

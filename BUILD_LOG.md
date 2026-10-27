@@ -274,3 +274,9 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - Core now logs approval outcomes (decided / expired / used) as encrypted task steps.
     - **Fix found on the way:** the private lane's audit rows weren't tagged with their task, so "forget this task" left them behind. Each row keeps a 300-character preview of the question and document, encrypted. The router now tags them (`Router.set_task`, called from `Toolbox.begin_task`), so they show on the receipt and go with the task.
   - **Tests:** 5 new tests, 1 desktop test, e2e checks on the main form task's receipt.
+
+## Oct 27 (live API testing, session 5)
+- First real calls: all five hosted models pass `scripts/smoke.py` (about $0.016). Computer use calibrated: Spark takes the native tool (pixels), Wonder only the function harness (0..1000); `LANTERN_CUA_PROTOCOL=auto` now picks per model.
+- `scripts/live_story.py`: plays the demo story plus safety beats (prompt injection, hidden folders, tidy + undo, receipt) against the live API on a fresh rehearsal folder, records every request after scrubbing and checks that the planted key and the private salary never leave. The voice beat is real speech (espeak-ng → OGG/Opus → ffmpeg → Muse Voice Transcribe).
+- Fixed from live runs: private-lane answers were re-sent in later briefings; `.wav` voice notes were converted onto themselves.
+- Also verified live: Muse Image avatar sheet (7 consistent expressions, $0.07), SAM 3.1 (5 ducks on the cookbook photo, 0 mugs), tool search with a deferred MCP tool catalog (model searched, loaded and called the right tool).

@@ -63,12 +63,16 @@ CREATE TABLE IF NOT EXISTS reminders (
     created_at REAL NOT NULL,
     delivered_at REAL
 );
+CREATE TABLE IF NOT EXISTS private_tasks (     -- tasks that used the private lane: their summaries never
+    task_id INTEGER PRIMARY KEY                -- go back to the cloud in the briefing
+);
 CREATE TABLE IF NOT EXISTS spend (             -- dollars per local day, for the spending limits (budget.py)
     day TEXT PRIMARY KEY,                      -- YYYY-MM-DD; no tasks, no content: kept when you forget things
     cost_usd REAL NOT NULL DEFAULT 0
 );
 """
 
+PRIVATE_SUMMARY = "(answered from a private file; the details stay on this computer)"
 TASK_STATUSES = {"active", "done", "failed", "cancelled", "interrupted", "resumed"}
 
 
@@ -325,6 +329,7 @@ class Memory:
         """Delete a task with its timeline and usage rows, then rebuild the file."""
         counts = {table: self.db.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,)).rowcount
                   for table in ("steps", "usage", "reminders")}
+        self.db.execute("DELETE FROM private_tasks WHERE task_id = ?", (task_id,))
         counts["tasks"] = self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount
         self._vacuum()
         return counts
@@ -333,6 +338,7 @@ class Memory:
     def forget_everything(self) -> dict:
         counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount
                   for table in ("steps", "usage", "tasks", "facts", "reminders")}
+        self.db.execute("DELETE FROM private_tasks")
         self.db.execute("DELETE FROM sqlite_sequence")
         self._vacuum()
         return counts
@@ -409,11 +415,28 @@ class Memory:
 
         lines.append("\n## Recently finished")
         finished = [t for t in self.recent_tasks(task_limit) if t.status != "active"]
+        private = self._private_task_ids()
         lines += [
-            f"- #{t.id} [{t.status}] {t.goal} -> {t.summary or ''}".rstrip(" ->")
+            (f"- #{t.id} [{t.status}] {t.goal} -> {PRIVATE_SUMMARY}" if t.id in private else
+             f"- #{t.id} [{t.status}] {t.goal} -> {t.summary or ''}".rstrip(" ->"))
             for t in finished
         ] or ["- (none)"]
         return "\n".join(lines)
+
+    # ---- private-lane tasks ---------------------------------------------------
+    @_locked
+    def mark_private(self, task_id: int) -> None:
+        """This task used the private lane: its summary may hold what Glimmer read, so the
+        briefing (sent to the cloud with every later request) shows only that it happened."""
+        self.db.execute("INSERT OR IGNORE INTO private_tasks (task_id) VALUES (?)", (task_id,))
+        self.db.commit()
+
+    @_locked
+    def is_private_task(self, task_id: int) -> bool:
+        return self.db.execute("SELECT 1 FROM private_tasks WHERE task_id = ?", (task_id,)).fetchone() is not None
+
+    def _private_task_ids(self) -> set[int]:
+        return {r[0] for r in self.db.execute("SELECT task_id FROM private_tasks").fetchall()}
 
     @_locked
     def close(self) -> None:
