@@ -232,3 +232,19 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **`.env` encodings:** Windows PowerShell 5.1's `echo MODEL_API_KEY=... > .env` saves UTF-16 with a BOM, and python-dotenv reads UTF-8, so Lantern would have crashed at startup or lost the key. `config.load_env()` now detects UTF-16 / UTF-8-BOM / UTF-8 and is used by the CLI, the server and `scripts/smoke.py`.
   - **README:** a PowerShell quick start (PowerShell 5.1 has no `&&`; `py -m lantern` works without pip's Scripts folder on PATH).
   - 1 new test; 395 passing.
+- Accessibility pass.
+  - **The check:** the Electron e2e now runs axe-core (WCAG 2.1 A/AA) on:
+    - all six panel tabs, in light and dark
+    - Quick Ask
+    - the island while it asks for approval, and the avatar window
+  - Any violation fails the run. The axe script is injected through the debugger protocol, so the pages' strict CSP stays as shipped.
+  - **First run:** 14 kinds of findings.
+    - the privacy-zone selects had no accessible name (now "Zone for <path>")
+    - Apple's system colours used as small text fell short of 4.5:1: secondary labels 3.6:1, the blue tint 4.0:1, orange 2.2:1, green 2.2:1, unselected tab labels 3.1:1, and white on the red Stop button 3.5:1
+  - **Fix:** text and fill tokens are split.
+    - fills and dots keep the system colours
+    - text uses `--tint-text` / `--red-text` / `--orange-text` / `--green-text` (lighter variants in dark mode) and a darker `--label-2`
+    - white-text buttons use `--tint-fill` / `--red-fill`
+    - model chips mix their hue toward the label colour, so they pass in both modes
+    - Quick Ask and the island got the same treatment
+  - **Result:** 0 violations. The README hero and gallery were re-captured from this run.

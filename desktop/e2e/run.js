@@ -101,6 +101,20 @@ async function main() {
                      steps: [...t.querySelectorAll('.steps li')].map((li) => li.textContent) } : null;
       });
     }
+    // accessibility: axe-core (WCAG 2.1 A/AA) on every panel tab in light and dark, Quick Ask and the island
+    const AXE = fs.readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+    async function a11y(page, where) {
+      await page.evaluate(AXE);   // via the debugger protocol, so the page's CSP stays as strict as shipped
+      const found = await page.evaluate(async () => (await window.axe.run(document, {
+        runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] }, resultTypes: ['violations'] }))
+        .violations.map((v) => ({ id: v.id, impact: v.impact, nodes: v.nodes.map((n) => {
+          const d = (n.any[0] && n.any[0].data) || {};
+          return n.target.join(' ') + (d.contrastRatio ? ` (${d.fgColor} on ${d.bgColor} = ${d.contrastRatio}:1, ${d.fontSize} ${d.fontWeight})` : '');
+        }) })));
+      for (const v of found) console.log(`    a11y ${where}: ${v.impact} ${v.id}\n      ${v.nodes.join('\n      ')}`);
+      return found;
+    }
+    let violations = [];
     async function finish(goal, allows, via = 'panel', start = () => ask(goal)) {
       const before = (await latestTask()) || { status: '' };
       await start();
@@ -111,6 +125,7 @@ async function main() {
           await sleep(500);
           await avatar.screenshot({ path: path.join(OUT, '8-island-approval.png') });
           await avatar.locator('.stage').screenshot({ path: path.join(OUT, '8-island-cut.png'), omitBackground: true });
+          violations = violations.concat(await a11y(avatar, 'island with an approval'));
           await avatar.click('#island-allow');
           console.log('    ⏸ approved from the island');
           await until('the card to close', async () => !(await panel.$('.approval .allow')), 15000);
@@ -191,6 +206,7 @@ async function main() {
     const quickPage = await until('the Quick Ask window', async () => app.windows().find((p) => p.url().endsWith('quick.html')));
     await quickPage.waitForSelector('#q-rows li', { timeout: 10000 });
     const suggestions = await quickPage.$$eval('#q-rows li', (els) => els.map((e) => e.className));
+    violations = violations.concat(await a11y(quickPage, 'quick ask'));
     check(suggestions.includes('suggestion') && suggestions.includes('recent'), `Quick Ask lists suggestions and recent tasks (${suggestions.join(', ')})`);
     await quickPage.fill('#q', 'Which projects use torch?');
     await sleep(200);
@@ -252,6 +268,13 @@ async function main() {
     const limits = await until('the spending limits', async () => panel.textContent('#cost-limits'));
     check(limits === 'Stops itself at $150.00 · $3.00 per task.', `Costs tab shows the limits enforced in code (${limits})`);
 
+    const TABS = ['tasks', 'privacy', 'phone', 'costs', 'widgets', 'setup'];
+    for (const name of TABS) {
+      await panel.click(`.tabs button[data-tab=${name}]`);
+      await sleep(350);
+      violations = violations.concat(await a11y(panel, `${name} (light)`));
+    }
+
     // dark appearance (macOS/Windows pass the system theme through; headless Linux can't, so emulate it)
     await panel.emulateMedia({ colorScheme: 'dark' });
     await panel.click('.tabs button[data-tab=tasks]');
@@ -260,6 +283,15 @@ async function main() {
     const dark = await panel.evaluate(() => getComputedStyle(document.body).backgroundColor);
     check(dark === 'rgb(0, 0, 0)', `dark appearance applies (${dark})`);
     await panel.screenshot({ path: path.join(OUT, '7-dark.png') });
+    for (const name of TABS) {
+      await panel.click(`.tabs button[data-tab=${name}]`);
+      await sleep(350);
+      violations = violations.concat(await a11y(panel, `${name} (dark)`));
+    }
+    await panel.click('.tabs button[data-tab=tasks]');
+    violations = violations.concat(await a11y(avatar, 'avatar'));
+    check(violations.length === 0, `no WCAG 2.1 AA violations (axe-core) on 6 panel tabs × light/dark, Quick Ask and the island` +
+          (violations.length ? `: ${[...new Set(violations.map((v) => v.id))].join(', ')}` : ''));
     await panel.emulateMedia({ colorScheme: 'light' });
 
     check(!/\[object |undefined|NaN/.test(await panel.textContent('main')), 'no rendering glitches ([object …], undefined, NaN) anywhere in the panel');

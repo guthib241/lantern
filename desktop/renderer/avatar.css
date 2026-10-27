@@ -41,7 +41,7 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
 .buttons button { border: 0; height: 34px; border-radius: 17px; font: inherit; font-weight: 600; font-size: 13.5px; cursor: pointer; transition: transform .15s; }
 .buttons button:active { transform: scale(.96); }
 .buttons .deny { background: rgba(255, 255, 255, .16); color: #fff; }
-.buttons .allow { background: #0a84ff; color: #fff; }
+.buttons .allow { background: #0a6ed1; color: #fff; }   /* white on it meets WCAG AA */
 .buttons .review { background: #fff; color: #000; }
 .buttons.review-only .allow { display: none; }
 .buttons:not(.review-only) .review { display: none; }

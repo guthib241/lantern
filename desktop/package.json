@@ -12,6 +12,7 @@
     "e2e": "node e2e/run.js"
   },
   "devDependencies": {
+    "axe-core": "4.13.0",
     "electron": "44.5.1",
     "playwright": "1.63.0"
   }

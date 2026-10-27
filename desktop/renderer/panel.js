@@ -370,9 +370,9 @@
       // Built-in hidden paths for other systems (macOS keychains on Linux, ...) don't exist here: fold them away.
       const folded = z.zones.filter((zone) => zone.zone === 'hidden' && zone.exists === false);
       for (const zone of z.zones.filter((x) => !folded.includes(x))) {
-        const sel = h('select', { onchange: (e) => setZone(zone.path, e.target.value) },
-          z.choices.map((c) => h('option', c === zone.zone ? { selected: true } : {}, c)));
         const name = zone.path.split(/[\\/]/).filter(Boolean).pop() || zone.path;
+        const sel = h('select', { onchange: (e) => setZone(zone.path, e.target.value), 'aria-label': `Zone for ${zone.path}` },
+          z.choices.map((c) => h('option', c === zone.zone ? { selected: true } : {}, c)));
         list.append(h('div', { class: 'zone' }, h('div', { class: 'zone-name' }, h('b', {}, name), h('code', {}, zone.path)), sel));
       }
       if (folded.length) list.append(h('p', { class: 'hint' }, `+ ${folded.length} built-in hidden paths that don't exist on this computer`));
