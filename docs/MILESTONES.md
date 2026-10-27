@@ -35,3 +35,6 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M26 Native integration: menu bar icon and menu, notifications for approvals and reminders, badge count
 - [x] M27 First-run welcome sheet and Preferences (personality picker saved next to memory, shortcuts list)
 - [x] M28 Submission kit: shot-by-shot video script, architecture slide, write-up
+
+## While waiting for the key (requested: "keep improving until I send the key")
+- [x] M29 Undo: one tap (or "undo" typed or sent from the phone) puts back what a task moved. It runs from the task's own verified move log through one approval card, with no model call

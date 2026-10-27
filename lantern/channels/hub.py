@@ -4,6 +4,8 @@ Incoming, from the owner only (everyone else is ignored and counted):
   text          -> a new task (tagged with the channel), or
   "STOP"        -> the kill switch: cancel the running task, deny every pending approval
   "status"      -> what Lantern is doing
+  "resume"      -> run the tasks cut short when Lantern stopped
+  "undo"        -> put back the files the last task moved (one approval, no model call)
   voice note    -> download -> ffmpeg 16 kHz WAV -> Muse Voice Transcribe (biased toward the
                    names Lantern knows) -> handled like text, with the transcript echoed back
   button tap    -> approve / deny / show an approval. Button ids carry the approval's nonce
@@ -30,6 +32,7 @@ from typing import Any, Callable
 from .. import models
 from ..approvals import ApprovalError
 from ..scrubber import DEFAULT as SCRUBBER
+from ..undo import WORDS as UNDO_WORDS, UndoError
 from ..voice import to_wav16k, transcribe
 from .base import Channel, Incoming
 
@@ -39,7 +42,7 @@ HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
-         "or resume. Approvals arrive here as buttons.")
+         "resume, or undo (puts back the files the last task moved). Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
 
@@ -187,6 +190,13 @@ class ChannelHub:
                 self.origin[task_id] = ch.name
             return self.say(ch.name, f"🏮 Resuming {len(new_ids)} task{'s' if len(new_ids) != 1 else ''} "
                                      f"(#{', #'.join(map(str, new_ids))})." if new_ids else "Nothing to resume.")
+        if UNDO_WORDS.match(t):
+            try:
+                task_id = self.core.undo_last()
+            except UndoError as e:
+                return self.say(ch.name, f"Nothing to undo: {e}.")
+            self.origin[task_id] = ch.name
+            return self.say(ch.name, f"↩️ Undo is task #{task_id}. Approve the card to put the files back.")
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")

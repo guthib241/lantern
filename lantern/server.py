@@ -137,9 +137,15 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     @app.post("/task", dependencies=[Depends(auth)])
     def post_task(body: TaskIn):
         from .tools import EXTERNAL_PREFIX
+        from .undo import WORDS as undo_words
         goal = body.goal.strip()
         if body.source == "mcp" and goal:
             goal = EXTERNAL_PREFIX + goal   # tainted from the start; its addresses aren't trusted
+        elif undo_words.match(goal):        # "undo" typed in the panel or Quick Ask: like UNDO on the phone
+            try:
+                return {"task_id": core.undo_last()}
+            except ValueError as e:
+                raise HTTPException(409, f"Nothing to undo: {e}")
         try:
             return {"task_id": core.submit(goal)}
         except ValueError as e:
@@ -169,6 +175,15 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except KeyError:
             raise HTTPException(404, "no such task")
         except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/tasks/{task_id}/undo", dependencies=[Depends(auth)])
+    def undo_task(task_id: int):
+        try:
+            return {"task_id": core.undo(task_id)}
+        except KeyError:
+            raise HTTPException(404, "no such task")
+        except ValueError as e:   # UndoError: nothing to put back, already undone, still running
             raise HTTPException(409, str(e))
 
     def settings_view() -> dict:

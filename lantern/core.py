@@ -30,7 +30,8 @@ from .policy import Policy, PolicyError
 from .reliability import RetryingClient
 from .router import Router, RouterConfig, make_backend
 from .sam import CheckIn
-from .tools import Toolbox
+from .tools import Toolbox, ToolError
+from .undo import UNDONE, UndoError, undo_plan, undoable
 from .widgets import Widgets
 
 EventSink = Callable[[dict], None]
@@ -119,6 +120,8 @@ class Core:
         self._sinks: list[EventSink] = []
         self._queue: queue.Queue = queue.Queue()
         self.current_task: int | None = None
+        self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
+        self._undo_lock = threading.Lock()
         self.interrupted = recover_interrupted(self.memory)   # before the worker starts taking tasks
         self.bus.subscribe(self._approval_event)
         self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
@@ -167,18 +170,18 @@ class Core:
         if not goal:
             raise ValueError("goal is empty")
         task = self.memory.start_task(goal)
-        self._queue.put((task.id, goal))
+        self._queue.put((task.id, goal, None))
         self.emit({"type": "queued", "task_id": task.id, "goal": goal})
         return task.id
 
     def _work(self) -> None:
         while True:
-            task_id, goal = self._queue.get()
+            task_id, goal, job = self._queue.get()
             if task_id is None:
                 return
             self.current_task = task_id
             try:
-                self.agent.run(goal, task_id=task_id)
+                job() if job else self.agent.run(goal, task_id=task_id)
             except Exception:
                 pass  # the agent already marked the task failed and emitted "done"
             finally:
@@ -208,6 +211,8 @@ class Core:
             raise ValueError("that task is still running")
         if t.status == "interrupted":
             return self.resume([task_id])[0]
+        if (of := self._undo_of(task_id)) is not None:   # an undo runs again as an undo, never through the model
+            return self.undo(of)
         return self.submit(t.goal.split(RESUME_NOTE)[0])
 
     def resume(self, task_ids: list[int] | None = None) -> list[int]:
@@ -218,18 +223,103 @@ class Core:
         for t in tasks:
             if t.status != "interrupted":
                 continue
-            new_id = self.submit(resume_goal(self.memory, t))
+            of = self._undo_of(t.id)
+            try:
+                new_id = self.undo(of) if of is not None else self.submit(resume_goal(self.memory, t))
+            except (UndoError, KeyError) as e:   # e.g. the cut-short undo had already put everything back
+                self.memory.finish_task(t.id, "failed", f"couldn't resume: {e}")
+                continue
             self.memory.finish_task(t.id, "resumed", f"resumed as task #{new_id}")
             self.emit({"type": "resumed", "from": t.id, "task_id": new_id})
             new_ids.append(new_id)
         self.interrupted = [t for t in self.interrupted if t.id not in {x.id for x in tasks}]
         return new_ids
 
+    # ---- undo (no model: replays the task's own verified moves backwards; one approval) -------------
+    def undo(self, task_id: int) -> int:
+        """Put back what task #task_id moved, as a new task. Raises KeyError, or UndoError with the reason."""
+        with self._undo_lock:
+            if task_id == self.current_task or task_id in self._undoing:
+                raise UndoError("that task is still running" if task_id == self.current_task else
+                                f"an undo of task #{task_id} is already queued")
+            plan = undo_plan(self.memory, task_id)
+            self._undoing.add(task_id)
+        goal = f"Undo task #{task_id}: put back {len(plan)} file{'s' if len(plan) != 1 else ''}"
+        task = self.memory.start_task(goal)
+        self.memory.log_step(task.id, "plan", {"goal": goal, "undo_of": task_id})
+        self._queue.put((task.id, goal, lambda: self._run_undo(task.id, goal, task_id)))
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+        return task.id
+
+    def undo_last(self) -> int:
+        """UNDO from the phone: the most recent finished task that moved files and isn't undone yet."""
+        if self.current_task is not None:   # it may be the one about to move things: don't reach past it
+            raise UndoError(f"task #{self.current_task} is still running; undo once it has finished (or say STOP)")
+        for t in self.memory.recent_tasks(20):   # undo tasks are skipped, so UNDO again goes one task further back
+            if t.status not in ("active", "interrupted") and self._undo_of(t.id) is None:
+                try:
+                    undo_plan(self.memory, t.id)
+                except (UndoError, KeyError):
+                    continue
+                return self.undo(t.id)
+        raise UndoError("none of your recent tasks moved files")
+
+    def _undo_of(self, task_id: int) -> int | None:
+        for step in self.memory.steps(task_id)[:1]:
+            if step["kind"] == "plan":
+                try:
+                    of = json.loads(step["content"]).get("undo_of")
+                except (TypeError, ValueError, AttributeError):
+                    return None
+                return of if isinstance(of, int) else None
+        return None
+
+    def _run_undo(self, task_id: int, goal: str, of_id: int) -> None:
+        try:
+            self._undo_job(task_id, goal, of_id)
+        finally:   # only now: until the "undone" note is written, a second tap must still be refused
+            self._undoing.discard(of_id)
+
+    def _undo_job(self, task_id: int, goal: str, of_id: int) -> None:
+        self.agent.cancel.clear()
+        self.toolbox.begin_task(task_id, goal)
+        self._agent_event("task", {"id": task_id, "goal": goal})
+        args = {"of_task": of_id}
+        try:
+            result = self.toolbox.undo_moves(undo_plan(self.memory, of_id), of_id)   # fresh: files may have moved since
+        except (UndoError, ToolError, KeyError) as e:
+            result = {"error": str(e).strip("'")}
+        except Exception as e:   # never leave the task hanging as "active"
+            result = {"error": f"{type(e).__name__}: {e}"}
+        self.memory.log_step(task_id, "tool_call", {"name": "undo_moves", "args": args})
+        self.memory.log_step(task_id, "tool_result", {"name": "undo_moves", "result": result})
+        self._agent_event("tool", {"name": "undo_moves", "args": args, "result": result, "badge": "on this computer"})
+        moved, back = result.get("moved", 0), result.get("already_back", 0)
+        if result.get("verified"):   # all home; a partial undo stays undoable and the next try finishes it
+            self.memory.log_step(of_id, "note", f"{UNDONE}{task_id}")
+            self.emit({"type": "undone", "from": of_id, "task_id": task_id, "moved": moved})
+        if result.get("error"):
+            status, summary = "failed", f"Couldn't undo task #{of_id}: {result['error']}"
+        elif result.get("reason") == "user declined":
+            status, summary = "cancelled", f"Undo of task #{of_id} declined; nothing moved."
+        elif result.get("verified"):
+            n = moved + back
+            status, summary = "done", f"Put {n} file{'s' if n != 1 else ''} back where they were. Each checked on disk."
+        else:
+            first = (result.get("failed") or [{}])[0]
+            status = "failed"
+            summary = (f"Put {moved} of {result.get('of', '?')} back, then stopped: "
+                       f"{first.get('error') or result.get('reason') or 'see the steps'}")
+        self.memory.log_step(task_id, "reply", summary)
+        self.memory.finish_task(task_id, status, summary)
+        self._agent_event("done", {"id": task_id, "status": status, "summary": summary, "reply": summary,
+                                   "cost_usd": 0.0, "steps": 1})
+
     def task_view(self, task_id: int) -> dict:
         t = self.memory.get_task(task_id)
         return {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
                 "created_at": t.created_at, "updated_at": t.updated_at,
-                "usage": self.memory.task_usage(t.id)}
+                "usage": self.memory.task_usage(t.id), "undoable": undoable(self.memory, t.id)}
 
     # ---- forgetting (real deletes: secure_delete + VACUUM; Lantern's own files overwritten) -------
     def forget_task(self, task_id: int) -> dict:
@@ -287,7 +377,7 @@ class Core:
         self._closing.set()
         self.stop()
         self.mcp.close()
-        self._queue.put((None, None))
+        self._queue.put((None, None, None))
 
 
 def _short(result: Any, limit: int = 600) -> Any:

@@ -162,7 +162,7 @@ python -m lantern --forget-task 12 | --forget-everything
 - **Forms:** Lantern uses its own Chromium profile with no saved passwords. Set `LANTERN_FORMS_MODEL=muse-wonder-1.0` for final runs and `LANTERN_FORMS_HEADLESS=0` to watch it work. `python scripts/smoke.py cua` checks computer use against the real API.
 - **Email:** for Gmail, turn on 2-step verification and create an **app password**. Then set `LANTERN_EMAIL_MODE=smtp`, `LANTERN_SMTP_USER` and `LANTERN_SMTP_PASSWORD`. Lantern checks the Sent folder over IMAP before calling an email verified.
 - **Private lane:** run Muse Glimmer locally (llama.cpp or any OpenAI-compatible server; step by step in [docs/GLIMMER.md](docs/GLIMMER.md)) and set `LANTERN_GLIMMER_URL=http://127.0.0.1:8080/v1`. Without it, Lantern refuses questions about private files (rehearsal mode uses a labelled offline stand-in). It never falls back to the cloud for private files.
-- **Tidy a folder:** "tidy my Downloads". You get one approval card for the whole plan, every move is checked on disk, and "undo" puts things back.
+- **Tidy a folder:** "tidy my Downloads". You get one approval card for the whole plan and every move is checked on disk. **Undo** (the button on the task, or "undo" typed or sent from your phone) puts everything back from Lantern's own move log: one card, no model call, never over a newer file.
 - **Reminders:** "remind me at 6 pm to submit the video", or "every day at 9:00 standup". Your phone and the desktop get it on time. Reminders are plain timers that repeat your words.
 - **Widgets:** "make me a water timer". Muse Spark writes it, a static checker rejects network or eval code, and it runs in a sandboxed frame. See [docs/WIDGETS.md](docs/WIDGETS.md).
 - **MCP:**

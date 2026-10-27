@@ -191,6 +191,7 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 8
 .task .actions { display: flex; gap: 16px; margin-top: 8px; }
 .task .forget { border: 0; background: transparent; color: var(--tint); font-size: 13px; padding: 0; }
 .task .forget.quiet { color: var(--label-2); }
+.task .undone { font-size: 13px; color: var(--label-2); }
 .interrupted { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; margin-top: 12px; font-size: 13.5px; }
 .interrupted ul { margin: 6px 0 8px; padding-left: 18px; color: var(--label-2); }
 

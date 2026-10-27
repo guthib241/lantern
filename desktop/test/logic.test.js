@@ -167,6 +167,27 @@ test('interrupted tasks come with hello and leave when resumed', () => {
   assert.equal(s.tasks[4].status, 'resumed');
 });
 
+test('a task that moved files offers Undo until it is undone', () => {
+  let s = run([{ type: 'task', id: 5, goal: 'tidy downloads', ts: 1 },
+               { type: 'tool', name: 'list_dir', args: {}, result: { entries: [] }, task_id: 5, ts: 2 }]);
+  assert.equal(s.tasks[5].undoable, false);
+  s = S.reduce(s, { type: 'tool', name: 'organize_files', args: {}, result: { verified: true, moved: 3 }, task_id: 5, ts: 3 });
+  s = S.reduce(s, { type: 'done', id: 5, status: 'done', summary: 'tidied', ts: 4 });
+  assert.equal(s.tasks[5].undoable, true);
+  assert.equal(s.tasks[5].undoneBy, null);
+  s = [{ type: 'task', id: 6, goal: 'Undo task #5: put back 3 files', ts: 5 },
+           { type: 'tool', name: 'undo_moves', args: { of_task: 5 }, result: { verified: true, moved: 2, already_back: 1 },
+             task_id: 6, ts: 6 },
+           { type: 'undone', from: 5, task_id: 6, moved: 2, ts: 6 }].reduce(S.reduce, s);
+  assert.equal(s.tasks[5].undoneBy, 6);
+  assert.equal(s.tasks[6].steps[0].label, 'Put 3 file(s) back, each checked ✓');
+  const declined = run([{ type: 'tool', name: 'organize_files', args: {}, result: { done: false, reason: 'user declined' },
+                          task_id: 7, ts: 1 }]);
+  assert.equal(declined.tasks[7].undoable, false);
+  assert.equal(C.card({ action: 'undo_moves', summary: 'Undo task #5: put back 3 files: 3 → Downloads', expires_at: 10 }, 0).title,
+               'Put these files back?');
+});
+
 test('setup check: failures first, fixes only where needed, a plain readiness line', () => {
   const Setup = require('../renderer/lib/setup.js');
   const v = Setup.view({

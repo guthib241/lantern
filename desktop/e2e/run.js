@@ -92,9 +92,9 @@ async function main() {
                      steps: [...t.querySelectorAll('.steps li')].map((li) => li.textContent) } : null;
       });
     }
-    async function finish(goal, allows, via = 'panel') {
+    async function finish(goal, allows, via = 'panel', start = () => ask(goal)) {
       const before = (await latestTask()) || { status: '' };
-      await ask(goal);
+      await start();
       for (let i = 0; i < allows; i++) {
         await panel.waitForSelector('.approval .allow', { timeout: 60000 });
         if (via === 'island') {   // approve from the live activity island instead of the panel
@@ -200,9 +200,21 @@ async function main() {
     t = await finish('Remind me in 20 minutes to record the demo video.', 0);
     const reminders = await until('the reminders card', async () => panel.textContent('#reminders'));
     check(/record the demo video/.test(reminders), 'reminder listed with a Cancel button');
+    const downloads = path.join(tmp, 'rehearsal', 'home', 'Downloads');
+    const untidy = fs.readdirSync(downloads).filter((n) => fs.statSync(path.join(downloads, n)).isFile()).sort();
     t = await finish('Tidy my Downloads folder.', 1);
     check(/Moved 6 files/.test(t.reply), 'Downloads tidied with one approval');
     await panel.screenshot({ path: path.join(OUT, '4-tasks.png') });
+
+    // Undo: one tap on the card, one approval, every file back where it was; no model involved
+    t = await finish('Undo task #', 1, 'panel', () => panel.click('#tasks .task .actions button >> text=Undo'));
+    const back = fs.readdirSync(downloads).filter((n) => fs.statSync(path.join(downloads, n)).isFile()).sort();
+    check(/· done/.test(t.status) && JSON.stringify(back) === JSON.stringify(untidy),
+          `Undo put all ${untidy.length} files back in Downloads (${t.reply})`);
+    check(/Undone in #\d+/.test(await panel.textContent('#tasks')) &&
+          !(await panel.$('#tasks .task .actions button >> text=Undo >> nth=1')), 'tidy card now says “Undone in #…”');
+    await panel.locator('#tasks .task').nth(1).scrollIntoViewIfNeeded();
+    await panel.locator('#tasks').screenshot({ path: path.join(OUT, '4-undo.png') });
 
     // the phone, the setup check, the costs
     await panel.click('.tabs button[data-tab=phone]');

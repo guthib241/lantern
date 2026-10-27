@@ -1,6 +1,6 @@
 /* Lantern desktop: the event reducer. Pure: (state, event) -> new state.
  * Events come from the local server's websocket (/events): hello, queued, task, tool, form,
- * usage, approval, done, stopped, channel_error. Every step keeps its model badge. */
+ * usage, approval, done, stopped, undone, channel_error. Every step keeps its model badge. */
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -8,10 +8,11 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   const MAX_TASKS = 30;
   const MAX_STEPS = 80;
+  const MOVES = ['move_file', 'organize_files', 'undo_moves'];   // tools whose verified moves can be put back
 
   function initial() {
     return {
-      tasks: {},          // id -> {id, goal, status, steps, reply, summary, cost, verified, startedAt, endedAt}
+      tasks: {},          // id -> {id, goal, status, steps, reply, summary, cost, verified, undoable, undoneBy, ...}
       order: [],          // task ids, oldest first
       current: null,
       approvals: {},      // pending approvals by id (with nonce, for the card)
@@ -32,7 +33,7 @@
     if (id == null) return null;
     if (!s.tasks[id]) {
       s.tasks[id] = { id, goal: goal || '', status: 'queued', steps: [], reply: '', summary: '',
-                      cost: 0, verified: false, startedAt: at, endedAt: null };
+                      cost: 0, verified: false, undoable: false, undoneBy: null, startedAt: at, endedAt: null };
       s.order.push(id);
       while (s.order.length > MAX_TASKS) delete s.tasks[s.order.shift()];
     } else if (goal && !s.tasks[id].goal) {
@@ -70,6 +71,8 @@
       case 'list_reminders': return `Checked reminders (${r.count != null ? r.count : '?'})`;
       case 'organize_files': return r.verified ? `Moved ${r.moved} file(s), each checked ✓`
         : `Tidy: ${r.reason || (r.failed && r.failed[0] && r.failed[0].error) || 'not done'}`;
+      case 'undo_moves': return r.verified ? `Put ${(r.moved || 0) + (r.already_back || 0)} file(s) back, each checked ✓`
+        : `Undo: ${r.reason || (r.failed && r.failed[0] && r.failed[0].error) || 'not done'}`;
       case 'finish': return 'Finished';
       default: return e.name;
     }
@@ -97,6 +100,9 @@
         s.interrupted = s.interrupted.filter((t) => t.id !== e.from);
         if (s.tasks[e.from]) s.tasks[e.from].status = 'resumed';
         break;
+      case 'undone':
+        if (s.tasks[e.from]) s.tasks[e.from].undoneBy = e.task_id;
+        break;
       case 'disconnected':
         s.connected = false;
         break;
@@ -116,6 +122,7 @@
         addStep(t, { kind: 'tool', name: e.name, label: toolLabel(e), badge: e.badge || 'on this computer',
                      ok: !r.error && r.done !== false && r.sent !== false, at });
         if (r.verified === true) t.verified = true;
+        if (MOVES.includes(e.name) && (r.verified === true || r.moved > 0)) t.undoable = true;
         break;
       }
       case 'form': {

@@ -235,7 +235,15 @@ class Toolbox:
             return refused
         self.policy.move(src, dst)
         ok = dst.exists() and not src.exists()  # verify on disk
+        if ok:
+            self._log_undo([{"source": str(dst), "destination": str(src)}])
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
+
+    def _log_undo(self, moves: list[dict]) -> None:
+        """Record the reverse of verified moves in the task's log (memory only, never sent to the model):
+        undo.py replays them when the user taps Undo."""
+        if moves and self.task_id is not None:
+            self.memory.log_step(self.task_id, "undo", {"moves": moves})
 
     def _short(self, path: str | Path) -> str:
         """A path as the user thinks of it: 'Downloads/Images', relative to the allowed folder it's in."""
@@ -248,6 +256,29 @@ class Toolbox:
     def organize_files(self, moves: list[dict]) -> dict:
         """Many moves, one approval: the card shows the whole plan, bound to every file's path, size
         and modified time. Each move is verified on disk; on a failure Lantern stops and reports."""
+        return self._organize(moves, "organize_files", "Move")
+
+    def undo_moves(self, moves: list[dict], of_task: int) -> dict:
+        """Put back what task #of_task moved (Core.undo builds the plan from its verified log). Not a model
+        tool: the user asks for it with the Undo button or UNDO. Same checks and one approval as a tidy."""
+        todo, back = [], 0
+        for m in moves:
+            try:
+                src, dst = self.policy.check_writable(m["source"]), self.policy.check_writable(m["destination"])
+            except PolicyError as e:
+                raise ToolError(str(e)) from e
+            if not src.exists() and dst.exists():   # already home (an earlier, cut-short undo, or by hand)
+                back += 1
+            else:
+                todo.append(m)
+        if not todo:
+            return {"done": True, "verified": True, "moved": 0, "of": 0, "already_back": back, "folders": {}, "failed": []}
+        n = len(todo)
+        result = self._organize(todo, "undo_moves", f"Undo task #{of_task}: put back {n} file{'s' if n != 1 else ''}")
+        result.pop("undo", None)   # undoing an undo is the Undo button on this task, not a plan for the model
+        return {**result, "already_back": back}
+
+    def _organize(self, moves: list[dict], action: str, heading: str) -> dict:
         if not isinstance(moves, list) or not moves:
             raise ToolError("moves is empty")
         if len(moves) > MAX_ORGANIZE:
@@ -261,12 +292,12 @@ class Toolbox:
                 dst = self.policy.check_writable(m["destination"])
             except PolicyError as e:
                 raise ToolError(str(e)) from e
-            if not src.is_file():
+            if not (src.is_file() or (action == "undo_moves" and src.is_dir())):   # an undo can put a folder back
                 raise ToolError(f"{src} is not a file (organize_files moves files only)")
             if self.policy.is_link(m["source"]):
                 raise ToolError(f"{m['source']} is a shortcut (symlink); I won't move what it points to")
-            if dst.is_dir() or str(m["destination"]).endswith(("/", "\\")):
-                dst = dst / src.name
+            if action != "undo_moves" and (dst.is_dir() or str(m["destination"]).endswith(("/", "\\"))):
+                dst = dst / src.name   # an undo goes back to the exact old path, or not at all
             if dst.exists() or dst in seen_dst:
                 raise ToolError(f"{dst} already exists or is used twice; pick another name")
             if src in seen_src:
@@ -280,17 +311,19 @@ class Toolbox:
             for src, dst in plan:
                 st = src.stat() if src.exists() else None
                 out.append({"from": str(src), "to": str(dst), "bytes": st.st_size if st else None,
-                            "mtime_ns": st.st_mtime_ns if st else None})
+                            "mtime_ns": st.st_mtime_ns if st else None, "kind": "folder" if src.is_dir() else "file"})
             return {"moves": out}
         groups: dict[str, int] = {}
         for _, dst in plan:
             groups[str(dst.parent)] = groups.get(str(dst.parent), 0) + 1
-        summary = f"Move {len(plan)} file{'s' if len(plan) != 1 else ''}: " + "; ".join(
+        if heading == "Move":
+            heading = f"Move {len(plan)} file{'s' if len(plan) != 1 else ''}"
+        summary = f"{heading}: " + "; ".join(
             f"{n} → {self._short(folder)}" for folder, n in sorted(groups.items(), key=lambda g: -g[1])[:6])
         if len(groups) > 6:
             summary += f"; and {len(groups) - 6} more folders"
         payload = identity()
-        commit = self._approve("organize_files", summary, payload)
+        commit = self._approve(action, summary, payload)
         if commit is None:
             return {"done": False, "reason": "user declined"}
         if refused := self._commit(commit, identity()):  # a file changed or vanished since the card
@@ -305,11 +338,13 @@ class Toolbox:
             except (PolicyError, OSError) as e:
                 failed.append({"from": str(src), "error": str(e)})
                 break
-            ok = dst.is_file() and not src.exists() and dst.stat().st_size == before["bytes"]
+            ok = not src.exists() and (dst.is_dir() if before["kind"] == "folder" else
+                                       dst.is_file() and dst.stat().st_size == before["bytes"])
             (moved if ok else failed).append({"from": str(src), "to": str(dst)} if ok
                                              else {"from": str(src), "error": "not found at the destination"})
             if not ok:
                 break
+        self._log_undo([{"source": m["to"], "destination": m["from"]} for m in moved])
         result = {"done": not failed and len(moved) == len(plan), "verified": not failed and len(moved) == len(plan),
                   "moved": len(moved), "of": len(plan), "folders": groups, "failed": failed}
         if moved and len(moved) <= 50:  # enough for "undo that" (another approved organize_files)

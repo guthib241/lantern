@@ -142,6 +142,9 @@
         t.steps.length ? steps : null,
         t.reply ? h('p', { class: 'reply' }, t.reply) : null,
         h('div', { class: 'actions' },
+          t.undoable && !t.undoneBy && !live
+            ? h('button', { class: 'forget', onclick: () => undoTask(t.id), title: 'Put the files back (asks first)' }, 'Undo') : null,
+          t.undoneBy ? h('span', { class: 'undone' }, `Undone in #${t.undoneBy}`) : null,
           ['failed', 'cancelled', 'interrupted'].includes(t.status)
             ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
           !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)));
@@ -266,6 +269,14 @@
       await api.post(`/tasks/${id}/retry`);
     } catch (e) {
       toast(`Couldn't retry: ${e.message}`);
+    }
+  }
+
+  async function undoTask(id) {
+    try {
+      await api.post(`/tasks/${id}/undo`);   // a new task with one approval card; no model, $0
+    } catch (e) {
+      toast(`Couldn't undo: ${e.message}`);
     }
   }
 

@@ -15,6 +15,7 @@
     save_widget: 'Add this widget?',
     run_in_project: 'Run this command?',
     organize_files: 'Tidy these files?',
+    undo_moves: 'Put these files back?',
     set_reminder: 'Set this reminder?',
     cancel_reminder: 'Cancel this reminder?',
     mcp_call: "Use another program's tool?",

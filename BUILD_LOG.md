@@ -165,3 +165,30 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **Widget storage:** values and the index live in separate namespaces, so a widget can't corrupt its index or bypass the key cap.
   - **Token file:** the API token file is created owner-only in one step (it was briefly world-readable).
   - 8 new tests plus 1 desktop test; 371 passing; desktop e2e passing.
+
+## Oct 27 (while waiting for the key)
+- M29 Undo.
+  - **What it does:** "tidy my Downloads" already offered "say undo", which went back through the model. Now every verified move (`move_file`, `organize_files`, and an undo itself) logs its reverse move in the task's encrypted log; this log is never sent to the model. `lantern/undo.py` turns the log into a plan:
+    - last move first
+    - a file moved twice goes straight home
+    - a file moved there and back is left alone
+  - **How it runs:** `Core.undo` runs the plan as its own task through `Toolbox.undo_moves`. That's the same zone checks and the same single approval card bound to every file's path, size and modified time, then a check on disk after each move. No model call, $0.
+  - **Safety:**
+    - never puts a file back over a new one with the same name (refused before asking)
+    - skips files the user already put back by hand
+    - respects zones changed since
+    - folders are put back too
+    - empty folders the tidy created stay, since Lantern never deletes
+  - **Where you use it:**
+    - desktop: an **Undo** button on task cards, then "Undone in #N" on the card
+    - phone: `undo` / `undo that` (multi-level: each UNDO goes one task further back)
+    - typing "undo" in the panel or Quick Ask
+    - `POST /tasks/{id}/undo`; `/tasks` reports `undoable`
+  - **Edge cases:**
+    - a declined undo can be tried again (as an undo, never through the model), and an interrupted one resumes as an undo
+    - a partial undo (a move failed halfway) isn't used up: the next try puts back the rest
+    - a double tap queues one undo
+    - typed "undo" waits while another task is running
+    - `undo_moves` is not a model tool
+    - MCP goals saying "undo" go to the model as text, never as the shortcut
+  - **Tests:** 12 new tests plus 1 desktop test; the Electron e2e now taps Undo after the rehearsal tidy and checks all 6 files are back on disk. 383 passing.
