@@ -11,6 +11,14 @@ Your laptop (from `docs/DECISIONS.md`) has an RTX 4060 with 8 GB VRAM and 15.6 G
 
 ## 2. Start it (keep this window open while you use Lantern)
 
+Windows (PowerShell; give the full path, since PowerShell doesn't expand `~` for other programs):
+
+```powershell
+llama-server.exe -m C:\models\glimmer-IQ2_M.gguf --host 127.0.0.1 --port 8080 -c 8192 -ngl 20 --jinja
+```
+
+macOS / Linux:
+
 ```bash
 llama-server -m ~/models/glimmer-IQ2_M.gguf --host 127.0.0.1 --port 8080 -c 8192 -ngl 20 --jinja
 ```
@@ -32,7 +40,7 @@ Check:
 ```bash
 lantern --doctor                      # "Private lane (Muse Glimmer)  ✓ … answers"
 python scripts/smoke.py glimmer       # one real local question
-lantern --set-zone ~/Private private  # make sure the demo's folder is private
+lantern --set-zone ~/Private private  # make sure the demo's folder is private (Windows: C:\Users\<you>\Private)
 ```
 
 The panel's step badge reads **Muse Glimmer (local)**, and the Privacy tab counts the question under "stayed on this computer".
