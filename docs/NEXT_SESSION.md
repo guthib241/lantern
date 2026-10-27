@@ -1,7 +1,11 @@
 # Handoff: from "all milestones built" to "submitted"
 
-State (Oct 27, session 4, waiting for the key):
-- **M0–M31 are all done** on branch `claude/determined-gates-ubpm6u`, PR https://github.com/guthib241/lantern/pull/2 (supersedes #1).
+State (Oct 27, session 5: tested on the live API):
+- **Session 5 (live API testing)** continued on branch `claude/gallant-albattani-18fmje` (PR #1's branch, fast-forwarded to everything from PR #2 plus the fixes below). Which PR to keep is the user's call; see "Open questions".
+  - Key: a claude.ai **network secret** for `api.meta.ai` (Bearer) injects the real key into every request; Lantern only needs `MODEL_API_KEY` to exist, so `MODEL_API_KEY=set-by-proxy` works in the cloud. Never print or commit the key. (`lantern --doctor` warns the placeholder "looks cut short"; expected in the cloud.)
+  - **Verified live:** all five hosted models (`scripts/smoke.py`); computer use on Spark and Wonder; the whole story plus safety beats via `scripts/live_story.py` (voice note from real speech → Muse Voice Transcribe → form filled with Wonder → approvals → email, private lane, project notes with a planted key, torch, widget, reminder from the phone, tidy + undo, receipt, prompt injection ignored, hidden folders refused, recap); the desktop app against a live server (`cd desktop && npm run live`); resume after `kill -9` of the server; spending limit stopping a task; private lane OFF refusing without leaking; Muse Image avatar sheet; SAM 3.1 (5 ducks on the cookbook photo); tool search with a deferred MCP catalog. About **$0.90** in total; numbers in README → Cost so far.
+  - **Fixed from live runs:** Wonder rejects the native computer tool (400) → `LANTERN_CUA_PROTOCOL=auto` (native for Spark, function harness for Wonder, `models.CUA_PROTOCOL`); private-lane answers were re-sent in every later briefing → `private_tasks`; widget calls died at 30 s unstreamed → streamed at `reasoning.effort: low` (14 s, ~$0.014); a generated water timer set an "8 glasses" goal and said "stay hydrated" → agent rule + widget rule + checker; `.wav` voice notes converted onto themselves; tiny budget limits printed as "$0.00".
+- **M0–M31 are all done**: originally on branch `claude/determined-gates-ubpm6u`, PR https://github.com/guthib241/lantern/pull/2 (supersedes #1).
   - M18–M22, extras: reminders, tidy a folder, resume after restart, `lantern --doctor`, packaging + CI.
   - M23–M28, design pass:
     - an Apple-style panel (light/dark, Today view, approval sheet with a field table)
@@ -23,12 +27,18 @@ State (Oct 27, session 4, waiting for the key):
       - Core now logs approval outcomes per task.
       - The private lane's audit rows are now tagged with their task, so "forget task" removes them; before this they were left behind.
       - Approval listeners now hear "decided" before the waiting task wakes. The HTTP decide route returns the decision itself, which fixes a race where it could return "used".
-- **⚠ First thing next session:** the last commit (receipts + approval ordering) was pushed when the user stopped the full test run, before it completed. Before that change, 400 of 401 passed; the one failure was the race fixed in that commit. After the fix, these were run: the server, approval, receipt and channel tests (54 passed), the race tests 25× (all green), the desktop node tests (27 passed) and the e2e (passed). **Run the full `python -m pytest -q`, pyflakes and `cd desktop && npm test` first** and fix anything red before new work.
+- **Tests:** 412 Python tests (incl. the Electron e2e in rehearsal mode) + 27 desktop node tests, all green at the end of session 5, pyflakes clean. (The Electron binary may need `node node_modules/electron/install.js` twice after `npm install` in the sandbox.)
 - **Tests:** about 401 Python tests plus 27 desktop node tests. They include `desktop/e2e/run.js`, which drives the **real Electron app** against the real server in rehearsal mode (needs `cd desktop && npm install`, plus Xvfb on a headless Linux).
 - **CI:** GitHub Actions jobs are refused by the account's Actions or billing settings, not by the code. Run the checks by hand before every push.
 - **Visibility:** the user chose to keep the repo private. CLAUDE.md and the hackathon rules ask for a public repo, so check the submission requirements with the user before submitting.
-- **Real API:** nothing has been called against the real Meta API yet ($0 of $150). The cloud sandbox's network blocks `api.meta.ai`; the user will provide the key (laptop, or allow the domain and add `MODEL_API_KEY` to this environment).
-- **Calibration:** `scripts/smoke.py cua` ends with the exact `LANTERN_CUA_PROTOCOL=… LANTERN_CUA_COORDS=…` line for `.env`.
+- **Real API:** reachable from the cloud sandbox now (network secret). Spent so far: about $0.90 of $150.
+- **Calibration:** done; no `.env` line needed (`auto`). `scripts/smoke.py cua` says "nothing" when auto already matches.
+- **Known risk (not changed):** agent turns are not streamed. None came near the 30 s upstream cut-off live, but a very long-thinking turn could. Fix recipe in DECISIONS.md (Oct 27).
+
+## Open questions for the user (from session 5)
+1. **Private answers and the cloud.** By the spec, the cloud model sees Glimmer's short answer (e.g. the salary) inside that one task; it is no longer re-sent later. Alternative: deliver private-lane answers straight to the user (desktop/phone) and give the cloud model only "answered privately", which fits the pitch "never reads my private folder" better but means the agent can't use the answer in follow-up steps. Ask which they want before changing it.
+2. **Which PR to keep:** #1 (this branch, has everything + live fixes) or #2 (needs these commits pushed to `claude/determined-gates-ubpm6u`).
+3. **The face:** a Muse Image avatar sheet was generated in session 5 (consistent lantern character, 7 expressions) but not committed; ask whether to use it or their MetaMuse art (`scripts/make_avatar.py` regenerates for ~$0.07).
 
 The remaining work is **laptop-side bring-up with real keys, calibration against the real API, polish, the video and the submission**. Deadline: Nov 4, 9:00 PM ET (Nov 5, 7:30 AM IST); aim to submit Nov 4 evening IST.
 
@@ -65,11 +75,11 @@ The remaining work is **laptop-side bring-up with real keys, calibration against
 ## First thing on the laptop
 `pip install -e ".[dev]"`, then `lantern --doctor`. It lists every missing piece with the exact fix. Paste its output into the session.
 
-## Not yet verified against the real API (do these first, with the key)
-1. `python scripts/smoke.py`: Spark, Wonder, Image, Voice and SAM each make one call. Fix any request-shape mismatch where it lives (`computer.py`, `voice.py`, `sam.py`, `avatar.py`), never in tests.
-2. `python scripts/smoke.py cua`: confirms which computer-use protocol the API accepts (native `computer` tool vs the cookbook's `computer.computer` functions) and whether coordinates are pixels or 0..1000. It ends with the exact `LANTERN_CUA_PROTOCOL=… LANTERN_CUA_COORDS=…` line to put in `.env`.
-3. Tool search with deferred MCP tools: run once with a small `~/.lantern/mcp.json`. The shape was taken from search snippets of `/docs/tool-search`, because the page itself was unreachable.
-4. One real `--serve` run of the full story with `LANTERN_FORMS_MODEL=muse-wonder-1.0`. Note the real cost from `python -m lantern --usage` and put it in the README's "Cost so far". If a single form fill comes close to the $3 per-task limit, the computer-use loop is wasting steps: fix that rather than raising the limit.
+## Still needs the laptop (can't be verified in the cloud)
+1. Muse Glimmer on the RTX 4060 (`docs/GLIMMER.md`), then ask the private-file question with `LANTERN_GLIMMER_URL` set (only the offline stand-in and the "lane off" refusal were tested live).
+2. WhatsApp Cloud API test number + cloudflared tunnel; a real voice note from the phone (and from the glasses). Only the simulated phone was tested live; espeak's robot voice heard "Fill" as "kill", so check transcription with a human voice.
+3. Gmail app password (SMTP send + IMAP Sent check); only the fake outbox was tested live.
+4. The desktop app on Windows (`cd desktop && npm start`), the webcam for the SAM check-in, and a forms run with `LANTERN_FORMS_HEADLESS=0` to film it.
 
 ## Next steps (Oct 27 – Nov 4)
 - **Bring-up on the laptop** (user + you):

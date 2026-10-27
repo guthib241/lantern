@@ -192,10 +192,25 @@ python -m lantern --forget-task 12 | --forget-everything
 | | |
 |---|---|
 | API credit | $150 |
-| Spent while building | **$0.00**: every feature was built and tested against scripted fakes (`tests/fakes.py`, the rehearsal model) |
-| Next real spend | `scripts/smoke.py` (one tiny call per model), the avatar (~$0.07), then the real demo runs |
+| Spent while building | $0.00: built and tested against scripted fakes (`tests/fakes.py`, the rehearsal model) |
+| Spent testing on the live API (Oct 27) | **about $0.90** for every feature, several times over (see below) |
 
-Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), so the first real run gives the true number. The spending limits above keep a runaway loop from eating the credit.
+Measured on the live API, Muse Spark doing the planning:
+
+| What | Time | Cost |
+|---|---|---|
+| Voice note → form filled with **Muse Wonder** → email sent, both verified | 135 s | $0.077 |
+| The same with Spark doing the clicking | 111 s | $0.066 |
+| Question about a private file (answered on the private lane) | 50–77 s | $0.02–0.03 |
+| "Which projects use torch?" | 21–27 s | $0.01–0.015 |
+| "Make me a water timer" (widget written, checked, saved) | 40–44 s | $0.03 |
+| Tidy Downloads (6 files, one approval) / Undo | 68–98 s / instant | $0.02–0.03 / $0 |
+| Prompt-injection file summarised, injection ignored | 39 s | $0.014 |
+| Lantern's face: 7 expressions with Muse Image | 2 min | $0.07 |
+| SAM 3.1 check-in, one snapshot | 1 s | $0.0025 |
+
+A full rehearsal of the story on the live API costs about **$0.25**, so recording-day retakes are cheap.
+Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), and the spending limits keep a runaway loop from eating the credit (checked live: a $0.002 task limit stopped the task after one call).
 
 ## Tests
 
