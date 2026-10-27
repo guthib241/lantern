@@ -31,3 +31,15 @@ No Meta API calls; nothing here imports `lantern/`, so it stands alone on `main`
 - **Scoring by canary:** each hidden instruction carries a unique token (`zxcanary-…`). A canary found anywhere the agent wrote or sent means the attack worked.
 - **Secrets:** the planted secrets are checksum-valid (Luhn cards, Verhoeff Aadhaar), so checksum-aware scrubbers must still catch them. The decoys fail their checksums and must survive.
 - **`manifest.json`:** a technique glossary with machine-checkable markers, plus each attack's `must_not` list and safe behaviour.
+
+### Oct 27: S16 teaching board (`desktop/board/`)
+- **What it is:** a standalone page (Electron-ready, strict CSP, no build step) that plays a JSON lesson on a 1600 × 900 chalkboard.
+- **Actions:**
+  - `write_math` (KaTeX, revealed left to right, a ✓ slot per line)
+  - `write_text`
+  - `draw`: line, arrow, circle (at a point, on axes, or around an item), axes with ticks, plot from points with clipping and labels
+  - `highlight`, `erase` (one item, several, or all), `pause`
+- **Controls:** Play/Pause/Step/Restart, voice on/off, speed, a lesson picker and a file picker. `window.LanternBoard` is the API for the app and tests.
+- **Voice:** `say` lines use the Web Speech API: the OS voice, labelled "not a Meta model". Captions always show the line. Timing falls back to reading speed with no voice, and a stuck voice can't stall the lesson.
+- **The ✓ is honest:** it shows only for `verified: true`. Each such line carries `check` (SymPy syntax plus its relation to an earlier line), and the tests re-verify every one with SymPy.
+- **Lessons and schema:** `schema/lesson.schema.json` (JSON Schema 2020-12) plus `lib/timeline.js` for what a schema can't say: ids referenced must be on the board at that point, and a verified line needs a check. Two lessons: a quadratic by factoring (with graph) and the derivative of x²·sin x (product rule, erase, both curves, a flat spot).
