@@ -202,9 +202,15 @@ class ChannelHub:
                 return self.say(ch.name, f"Nothing to undo: {e}.")
             self.origin[task_id] = ch.name
             return self.say(ch.name, f"↩️ Undo is task #{task_id}. Approve the card to put the files back.")
+        busy = getattr(self.core, "current_task", None)
+        waiting = busy is not None and any(True for _ in self.core.bus.pending())
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
-        self.say(ch.name, f"🏮 On it (task #{task_id}).")
+        if busy is None:
+            self.say(ch.name, f"🏮 On it (task #{task_id}).")
+        else:   # tasks run one at a time: say so instead of "on it" (live run, Oct 27: it sat queued for 83 s)
+            why = " It's waiting for your approval." if waiting else ""
+            self.say(ch.name, f"🏮 Queued as task #{task_id}: I'll start right after task #{busy}.{why}")
 
     def _receipt(self, task_id: int | None) -> str:
         from ..receipt import as_text, build

@@ -160,8 +160,9 @@ class DemoModel:
                     except json.JSONDecodeError:
                         results.append({"error": "unreadable tool output"})
             return self._step(rid, story, results)
-        goal = str(kw.get("input", ""))
-        return self._step(rid, pick_story(goal, str(kw.get("instructions", ""))), None)
+        # The first input is the request, then "---" and Lantern's memory notes (agent.first_input).
+        goal, _, notes = str(kw.get("input", "")).partition("\n\n---\n")
+        return self._step(rid, pick_story(goal, str(kw.get("instructions", "")) + "\n" + notes), None)
 
     def _computer(self, rid: str, kw: dict) -> NS:
         """Pick 'Travel' in the custom category dropdown: click it open, click the option, report."""

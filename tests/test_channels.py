@@ -449,3 +449,22 @@ def test_voice_languages_are_sent_as_language_bias(tmp_path, monkeypatch):
         assert got["language_bias"] == ["Hindi"]
     finally:
         core.shutdown()
+
+
+def test_second_task_says_it_is_queued_behind_a_waiting_one(tmp_path):
+    """Live run, Oct 27: the phone said 'On it' while the task actually waited 83 s behind an approval."""
+    from fakes import call
+    core, hub, graph, http, _ = make(tmp_path, [
+        ([call("write_file", "c1", path="a.txt", content="x")], ""),
+        ([], "ok"), ([], "ok"),
+    ])
+    post(http, payload(text("write a file")))
+    for _ in range(300):
+        if list(core.bus.pending()):
+            break
+        time.sleep(0.01)
+    post(http, payload({**text("and another thing"), "id": "wamid.second"}))
+    hub.wait_idle(5)
+    assert any("Queued as task #2: I'll start right after task #1. It's waiting for your approval." in t
+               for t in graph.texts())
+    core.stop()
