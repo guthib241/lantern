@@ -451,7 +451,7 @@ def _copy_fixtures(src: Path, dst: Path) -> None:
 
 
 def build(cfg: config_mod.Config, *, locate: Callable[[], dict] | None = None, client=None,
-          transcriber: Callable | None = None, converter: Callable | None = None):
+          transcriber: Callable | None = None, converter: Callable | None = None, workers: int = 0):
     """The rehearsal Core and channel hub (simulated phone only; voice notes 'transcribe' to the script).
     scripts/live_story.py passes a real model client, transcriber and converter to play the same
     story against the live Meta API."""
@@ -470,7 +470,7 @@ def build(cfg: config_mod.Config, *, locate: Callable[[], dict] | None = None, c
     lane = RouterConfig.from_env(dict(os.environ))
     router = Router(policy, make_backend(lane, audit) if lane.mode == "openai" else FakeGlimmer(audit))
     model = client if client is not None else DemoModel(locate or (lambda: measure_form(cfg.chromium_path)))
-    core = Core(cfg, model, memory=memory, audit=audit, policy=policy, email=email, router=router)
+    core = Core(cfg, model, memory=memory, audit=audit, policy=policy, email=email, router=router, workers=workers)
     core.demo = client is None
 
     def copy_audio(src: Path, dst: Path) -> Path:

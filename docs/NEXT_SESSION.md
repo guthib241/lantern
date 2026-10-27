@@ -1,5 +1,52 @@
 # Handoff: from "all milestones built" to "submitted"
 
+## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, on branch `claude/phase2-core`
+Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albattani-18fmje` (session 5, everything below), plus the parallel session's `demo/portal`, `demo/attacks`, `desktop/board` and `tests/parallel` (PR #3). It goes to main as its own PR. **Do not merge without the user.**
+- **S1 scheduler** (`lantern/scheduler.py`, `lantern/taskrun.py`):
+  - 3 tasks at once (`LANTERN_WORKERS`), round-robin.
+  - A task parks while it waits: for the user (`ask_user`), an approval, a backoff, or the browser.
+  - Checkpoints at every step (`memory.task_state`, encrypted). After a restart, unfinished tasks continue by themselves.
+  - Questions are batched on the phone ("#12 answer" or option buttons) and shown as question cards on the desktop; the avatar juggles.
+  - Only `lantern --serve` turns it on (`Core(workers=cfg.workers)`). `Core()`, the CLI one-shot and rehearsal keep the old one-at-a-time mode.
+- **S2 resilience** (`lantern/recovery.py`):
+  - The six failure classes, each with its strategy, in code.
+  - Every attempt is an `attempt` step, shown on the receipt.
+  - A send, submit or move that happened (or may have) is never repeated in the task. It is keyed on its effect and survives pauses and restarts.
+- **S3 ladder** (`lantern/ladder.py`):
+  - Rungs 0–5 and step kinds. A rung is picked as the lowest one with ≥ 80% recent success (optimistic start), and stays within budget.
+  - Up one rung on failure for the rest of the task; the rung below gets another try after 5 straight successes.
+  - Private content is capped at rung 2.
+  - The agent's turns run on Spark low/high effort or Wonder. Moving to Wonder starts a fresh chain with a recap.
+  - A fill that didn't verify moves computer use to Wonder.
+  - Events carry `rung` / `rung_badge`; `lantern --router` and `GET /router` show the table.
+- **Tested with scripted models only:**
+  - 16 scheduler, 14 recovery and 10 ladder tests;
+  - `tests/test_scheduler_portal.py`: three phone tasks at once against `demo/portal` in Chromium. One parks on a question while the other two finish, then all six portal pages are filled and the portal's own record checked. This run found and fixed a form-filler bug: it clicked Back instead of Next.
+  - a dry run of the live script;
+  - 4 desktop tests.
+  - Totals: 497 Python tests and 31 desktop tests green, pyflakes clean.
+- **Not yet run on the real API.** This session's container had no `MODEL_API_KEY`, and its network policy refused api.meta.ai (session 5's environment had the network secret). Run it where the key works: `python scripts/phase2_live.py` (5 checks; $0.25 per-task limit, stops starting checks after `--max-usd`, default $1). Put the measured numbers in BUILD_LOG; quote nothing about Lantern that wasn't measured.
+- **dev.meta.ai didn't resolve from this container.** Reasoning effort follows the cookbook's reasoning notebook and session 5's live use of `reasoning.effort: low`. `"high"` and chaining across efforts are untested live; check 4 of the live script covers them. How the API reports an expired `previous_response_id` isn't documented; `taskrun.chain_lost` guesses a 400/404 that names the previous response, and check 5 shows whether the chain survives a restart.
+- **Known limits, recorded in DECISIONS:**
+  - **Multi-page portals:** `FormService` opens a fresh browser per `fill_form`, so a portal's session cookie dies between pages. The e2e keeps one browser open through the test-only `driver_factory`.
+  - **Intermediate pages:** they come back `verified: false`, because the page moved on but there was no confirmation. Both of these belong with S4/S5.
+  - **No avatar art for juggling:** there's no Muse Image "juggling" sprite yet. The avatar shows the thinking face with two orbiting lights; `scripts/make_avatar.py` can add one (~$0.01).
+
+### What Session B must build next (spec order: Tier A)
+1. **S4 self-compiling routines** (`lantern/compiler.py`, `~/.lantern/routines/<name>/v<N>/`).
+   - **Rung 0** already exists in the ladder (`CAN["routine"]`, `RUNGS[0]`).
+   - **Matching:** hook it in `Scheduler.submit` / `ResumableAgent._run`. Match the goal to a trusted routine, run it with zero model calls, and record `ladder.record("routine", 0, ok, ...)`.
+   - **Healing:** a failed postcondition hands that one step to the S2/S3 path (`Recovery`, `TaskLadder`), then recompiles to `v<N+1>`.
+   - **Inputs:** the step log (`tool_call`/`tool_result`/`attempt` steps) and receipts.
+   - **First:** give `FormService` a browser session per task (a multi-page portal needs one), and a page-progress check, so `demo/portal` can be compiled and replayed. The portal e2e shows the full flow works once the browser stays open.
+2. **S0 security backbone.** Today, untrusted content reaches the planner wrapped (`untrusted.wrap`) and taints the task, and every change needs an approval.
+   - **Planner/Reader split:** a tool-less Reader (Spark low, or Glimmer for private content) with structured output and opaque handles.
+   - **Taint labels per value.**
+   - **Risk tiers per tool:** green, yellow, red. Red ≈ `recovery.NON_IDEMPOTENT` plus approvals.
+   - **`scripts/eval_privacy.py`** on `demo/portal` + `demo/attacks/manifest.json`.
+   - **Injection tests** asserting that the planner never saw the raw text.
+3. **S8 teach by demonstration** (`lantern/recorder.py`): recorded event fixtures in the cloud, real hooks (pynput / UI Automation) behind a laptop-only flag. Its output is the same Routine Contract S4 compiles and verifies.
+
 State (Oct 27, session 5: tested on the live API):
 - **Session 5 (live API testing)** continued on branch `claude/gallant-albattani-18fmje` (PR #1's branch, fast-forwarded to everything from PR #2 plus the fixes below). Which PR to keep is the user's call; see "Open questions".
   - Key: a claude.ai **network secret** for `api.meta.ai` (Bearer) injects the real key into every request; Lantern only needs `MODEL_API_KEY` to exist, so `MODEL_API_KEY=set-by-proxy` works in the cloud. Never print or commit the key. (`lantern --doctor` warns the placeholder "looks cut short"; expected in the cloud.)
@@ -70,7 +117,8 @@ The remaining work is **laptop-side bring-up with real keys, calibration against
 | Packaging | `pyproject.toml` (`pip install -e .` → `lantern`), `.github/workflows/ci.yml` |
 | Rehearsal | `demo.py` (`DemoModel`, `prepare`, `build`, `run_story`), `demo/home/`, `demo/forms/`, `demo/profile.example.json` |
 | Desktop | `desktop/` (Electron 44.5.1; `renderer/lib/*.js` are pure, tested modules; `mock/server.js` for UI-only rehearsal) |
-| Scripts | `scripts/smoke.py` (one real call per model; `cua` calibrates computer use), `make_avatar.py`, `import_avatar.py` |
+| Scripts | `scripts/smoke.py` (one real call per model; `cua` calibrates computer use), `make_avatar.py`, `import_avatar.py`, `phase2_live.py` (S1–S3 on the live API) |
+| Phase 2 | `scheduler.py` (slots, parking, questions, restart), `taskrun.py` (`ResumableAgent`: checkpoints, `ask_user`, rungs per turn), `recovery.py` (failure classes, never-twice guard), `ladder.py` (rungs, kinds, learning table) |
 
 ## First thing on the laptop
 `pip install -e ".[dev]"`, then `lantern --doctor`. It lists every missing piece with the exact fix. Paste its output into the session.

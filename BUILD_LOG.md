@@ -325,3 +325,15 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - the CLI and API table.
   - Plus the escalation path in `tests/test_recovery.py` (Spark low → Spark high → Wonder with a recap) and 1 desktop test.
 - Real-API check: not possible in this container (no key, api.meta.ai blocked); see `scripts/phase2_live.py`.
+
+## Oct 27 (Phase 2 wrap-up)
+- `scripts/phase2_live.py`: S1–S3 on the live API, in 5 checks, in a fresh rehearsal folder each:
+  1. three tasks at once, with one parked for an answer;
+  2. a tool error, then another way;
+  3. never the same email twice;
+  4. Spark high, then Wonder on a fresh chain;
+  5. shutdown mid-task, and a new process continues.
+  - It prints measured cost and the ladder table per check, with a $0.25 per-task limit and `--max-usd` (default $1).
+  - `tests/test_phase2_live_script.py` dry-runs all 5 against a scripted model (plumbing only). **The real run is still to do**; this container has no key and can't reach api.meta.ai.
+- `demo.build(workers=…)` so the rehearsal folder can run the scheduler.
+- `docs/NEXT_SESSION.md`: the Phase 2 state, the live check to run, known limits, and what Session B builds next (S4, S0, S8).
