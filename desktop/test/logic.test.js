@@ -188,6 +188,21 @@ test('a task that moved files offers Undo until it is undone', () => {
                'Put these files back?');
 });
 
+test('costs: spent against the limits Lantern enforces', () => {
+  const T = require('../renderer/lib/today.js');
+  const b = { spent_usd: 121.5, today_usd: 4, total_usd: 150, daily_usd: 10, task_usd: 3, left_usd: 28.5 };
+  assert.deepEqual(T.budgetView(b, 121.5), { headline: '$121.50 of $150.00 spent', percent: 81,
+    limits: 'Stops itself at $150.00 · $3.00 per task · $10.00 a day ($4.00 today).' });
+  assert.equal(T.budgetView({ ...b, spent_usd: 400 }).percent, 100);
+  assert.deepEqual(T.budgetView({ ...b, total_usd: null, left_usd: null }, 2),
+    { headline: '$121.50 spent', percent: 0, limits: 'No total limit set (LANTERN_BUDGET_USD).' });
+  assert.equal(T.budgetView(null, 2).headline, '$2.00 spent');
+  const spend = (budget) => T.glance(S.initial(), { now: 1000, budget }).find((g) => g.id === 'spend').note;
+  assert.equal(spend(b), '$28.50 left of $150.00');
+  assert.equal(spend({ ...b, total_usd: null }), 'no spending limit set');
+  assert.equal(spend(undefined), 'model calls only');
+});
+
 test('setup check: failures first, fixes only where needed, a plain readiness line', () => {
   const Setup = require('../renderer/lib/setup.js');
   const v = Setup.view({

@@ -120,6 +120,15 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     add(Check("env-file", ".env stays out of git", FAIL if tracked else OK,
               ".env is tracked by git!" if tracked else "not tracked",
               "git rm --cached .env && git commit -m 'stop tracking .env' (then rotate the key)", ["rehearsal", "demo"]))
+    from .budget import ENV as BUDGET_ENV, Limits
+    lim = Limits.from_env(v)
+    bad = lim.problems(v)
+    limits = [f"${x:g} {what}" if x is not None else f"no {what} limit"
+              for x, what in ((lim.total, "total"), (lim.daily, "daily"), (lim.task, "per task"))]
+    add(Check("budget", "Spending limits", WARN if bad or lim.total is None else OK,
+              "; ".join(bad) + " (using the default)" if bad else ", ".join(limits),
+              f"Use plain dollar amounts, e.g. {BUDGET_ENV['total']}=150" if bad else
+              f"Set {BUDGET_ENV['total']}=150 so a runaway task can't spend the whole credit" if lim.total is None else ""))
     fm = v.get("LANTERN_FORMS_MODEL", cfg.forms_model)
     add(Check("forms-model", "Computer-use model", OK if fm == models.WONDER else WARN, fm,
               "" if fm == models.WONDER else f"Fine for testing; set LANTERN_FORMS_MODEL={models.WONDER} for the demo"))

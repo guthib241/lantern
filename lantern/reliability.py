@@ -19,7 +19,11 @@ TRANSIENT_NAMES = {"APITimeoutError", "APIConnectionError", "RateLimitError", "I
                    "TimeoutError", "ConnectionError", "ConnectionResetError", "RemoteDisconnected"}
 
 
-class OfflineError(RuntimeError):
+class UserFacingError(RuntimeError):
+    """An error whose message is already a sentence for the user (explain() passes it through)."""
+
+
+class OfflineError(UserFacingError):
     """Lantern can't reach the model API right now. The message is meant for the user."""
 
 
@@ -48,7 +52,7 @@ def retry_after(exc: BaseException) -> float | None:
 
 def explain(exc: BaseException) -> str:
     """One sentence a person can act on."""
-    if isinstance(exc, OfflineError):
+    if isinstance(exc, UserFacingError):
         return str(exc)
     status = status_of(exc)
     body = getattr(exc, "body", None)
@@ -118,8 +122,9 @@ class RetryingClient:
 
     def __init__(self, client: Any, *, max_retries: int = 4, base_delay: float = 0.5, max_delay: float = 8.0,
                  breaker: CircuitBreaker | None = None, sleep: Callable[[float], None] = time.sleep,
-                 on_retry: Callable[[dict], None] | None = None):
+                 on_retry: Callable[[dict], None] | None = None, before_call: Callable[[], None] | None = None):
         self.inner = client
+        self.before_call = before_call   # e.g. BudgetGuard.check: raises to refuse; never retried
         self.max_retries = max_retries
         self.base_delay, self.max_delay = base_delay, max_delay
         self.breaker = breaker or CircuitBreaker()
@@ -134,6 +139,8 @@ class RetryingClient:
         return getattr(self.inner, name)
 
     def _call(self, fn: Callable[..., Any], kw: dict) -> Any:
+        if self.before_call is not None:
+            self.before_call()
         if not self.breaker.allow():
             raise OfflineError(f"Lantern paused calls to Meta's API after repeated failures; "
                                f"it will try again in {self.breaker.remaining():.0f} s.")

@@ -194,11 +194,12 @@
 
   // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------
   let upcoming = [];
+  let budget = null;   // {spent_usd, total_usd, task_usd, left_usd, ...} from /usage: the limits enforced in code
   function renderGlance() {
     const t = now();
     $('today-date').textContent = LanternToday.dateLine(t);
     $('today-greeting').textContent = LanternToday.greeting(t);
-    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t }).map((g) =>
+    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t, budget }).map((g) =>
       h('div', { class: `tile ${g.tone}`, 'data-tile': g.id },
         h('span', { class: 't-label' }, g.label), h('span', { class: 't-value' }, g.value), h('span', { class: 't-note' }, g.note))));
   }
@@ -446,8 +447,13 @@
       for (const r of u.by_model) {
         rows.append(h('tr', {}, h('td', {}, r.model), h('td', {}, `${r.calls} calls · ${LanternAudit.money(r.cost_usd)}`)));
       }
-      $('cost-total').textContent = `${LanternAudit.money(u.total_usd)} of $150 spent`;
-      $('cost-bar').style.width = `${Math.min(100, (u.total_usd / 150) * 100)}%`;
+      budget = u.budget || null;
+      const b = LanternToday.budgetView(budget, u.total_usd);
+      $('cost-total').textContent = b.headline;
+      $('cost-bar').style.width = `${b.percent}%`;
+      $('cost-bar').classList.toggle('high', b.percent >= 80);
+      $('cost-limits').textContent = b.limits;
+      renderGlance();
     } catch (e) {
       $('cost-total').textContent = `Can't reach Lantern (${e.message})`;
     }
@@ -501,6 +507,8 @@
     if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);
     if (e.type === 'reminder') toast(`⏰ ${e.text}`);
     if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
+    if (e.type === 'budget') toast(`Lantern has spent ${LanternAudit.money(e.spent_usd)} of its ${LanternAudit.money(e.limit_usd)} limit.`);
+    if (e.type === 'done' || e.type === 'budget') loadCosts();
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
     $('conn').className = 'status ' + (up ? 'up' : 'down');
@@ -508,6 +516,7 @@
       try { health = await api.get('/health'); } catch (e) { health = {}; }
       if (health.demo) $('conn').textContent = 'Rehearsal · scripted model, nothing sent';
       loadReminders();
+      loadCosts();
     }
   });
 

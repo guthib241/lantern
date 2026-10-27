@@ -240,6 +240,8 @@ async function main() {
     await panel.click('.tabs button[data-tab=costs]');
     await sleep(500);
     check(/\$0\.00/.test(await panel.textContent('#today-cost')), 'rehearsal cost stays $0.00');
+    const limits = await until('the spending limits', async () => panel.textContent('#cost-limits'));
+    check(limits === 'Stops itself at $150.00 · $3.00 per task.', `Costs tab shows the limits enforced in code (${limits})`);
 
     // dark appearance (macOS/Windows pass the system theme through; headless Linux can't, so emulate it)
     await panel.emulateMedia({ colorScheme: 'dark' });

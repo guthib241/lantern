@@ -1,0 +1,103 @@
+"""Spending limits, enforced in code before every model call (never only in a prompt).
+
+Three limits, each from the environment (a number in dollars; "off" or 0 turns one off):
+  LANTERN_BUDGET_USD        everything this Lantern has spent       (default 150: the hackathon credit)
+  LANTERN_DAILY_BUDGET_USD  spent today, local time                  (default off)
+  LANTERN_TASK_BUDGET_USD   spent by the running task                (default 3: a loop can't run up the bill)
+
+The check runs inside RetryingClient before the first attempt, so a refused call is never retried, never
+leaves the laptop, and never trips the circuit breaker. Spending comes from memory's daily ledger, which
+forgetting tasks doesn't lower. Past 80% of the total, Lantern says so once.
+Rehearsal (`--demo`) costs $0, so it never trips a limit.
+"""
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import Callable
+
+from .memory import Memory
+from .reliability import UserFacingError
+
+WARN_AT = 0.8
+DEFAULTS = {"total": 150.0, "daily": None, "task": 3.0}
+ENV = {"total": "LANTERN_BUDGET_USD", "daily": "LANTERN_DAILY_BUDGET_USD", "task": "LANTERN_TASK_BUDGET_USD"}
+
+
+class BudgetError(UserFacingError):
+    """A spending limit stopped a model call. The message says which, and how to raise it."""
+
+
+def _limit(raw: str | None, default: float | None) -> float | None:
+    if raw is None or not raw.strip():
+        return default
+    if raw.strip().lower() in ("off", "none", "no", "0"):
+        return None
+    try:
+        value = float(raw.strip().lstrip("$"))
+    except ValueError:
+        return default   # a typo must not switch a limit off; `lantern --doctor` points it out
+    return value if value > 0 else None
+
+
+@dataclass(frozen=True)
+class Limits:
+    total: float | None = DEFAULTS["total"]
+    daily: float | None = DEFAULTS["daily"]
+    task: float | None = DEFAULTS["task"]
+
+    @classmethod
+    def from_env(cls, env: dict) -> "Limits":
+        return cls(**{k: _limit(env.get(name), DEFAULTS[k]) for k, name in ENV.items()})
+
+    def problems(self, env: dict) -> list[str]:
+        """Values in the environment that couldn't be read (they fall back to the default)."""
+        out = []
+        for k, name in ENV.items():
+            raw = (env.get(name) or "").strip()
+            if raw and raw.lower() not in ("off", "none", "no", "0"):
+                try:
+                    float(raw.lstrip("$"))
+                except ValueError:
+                    out.append(f"{name}={raw!r} isn't a number")
+        return out
+
+
+class BudgetGuard:
+    def __init__(self, memory: Memory, limits: Limits, current_task: Callable[[], int | None] = lambda: None,
+                 on_event: Callable[[dict], None] | None = None):
+        self.memory, self.limits = memory, limits
+        self.current_task = current_task
+        self.on_event = on_event or (lambda e: None)
+        self._warned = False
+
+    def check(self) -> None:
+        """Raise BudgetError if any limit is reached; otherwise let the call through."""
+        lim = self.limits
+        if lim.total is not None:
+            spent = self.memory.spent()
+            if spent >= lim.total:
+                raise BudgetError(f"Lantern has spent ${spent:.2f} of its ${lim.total:.2f} limit, so it stopped before "
+                                  f"calling the model. Raise {ENV['total']} in .env to go on.")
+            if spent >= WARN_AT * lim.total and not self._warned:
+                self._warned = True
+                self.on_event({"type": "budget", "level": "warn", "spent_usd": round(spent, 4),
+                               "limit_usd": lim.total})
+        if lim.daily is not None:
+            today = self.memory.spent(time.strftime("%Y-%m-%d"))
+            if today >= lim.daily:
+                raise BudgetError(f"Today's spending reached the ${lim.daily:.2f} daily limit ({ENV['daily']}); "
+                                  "Lantern will call the model again tomorrow, or raise the limit in .env.")
+        task_id = self.current_task()
+        if lim.task is not None and task_id is not None:
+            cost = self.memory.task_usage(task_id)["cost_usd"]
+            if cost >= lim.task:
+                raise BudgetError(f"This task reached its ${lim.task:.2f} limit ({ENV['task']}) and was stopped so it "
+                                  "can't run up the bill. Try again, or raise the limit in .env.")
+
+    def status(self) -> dict:
+        spent, today = self.memory.spent(), self.memory.spent(time.strftime("%Y-%m-%d"))
+        lim = self.limits
+        return {"spent_usd": round(spent, 4), "today_usd": round(today, 4),
+                "total_usd": lim.total, "daily_usd": lim.daily, "task_usd": lim.task,
+                "left_usd": None if lim.total is None else round(max(0.0, lim.total - spent), 4)}

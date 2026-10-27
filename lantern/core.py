@@ -20,6 +20,7 @@ from . import models
 from .agent import Agent
 from .approvals import ApprovalBus, BusGate
 from .audit import AuditLog, GuardedClient
+from .budget import BudgetGuard, Limits
 from .crypto import cipher_for
 from .email_tool import EmailService, EmailSettings
 from .envmap import EnvMap
@@ -101,8 +102,12 @@ class Core:
             client = self._default_client()
         guarded = client if isinstance(client, GuardedClient) else GuardedClient(client, self.audit,
                                                                                  destination=cfg.base_url)
-        # Retries wrap the audited client, so every attempt that leaves the laptop is audited.
-        self.client = RetryingClient(guarded, on_retry=lambda info: self.emit({"type": "retry", **info}))
+        # Retries wrap the audited client, so every attempt that leaves the laptop is audited. The spending
+        # limits are checked before each call, in code: a refused call never leaves and is never retried.
+        self.current_task: int | None = None
+        self.budget = BudgetGuard(self.memory, Limits.from_env(dict(os.environ)), lambda: self.current_task, self.emit)
+        self.client = RetryingClient(guarded, on_retry=lambda info: self.emit({"type": "retry", **info}),
+                                     before_call=self.budget.check)
         self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
         self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
@@ -119,7 +124,6 @@ class Core:
                            on_event=self._agent_event)
         self._sinks: list[EventSink] = []
         self._queue: queue.Queue = queue.Queue()
-        self.current_task: int | None = None
         self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
         self._undo_lock = threading.Lock()
         self.interrupted = recover_interrupted(self.memory)   # before the worker starts taking tasks

@@ -18,6 +18,7 @@ from pathlib import Path
 from . import config as config_mod
 from .agent import PERSONAS, Agent
 from .audit import AuditLog, GuardedClient
+from .budget import BudgetGuard, Limits
 from .crypto import cipher_for
 from .reliability import RetryingClient, explain
 from .email_tool import EmailService, EmailSettings
@@ -102,10 +103,12 @@ def build_agent(cfg, mem: Memory) -> Agent:
     if not key:
         sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
     audit = AuditLog(cfg.audit_path, mem.cipher)
-    client = RetryingClient(
-        GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key, timeout=cfg.timeout, max_retries=0), audit,
-                      destination=cfg.base_url),
-        on_retry=lambda info: print(f"  … {info['error']} Retrying in {info['wait_s']} s"))
+    guarded = GuardedClient(OpenAI(base_url=cfg.base_url, api_key=key, timeout=cfg.timeout, max_retries=0), audit,
+                            destination=cfg.base_url)
+    budget = BudgetGuard(mem, Limits.from_env(dict(os.environ)), lambda: getattr(guarded, "task_id", None),
+                         lambda e: print(f"  … spent ${e['spent_usd']:.2f} of the ${e['limit_usd']:.2f} limit"))
+    client = RetryingClient(guarded, on_retry=lambda info: print(f"  … {info['error']} Retrying in {info['wait_s']} s"),
+                            before_call=budget.check)
     policy = Policy.load(cfg.zones_file, cfg.roots)
     router = Router(policy, make_backend(RouterConfig.from_env(dict(os.environ)), audit))
     forms = FormService(FormSettings.from_config(cfg), client, policy, mem)

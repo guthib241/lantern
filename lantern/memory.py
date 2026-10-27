@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS reminders (
     created_at REAL NOT NULL,
     delivered_at REAL
 );
+CREATE TABLE IF NOT EXISTS spend (             -- dollars per local day, for the spending limits (budget.py)
+    day TEXT PRIMARY KEY,                      -- YYYY-MM-DD; no tasks, no content: kept when you forget things
+    cost_usd REAL NOT NULL DEFAULT 0
+);
 """
 
 TASK_STATUSES = {"active", "done", "failed", "cancelled", "interrupted", "resumed"}
@@ -119,6 +123,7 @@ class Memory:
         self.db.execute("PRAGMA secure_delete = ON")
         self.db.executescript(SCHEMA)
         self.db.commit()
+        self._seed_spend()
         if cipher is not None:
             self._encrypt_old_rows()
 
@@ -231,7 +236,29 @@ class Memory:
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (task_id, model, input_tokens, cached_tokens, output_tokens, cost_usd, time.time()),
         )
+        if cost_usd:
+            self.db.execute("INSERT INTO spend (day, cost_usd) VALUES (?, ?) "
+                            "ON CONFLICT(day) DO UPDATE SET cost_usd = cost_usd + excluded.cost_usd",
+                            (time.strftime("%Y-%m-%d"), cost_usd))
         self.db.commit()
+
+    def _seed_spend(self) -> None:
+        """A memory.db from before the ledger: start it from the usage rows it still has."""
+        if self.db.execute("SELECT COUNT(*) FROM spend").fetchone()[0]:
+            return
+        self.db.execute("INSERT INTO spend (day, cost_usd) SELECT date(created_at, 'unixepoch', 'localtime'), "
+                        "SUM(cost_usd) FROM usage WHERE cost_usd > 0 GROUP BY 1")
+        self.db.commit()
+
+    @_locked
+    def spent(self, day: str | None = None) -> float:
+        """Dollars spent on model calls, ever or on one day (YYYY-MM-DD). Forgetting tasks doesn't lower it:
+        the money is gone either way, and the limits must count it."""
+        if day is None:
+            row = self.db.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM spend").fetchone()
+        else:
+            row = self.db.execute("SELECT COALESCE(SUM(cost_usd), 0) FROM spend WHERE day = ?", (day,)).fetchone()
+        return float(row[0])
 
     @_locked
     def task_usage(self, task_id: int) -> dict:

@@ -214,6 +214,8 @@ table.rows td { padding: 11px 16px; border-top: .5px solid var(--separator); fon
 table.rows td:last-child { text-align: right; color: var(--label-2); font-variant-numeric: tabular-nums; }
 .meter { height: 6px; border-radius: 99px; background: var(--fill); margin-top: 10px; overflow: hidden; }
 .meter span { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--green), var(--orange)); transition: width .6s var(--spring); }
+.meter span.high { background: linear-gradient(90deg, var(--orange), var(--red)); }
+.meter-note { margin: 8px 0 0; font-size: 13px; color: var(--label-2); }
 .zone { display: flex; gap: 10px; align-items: center; padding: 9px 16px; position: relative; }
 .zone + .zone::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: .5px solid var(--separator); }
 .zone-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }

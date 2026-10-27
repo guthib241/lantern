@@ -186,7 +186,12 @@ function createMock() {
       if (z) z.zone = b.zone; else zones.push({ path: b.path, zone: b.zone });
       return { zones };
     },
-    'GET /usage': () => { const rows = [...usage.values()]; return { by_model: rows, total_usd: rows.reduce((a, r) => a + r.cost_usd, 0) }; },
+    'GET /usage': () => {
+      const rows = [...usage.values()];
+      const spent = rows.reduce((a, r) => a + r.cost_usd, 0);
+      return { by_model: rows, total_usd: spent, budget: { spent_usd: spent, today_usd: spent, total_usd: 150, daily_usd: null,
+                                                             task_usd: 3, left_usd: Math.max(0, 150 - spent) } };
+    },
     'GET /memory': () => ({ facts: { 'manager email': 'priya@example.com' } }),
     'GET /channel/messages': () => ({ owner: 'owner', messages: phone }),
     'POST /channel/fake': (b) => { phoneIn(b); return { ok: true }; },

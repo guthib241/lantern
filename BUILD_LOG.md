@@ -192,3 +192,21 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - `undo_moves` is not a model tool
     - MCP goals saying "undo" go to the model as text, never as the shortcut
   - **Tests:** 12 new tests plus 1 desktop test; the Electron e2e now taps Undo after the rehearsal tidy and checks all 6 files are back on disk. 383 passing.
+- M30 Spending limits.
+  - **Why:** CLAUDE.md sets a $150 budget, but nothing enforced it. A computer-use loop on Muse Wonder could have eaten the credit on day one.
+  - **How it's enforced:** `lantern/budget.py` checks three limits before every model call, as a `before_call` hook in `RetryingClient`. The limits are total (`LANTERN_BUDGET_USD`, default 150), per task (`LANTERN_TASK_BUDGET_USD`, default 3) and daily (`LANTERN_DAILY_BUDGET_USD`, off by default). Both Core and the CLI agent use it.
+  - **What a refusal does:**
+    - the refused call never reaches the wire, is never retried, and doesn't trip the circuit breaker
+    - the task fails with a sentence naming the limit and the variable to raise
+    - one warning event at 80% of the total
+  - **Typos and the ledger:**
+    - a typo in a value keeps the default (never "off"), and `--doctor` flags it
+    - spending is counted in a new `spend` table (dollars per local day, no task links, no content), so forgetting tasks or everything doesn't lower it
+    - older databases seed it from their usage rows
+  - **Where you see it:**
+    - `/usage` returns the limits
+    - the Costs tab shows "$X of $150 spent", a meter that turns red past 80%, and "Stops itself at $150.00 · $3.00 per task."
+    - the Today tile shows what's left
+    - `--doctor` has a "Spending limits" row
+    - `.env.example` lists the variables
+  - **Tests:** 7 new tests plus 1 desktop test and 1 e2e check; 390 passing.

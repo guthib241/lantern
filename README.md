@@ -123,6 +123,7 @@ Lantern retries only what's temporary:
 - **Retried:** 429, 5xx, timeouts and dropped connections, with exponential backoff, jitter and `Retry-After`. The avatar says "the network's wobbly".
 - **Not retried:** 400, 401 and 404, which fail fast with a sentence you can act on ("check MODEL_API_KEY", "you're offline").
 - **Circuit breaker:** after repeated failures, Lantern pauses calls for 30 seconds.
+- **Spending limits, in code:** before every model call Lantern checks what it has spent. The defaults are **$150 total** (`LANTERN_BUDGET_USD`) and **$3 per task** (`LANTERN_TASK_BUDGET_USD`); a daily limit (`LANTERN_DAILY_BUDGET_USD`) is optional. A call over a limit never leaves the laptop and isn't retried, and the task stops with the reason and the variable to raise. Past 80% of the total, Lantern warns you once. The Costs tab shows the limits; forgetting tasks doesn't reset the count.
 
 Failed tasks have a **Try again** button. Timeouts are set by `LANTERN_TIMEOUT` (seconds, default 120).
 
@@ -181,7 +182,7 @@ python -m lantern --forget-task 12 | --forget-everything
 | Spent while building | **$0.00**: every feature was built and tested against scripted fakes (`tests/fakes.py`, the rehearsal model) |
 | Next real spend | `scripts/smoke.py` (one tiny call per model), the avatar (~$0.07), then the real demo runs |
 
-Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), so the first real run gives the true number.
+Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), so the first real run gives the true number. The spending limits above keep a runaway loop from eating the credit.
 
 ## Tests
 

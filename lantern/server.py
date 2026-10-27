@@ -14,7 +14,7 @@ in the browser can't drive Lantern through localhost.
   GET  /audit                       what left the laptop today + recent entries
   GET  /zones, POST /zones {path, zone}
   GET  /memory                      remembered facts
-  GET  /usage                       tokens and cost per model
+  GET  /usage                       tokens and cost per model, and the spending limits (budget.py)
   GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
@@ -264,7 +264,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
 
     @app.get("/usage", dependencies=[Depends(auth)])
     def usage():
-        return {"by_model": core.memory.usage_by_model(), "total_usd": core.memory.total_cost()}
+        return {"by_model": core.memory.usage_by_model(), "total_usd": core.memory.total_cost(),
+                "budget": core.budget.status()}
 
     @app.get("/profile", dependencies=[Depends(auth)])
     def profile():

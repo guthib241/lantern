@@ -23,7 +23,7 @@
     return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
   }
 
-  /** state: the reducer state; extra: {reminders: [{due, text}], now: seconds}. */
+  /** state: the reducer state; extra: {reminders: [{due, text}], now: seconds, budget: /usage's budget}. */
   function glance(state, extra) {
     const now = (extra && extra.now) || Date.now() / 1000;
     const since = startOfDay(now);
@@ -42,8 +42,27 @@
       { id: 'next', label: 'Next reminder', tone: next ? 'blue' : 'gray', value: next ? next.due : '—',
         note: next ? next.text : 'none set' },
       { id: 'spend', label: 'Spent today', tone: 'purple', value: money((state.usage && state.usage.total) || 0),
-        note: 'of the $150 budget' },
+        note: spendNote(extra && extra.budget) },
     ];
+  }
+
+  function spendNote(b) {
+    if (!b) return 'model calls only';
+    if (b.total_usd == null) return 'no spending limit set';
+    return `${money(b.left_usd)} left of ${money(b.total_usd)}`;
+  }
+
+  /** The Costs tab: what's spent against the limits Lantern enforces (budget.py), in plain words. */
+  function budgetView(b, totalUsd) {
+    const spent = b ? b.spent_usd : (totalUsd || 0);
+    if (!b || b.total_usd == null) {
+      return { headline: `${money(spent)} spent`, percent: 0, limits: b ? 'No total limit set (LANTERN_BUDGET_USD).' : '' };
+    }
+    const parts = [`Stops itself at ${money(b.total_usd)}`];
+    if (b.task_usd != null) parts.push(`${money(b.task_usd)} per task`);
+    if (b.daily_usd != null) parts.push(`${money(b.daily_usd)} a day (${money(b.today_usd)} today)`);
+    return { headline: `${money(spent)} of ${money(b.total_usd)} spent`,
+             percent: Math.min(100, Math.round((spent / b.total_usd) * 1000) / 10), limits: parts.join(' · ') + '.' };
   }
 
   function greeting(nowSec) {
@@ -55,5 +74,5 @@
     return new Date(nowSec * 1000).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
-  return { glance, greeting, dateLine, SUGGESTIONS };
+  return { glance, greeting, dateLine, budgetView, SUGGESTIONS };
 });
