@@ -123,7 +123,7 @@ class DemoModel:
         if "set_values" in names:
             return self._reply(rid, [_call("set_values", values=plan_values(str(kw.get("input", ""))))])
         if str(kw.get("instructions", "")).startswith(WIDGET_RULES[:80]):
-            html = (REPO_WIDGETS / "water-timer.html").read_text()
+            html = (REPO_WIDGETS / "water-timer.html").read_text(encoding="utf-8")
             return self._reply(rid, [], f"Here's the widget.\n```html\n{html}\n```")
         if "finish" in names:
             return self._agent(rid, kw)
@@ -433,8 +433,8 @@ def prepare(data_dir: str | Path | None = None) -> config_mod.Config:
                        {"path": str(home / "Documents"), "zone": "writable"},
                        {"path": str(home / "Downloads"), "zone": "writable"},
                        {"path": str(home / "Private"), "zone": "private"}]}
-    Path(cfg.zones_file).write_text(json.dumps(zones, indent=1))
-    Vault(cfg.profile_path).save(json.loads(DEMO_PROFILE.read_text()))
+    Path(cfg.zones_file).write_text(json.dumps(zones, indent=1), encoding="utf-8")
+    Vault(cfg.profile_path).save(json.loads(DEMO_PROFILE.read_text(encoding="utf-8")))
     return cfg
 
 

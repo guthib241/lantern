@@ -210,3 +210,17 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - `--doctor` has a "Spending limits" row
     - `.env.example` lists the variables
   - **Tests:** 7 new tests plus 1 desktop test and 1 e2e check; 390 passing.
+- Windows pass (the demo laptop runs Windows; everything so far was tested on Linux).
+  - **The bug:** 27 places read or wrote text with the OS default encoding, which is cp1252 on Windows. Among them:
+    - the policy's own `write_text` (files the model writes)
+    - widget HTML
+    - the form vault
+    - settings, zones and the avatar manifest
+    - subprocess output from `run_in_project` and the doctor
+  - **What it would have done:** a ₹, → or emoji would have raised `UnicodeEncodeError` mid-task, and UTF-8 files would have read back garbled.
+  - **The fix:**
+    - every site now says `encoding="utf-8"`
+    - the policy reads and writes with `newline=""`, so a file read back is byte-identical to what was written and `verified` means the same on every OS (content containing `\r\n` used to fail verification even on Linux)
+    - CLI and script prints use `errors="replace"`, so a piped cp1252 console can't crash on ✓ or 🏮
+  - **Keeping it fixed:** `tests/test_portability.py` parses every module and fails on any text-mode open, `read_text`, `write_text` or text subprocess without an explicit encoding. Run against the previous commit, it finds all 27. Zone matching was already safe: it compares `Path` objects, and `WindowsPath` is case-insensitive.
+  - 3 new tests; 393 passing.

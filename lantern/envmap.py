@@ -87,7 +87,7 @@ Runner = Callable[[list[str], float], tuple[int, str]]   # (argv, timeout) -> (e
 
 def run_quiet(argv: list[str], timeout: float = 30) -> tuple[int, str]:
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
         return r.returncode, r.stdout
     except (OSError, subprocess.TimeoutExpired):
         return 1, ""
@@ -363,7 +363,8 @@ def safe_env(venv_path: str = "") -> dict:
 
 def run_command(argv: list[str], cwd: str, env: dict, timeout: float) -> tuple[int, str]:
     try:
-        r = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           timeout=timeout)
         return r.returncode, (r.stdout or "") + (r.stderr or "")
     except subprocess.TimeoutExpired as e:
         out = e.stdout.decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")

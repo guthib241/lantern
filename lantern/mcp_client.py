@@ -89,7 +89,7 @@ class MCPHub:
         p = Path(path).expanduser()
         if not p.exists():
             return cls()
-        return cls(servers=json.loads(p.read_text()).get("servers", {}))
+        return cls(servers=json.loads(p.read_text(encoding="utf-8")).get("servers", {}))
 
     # ---- lifecycle ---------------------------------------------------------------------
     def start(self) -> "MCPHub":

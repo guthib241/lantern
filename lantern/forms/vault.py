@@ -34,12 +34,12 @@ class Vault:
     def load(self) -> dict:
         if not self.path.exists():
             return {s: {} for s in SECTIONS}
-        data = json.loads(self.path.read_text() or "{}")
+        data = json.loads(self.path.read_text(encoding="utf-8") or "{}")
         return {s: dict(data.get(s) or {}) for s in SECTIONS}
 
     def save(self, data: dict) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({s: data.get(s, {}) for s in SECTIONS}, indent=2, ensure_ascii=False))
+        self.path.write_text(json.dumps({s: data.get(s, {}) for s in SECTIONS}, indent=2, ensure_ascii=False), encoding="utf-8")
         os.chmod(self.path, 0o600)
 
     def set(self, key: str, value: str, section: str = "profile") -> None:

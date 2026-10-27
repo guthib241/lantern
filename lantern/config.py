@@ -63,11 +63,11 @@ def save_setting(key: str, value, home: str | Path) -> Path:
     if key not in SETTABLE:
         raise ValueError(f"{key} can't be set from the app")
     path = Path(home).expanduser() / "config.json"
-    data = json.loads(path.read_text()) if path.exists() else {}
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     data[key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, indent=2))
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     tmp.replace(path)
     return path
 
@@ -85,7 +85,7 @@ def load() -> Config:
     cfg = Config()
     path = HOME / "config.json"
     if path.exists():
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         for k, v in data.items():
             if hasattr(cfg, k) and k not in PATH_FIELDS:
                 setattr(cfg, k, v)

@@ -94,7 +94,7 @@ class Policy:
         zf = Path(zones_file).expanduser()
         if not zf.exists():
             return cls.from_roots(roots)
-        data = json.loads(zf.read_text())
+        data = json.loads(zf.read_text(encoding="utf-8"))
         rules = [Rule.make(z["path"], z["zone"]) for z in data.get("zones", [])]
         rules += [Rule.make(h, HIDDEN) for h in DEFAULT_HIDDEN_PATHS]
         return cls(rules, bool(data.get("hide_sensitive_names", False)))
@@ -109,7 +109,7 @@ class Policy:
         }
         zf = Path(zones_file).expanduser()
         zf.parent.mkdir(parents=True, exist_ok=True)
-        zf.write_text(json.dumps(data, indent=2))
+        zf.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     def set_zone(self, path: str | Path, zone: str) -> None:
         new = Rule.make(path, zone)
@@ -227,13 +227,15 @@ class Policy:
         p, zone = self.check_visible(path)
         if zone == PRIVATE and not allow_private:
             raise PolicyError(f"'{p}' is private; only the local model may read it")
-        with p.open("r", errors="replace") as f:
+        # UTF-8 everywhere (Windows would default to cp1252), and newlines exactly as on disk, so what
+        # write_text wrote reads back identically and "verified" means the same thing on every OS.
+        with p.open("r", encoding="utf-8", errors="replace", newline="") as f:
             return f.read(limit) if limit else f.read()
 
     def write_text(self, path: str | Path, content: str) -> Path:
         p = self.check_writable(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
+        p.write_text(content, encoding="utf-8", newline="")
         return p
 
     def write_bytes(self, path: str | Path, content: bytes) -> Path:

@@ -251,7 +251,7 @@ def prepare_profile(profile_dir: Path) -> None:
     prefs = profile_dir / "Default" / "Preferences"
     if not prefs.exists():
         prefs.parent.mkdir(parents=True, exist_ok=True)
-        prefs.write_text(json.dumps(PROFILE_PREFS))
+        prefs.write_text(json.dumps(PROFILE_PREFS), encoding="utf-8")
 
 
 class BrowserDriver:

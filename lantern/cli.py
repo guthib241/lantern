@@ -186,7 +186,16 @@ def run_demo(a) -> None:
     return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
 
 
+def safe_console() -> None:
+    """Lantern prints ✓, ⏰ and 🏮. A Windows console piped to a file or another program uses cp1252, where
+    those would crash the print; show '?' instead and keep going."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
+
+
 def main(argv=None) -> None:
+    safe_console()
     p = argparse.ArgumentParser(prog="lantern")
     p.add_argument("goal", nargs="*", help="what you want done")
     p.add_argument("--tasks", action="store_true", help="list recent tasks")

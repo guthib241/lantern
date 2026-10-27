@@ -59,14 +59,14 @@ def load_token(home: Path) -> str:
     """Read or create the local API token (file mode 600)."""
     path = home / "token"
     if path.exists():
-        return path.read_text().strip()
+        return path.read_text(encoding="utf-8").strip()
     home.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(32)
     try:   # created owner-only in one step: never readable by others, not even briefly
         fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:   # another Lantern process made it a moment ago
-        return path.read_text().strip()
-    with os.fdopen(fd, "w") as f:
+        return path.read_text(encoding="utf-8").strip()
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(token)
     return token
 

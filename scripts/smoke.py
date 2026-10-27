@@ -211,4 +211,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    from lantern.cli import safe_console
+    safe_console()   # ✓ and ✗ must not crash a piped Windows console
     raise SystemExit(main(sys.argv[1:]))

@@ -66,7 +66,8 @@ def _probe(url: str) -> bool:
 
 def _run(argv: list[str]) -> str:
     try:
-        return subprocess.run(argv, capture_output=True, text=True, timeout=10, cwd=REPO).stdout
+        return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
+                              cwd=REPO).stdout
     except Exception:
         return ""
 
@@ -234,7 +235,7 @@ def _keyring_backend() -> str:
 
 def _avatar_expressions() -> int:
     try:
-        data = json.loads((REPO / "desktop" / "assets" / "avatar" / "manifest.json").read_text())
+        data = json.loads((REPO / "desktop" / "assets" / "avatar" / "manifest.json").read_text(encoding="utf-8"))
         return len(data.get("expressions") or {})
     except (OSError, ValueError):
         return 0

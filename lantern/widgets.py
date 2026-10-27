@@ -126,7 +126,7 @@ class Widgets:
                 if f.stem in seen:
                     continue
                 seen.add(f.stem)
-                html = f.read_text(errors="replace")
+                html = f.read_text(encoding="utf-8", errors="replace")
                 out.append({"name": f.stem, "title": title_of(html, f.stem), "source": source,
                             "ok": not check(html)})
         return sorted(out, key=lambda w: w["name"])
@@ -136,7 +136,7 @@ class Widgets:
         for folder, _ in reversed(self._dirs()):
             f = folder / f"{name}.html"
             if f.exists():
-                html = f.read_text(errors="replace")
+                html = f.read_text(encoding="utf-8", errors="replace")
                 if problems := check(html):  # files can change on disk: check every time
                     raise WidgetError(f"{name} failed the safety check: {', '.join(problems)}")
                 return html
@@ -177,7 +177,7 @@ class Widgets:
         folder = Path(self.user_dir).expanduser()
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{name}.html"
-        path.write_text(html)
+        path.write_text(html, encoding="utf-8")
         verified = hashlib.sha256(path.read_bytes()).hexdigest() == payload["sha256"]
         return {"saved": verified, "verified": verified, "name": name, "path": str(path),
                 "title": title_of(html, name), "note": "Open it in the Widgets tab."}
