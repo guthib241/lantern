@@ -204,6 +204,7 @@ def main(argv=None) -> None:
     p.add_argument("--memory", action="store_true", help="show remembered facts")
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
     p.add_argument("--router", action="store_true", help="the model ladder: kind x rung -> success, cost, time")
+    p.add_argument("--routines", action="store_true", help="learned routines: version, runs, money saved, last healed")
     p.add_argument("--zones", action="store_true", help="show privacy zones")
     p.add_argument("--audit", action="store_true", help="what left this laptop today")
     p.add_argument("--set-zone", nargs=2, metavar=("PATH", "ZONE"), help=f"set a folder's zone ({'/'.join(ZONES)})")
@@ -255,6 +256,11 @@ def main(argv=None) -> None:
     if a.router:
         from .ladder import Ladder, format_table
         return print(format_table(Ladder(mem).table()))
+    if a.routines:
+        from .compiler import format_routines
+        from .routines.store import RoutineStore
+        store = RoutineStore(Path(cfg.db_path).expanduser().parent / "routines")
+        return print(format_routines([store.summary(n) for n in store.names()]))
     if a.audit:
         return print_audit(AuditLog(cfg.audit_path, mem.cipher))
     if a.forget_task:

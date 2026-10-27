@@ -38,6 +38,7 @@
 
   <section id="approvals" class="approvals" aria-live="assertive"></section>
   <section id="questions" class="approvals" aria-live="polite" aria-label="Questions from your tasks"></section>
+  <section id="offers" class="approvals" aria-live="polite" aria-label="Tasks Lantern can learn"></section>
 
   <main>
     <section data-panel="tasks" class="on" aria-label="Today">
@@ -115,6 +116,8 @@
         </div>
         <table class="rows" id="cost-rows"></table>
       </div>
+      <h2 class="section">Learned routines</h2>
+      <div class="group" id="routines" aria-live="polite"></div>
     </section>
 
     <section data-panel="widgets" aria-label="Widgets">
@@ -199,6 +202,7 @@
   <script src="lib/setup.js"></script>
   <script src="lib/today.js"></script>
   <script src="lib/receipt.js"></script>
+  <script src="lib/routines.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

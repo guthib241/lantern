@@ -20,6 +20,7 @@ DONE = {   # plain words for the tools that change something
     "undo_moves": "Put files back", "fill_form": "Submitted a form", "send_email": "Sent an email",
     "remember": "Remembered a fact", "forget": "Forgot a fact", "make_widget": "Added a widget",
     "run_in_project": "Ran a command", "set_reminder": "Set a reminder", "cancel_reminder": "Cancelled a reminder",
+    "run_routine": "Ran a learned routine",
 }
 ASKED = {   # what an approval card asked, in plain words
     "submit_form": "Submit the form", "send_email": "Send the email", "write_file": "Save the file",
@@ -27,6 +28,7 @@ ASKED = {   # what an approval card asked, in plain words
     "remember": "Remember a fact", "forget": "Forget a fact", "save_widget": "Add the widget",
     "run_in_project": "Run the command", "set_reminder": "Set the reminder", "cancel_reminder": "Cancel the reminder",
     "cua_safety_check": "Continue past a browser safety check", "mcp_call": "Use another program's tool",
+    "run_routine": "Run the learned routine",
 }
 BY = {"desktop": "on the desktop", "fake": "on the simulated phone", "whatsapp": "on WhatsApp",
       "telegram": "on Telegram", "timeout": "by the 10-minute timeout", "stopped": "by STOP"}
@@ -64,7 +66,7 @@ def _json(text: str) -> dict:
 def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
     """The receipt for one task. KeyError if there's no such task."""
     t = memory.get_task(task_id)
-    actions, looked, approvals, attempts = [], 0, {}, []
+    actions, looked, approvals, attempts, routine = [], 0, {}, [], None
     for step in memory.steps(task_id):
         if step["kind"] == "tool_result":
             data = _json(step["content"])
@@ -78,6 +80,9 @@ def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
                 looked += 1   # reads and lookups: counted, not itemised
         elif step["kind"] == "attempt":   # the recovery story (recovery.py): what failed and what came next
             attempts.append(_json(step["content"]))
+        elif step["kind"] == "routine":   # a learned routine ran (compiler.py)
+            r = _json(step["content"])
+            routine = {k: r.get(k) for k in ("routine", "version", "ok", "steps", "seconds", "healed", "failed")}
         elif step["kind"] == "approval":
             a = _json(step["content"])
             if not a.get("id"):
@@ -113,6 +118,7 @@ def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
         "checked": sum(a["verified"] for a in actions), "unchecked": sum(not a["verified"] for a in actions),
         "approvals": list(approvals.values()),
         "recovery": attempts,
+        "routine": routine,
         "models": usage, "cost_usd": round(sum(u["cost_usd"] or 0 for u in usage), 6),
         "sent": rows,
         "left_bytes": sum(r["bytes"] for r in left),
@@ -134,6 +140,10 @@ def as_text(r: dict) -> str:
         lines.append(f"• {a['what']}: {mark}")
     if r["looked"]:
         lines.append(f"• Looked things up {r['looked']} time{'s' if r['looked'] != 1 else ''}")
+    if rt := r.get("routine"):
+        healed = rt.get("healed") or {}
+        lines.append(f"• Learned routine {rt['routine']} v{rt['version']}: {rt['steps']} steps in {rt['seconds']} s"
+                     + (f", {len(healed)} healed" if healed else ""))
     for a in r.get("recovery", []):
         rung = f", rung {a['rung']}" if a.get("rung") is not None else ""
         lines.append(f"• ↻ Attempt {a.get('attempt')}: {a.get('tool') or 'model'} {str(a.get('class', '')).replace('_', ' ')}"

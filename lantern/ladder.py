@@ -71,6 +71,9 @@ CAN: dict[str, tuple[int, ...]] = {
     "form_fill": (3, 4),
     "gui_action": (3, 5),
     "generate": (3, 4),
+    "compile": (3, 4),     # S4: a task's step log -> a routine contract and its code
+    "repair": (3, 4),      # S4: re-target one failed routine step
+    "match": (3,),         # S4: which routine a goal means, when the words alone don't say
 }
 TOOL_KINDS = {
     "list_folders": "lookup", "list_dir": "lookup", "search_files": "lookup", "read_file": "lookup",

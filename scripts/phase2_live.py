@@ -20,6 +20,10 @@ Checks:
   3  S2  "send the same email twice": the second send is refused, the outbox has one email
   4  S3  the ladder: a planner turn on Spark at high effort, then a move to Wonder on a fresh chain (recap)
   5  S1  shutdown mid-task and a new process continues it from the checkpoint
+  6  S4  the agent fills demo/portal (6 pages), Lantern learns it (Muse Spark writes the contract and the
+         code, verified on a fresh portal), runs it again with no model calls, the portal switches to its v2
+         layout, the routine heals (one Muse Spark call per moved field or button) and runs at $0 again.
+         Needs Chromium (Playwright) for the browser.
 """
 from __future__ import annotations
 
@@ -43,16 +47,27 @@ TASK_LIMIT = "0.25"
 
 
 class Recorder:
-    """Wraps the model client and keeps every request (after scrubbing) to check what was sent."""
+    """Wraps the model client and keeps every request (after scrubbing) to check what was sent: the Responses
+    API (the agent) and Chat Completions (the routine compiler's structured calls)."""
 
     def __init__(self, inner):
         self.inner, self.requests, self._lock = inner, [], threading.Lock()
         self.responses = self
+        if hasattr(inner, "chat"):
+            self.chat = type("Chat", (), {})()
+            self.chat.completions = type("Completions", (), {"create": lambda _, **kw: self._chat(**kw)})()
 
-    def create(self, **kw):
+    def _keep(self, kw: dict) -> None:
         with self._lock:
             self.requests.append(json.loads(json.dumps({k: v for k, v in kw.items() if k != "stream"}, default=str)))
+
+    def create(self, **kw):
+        self._keep(kw)
         return self.inner.responses.create(**kw)
+
+    def _chat(self, **kw):
+        self._keep(kw)
+        return self.inner.chat.completions.create(**kw)
 
 
 @dataclass
@@ -215,12 +230,88 @@ def check_restart(cfg, client, timeout) -> dict:
             "reply": str(done.get("reply") or "")[:300], "tasks": [tid]}
 
 
+PORTAL = Path(__file__).resolve().parent.parent / "demo" / "portal"
+
+
+def portal_server(layout: str = "v1"):
+    sys.path.insert(0, str(PORTAL))
+    try:
+        from server import serve
+    finally:
+        sys.path.remove(str(PORTAL))
+    httpd, app = serve(port=0, layout=layout, background=True)
+    return f"http://127.0.0.1:{httpd.server_address[1]}", app, httpd
+
+
+def check_routines(cfg, client, timeout) -> dict:
+    base, app, httpd = portal_server("v1")
+    servers = [httpd]
+    plan = Path(cfg.roots[0]) / "Documents" / "site_plan.pdf"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_bytes((PORTAL / "fixtures" / "site_plan.pdf").read_bytes())
+    live = start(cfg, client)
+
+    def sandbox(_base: str) -> str:   # a fresh portal in the current layout, to verify a routine on
+        url, _, h = portal_server(app.default_layout)
+        servers.append(h)
+        return url
+    live.core.compiler.sandbox = sandbox
+    goal = (f"Fill the city permit application on {base}. Use fill_form once per page, in order: "
+            f"{base}/apply/personal, {base}/apply/address, {base}/apply/permit, {base}/apply/documents, "
+            f"{base}/apply/review, {base}/apply/payment. Use my profile; date of birth 1994-03-12, address "
+            "14 Lake View Road, Bengaluru, PIN code 560001; permit type home renovation, starting 2026-11-20 for "
+            "14 days, the work: rebuild the front boundary wall; ID proof: passport; attach "
+            f"{plan}; pay at the counter and accept the declaration.")
+    notes, ok = [], True
+    try:
+        first = live.core.submit(goal)
+        done = until(lambda: live.done(first), timeout * 2) or {}
+        calls1 = live.core.memory.task_usage(first)["calls"]
+        notes.append(f"1st run (agent): {done.get('status')}, {calls1} model calls, "
+                     f"${live.core.memory.task_usage(first)['cost_usd']:.4f}")
+        offered = any(e.get("type") == "learn_offer" and e.get("task_id") == first for e in live.events)
+        notes.append(f"offered to learn it: {offered}")
+        job = live.core.learn(first)
+        learned = until(lambda: live.done(job), timeout) or {}
+        notes.append(f"learn: {learned.get('status')}: {str(learned.get('summary'))[:160]}")
+        rows = live.core.routines()
+        if not rows or not rows[0]["trusted"]:
+            raise RuntimeError("no trusted routine after learning")
+        name = rows[0]["name"]
+        runs = []
+        for label in ("2nd run (routine, v1 layout)", "3rd run (portal switched to v2: heal)", "4th run (healed routine)"):
+            if label.startswith("3rd"):
+                app.default_layout = "v2"
+            tid = live.core.submit(goal)
+            r = until(lambda: live.done(tid), timeout * 2) or {}
+            u = live.core.memory.task_usage(tid)
+            runs.append((r.get("status"), u["calls"]))
+            notes.append(f"{label}: {r.get('status')}, {u['calls']} model calls, ${u['cost_usd']:.4f}: "
+                         f"{str(r.get('summary'))[:140]}")
+        summary = live.core.compiler.store.summary(name)
+        notes.append(f"routine {name}: v{summary['version']}, {summary['runs']} runs, {summary['heals']} heal(s), "
+                     f"applications on the portal: {len(app.applications)}")
+        ok = (done.get("status") == "done" and runs[0] == ("done", 0) and runs[1][0] == "done"
+              and runs[2] == ("done", 0) and summary["heals"] >= 1)
+    except Exception as e:
+        ok = False
+        notes.append(f"stopped: {type(e).__name__}: {e}")
+    finally:
+        live.core.shutdown()
+        live.hub.stop()
+        for h in servers:
+            h.shutdown()
+            h.server_close()
+    return {"ok": ok, "notes": notes, "reply": "", "tasks": []}
+
+
 CHECKS = [
     ("S1 three tasks at once, one parks for an answer", check_three_at_once),
     ("S2 a tool error, then another way", check_tool_error),
     ("S2 never sends the same email twice", check_no_double_send),
     ("S3 Spark high, then Wonder on a fresh chain", check_ladder),
     ("S1 shutdown mid-task, a new process continues it", check_restart),
+    ("S4 learn the portal, rerun at $0, layout flip, heal, $0 again", check_routines),
 ]
 
 

@@ -12,7 +12,13 @@
   6. Submit only after an approval bound to the URL + SHA-256 of every field value
      (and the hidden inputs), recomputed right before the click.
   7. Verify: a confirmation element on the resulting page, plus a screenshot saved in
-     ~/.lantern/media. `verified` is true only with that evidence.
+     ~/.lantern/media. `verified` is true only with that evidence. A multi-page form's
+     middle page has no confirmation of its own: when it moves on to the next page without
+     an error, the result says `advanced` (done, but not verified).
+A task's session cookies are carried from one fill_form call to the next (in memory only), so a
+multi-page portal keeps its session although every call opens a fresh browser. Each fill also
+leaves a local `trace` step (labels, values, the button pressed, where it led) for compiling
+the task into a routine (compiler.py); traces are never sent to a model.
 """
 from __future__ import annotations
 
@@ -34,7 +40,7 @@ from ..policy import PRIVATE, Policy, PolicyError
 from ..untrusted import wrap
 from . import guards
 from .computer import MAX_STEPS, ComputerLoop
-from .driver import BrowserDriver, DriverError, chromium_executable
+from .driver import BrowserDriver, DriverError, _match_option, chromium_executable
 from .vault import Vault
 
 REPO_DIR = Path(__file__).resolve().parents[2]
@@ -83,6 +89,20 @@ Events = Callable[[str, dict], None]
 
 class FormError(Exception):
     """The form can't be filled; the message is safe to show the model."""
+
+
+def _trace_entry(f: dict, value: str) -> dict:
+    """One field as the routine compiler needs it. For choices, the option's own value attribute when it
+    means something ('home_renovation'): labels change with a redesign, values usually don't."""
+    entry = {"label": f["label"], "name": f.get("name", ""), "html_id": f.get("html_id", ""), "type": f["type"],
+             "value": value}
+    if f.get("options"):
+        entry["options"] = [{"value": o.get("value", ""), "text": o.get("text", "")} for o in f["options"]][:40]
+        chosen = _match_option(f["options"], value) if f["type"] in ("select", "radio") else None
+        if chosen is not None:
+            stable = chosen.get("value") and not str(chosen["value"]).isdigit()
+            entry["value"] = chosen["value"] if stable else chosen.get("text", value)
+    return entry
 
 
 @dataclass
@@ -174,6 +194,8 @@ class _Run:
     problems: list = field(default_factory=list)
     refused: list = field(default_factory=list)
     visual: list = field(default_factory=list)
+    trace: list = field(default_factory=list)   # every field set through the DOM, full value (local only)
+    submit_label: str = ""
     steps: int = 0
     screenshots: int = 0
     used_loop: bool = False
@@ -191,6 +213,8 @@ class FormService:
         self.memory = memory
         self.driver_factory = driver_factory or (lambda: BrowserDriver(
             settings.profile_dir, headless=settings.headless, executable_path=chromium_executable(settings.chromium)))
+        self._cookies: dict[int, list] = {}   # task -> its session cookies between fills (memory only)
+        self._cookie_lock = threading.Lock()
 
     @property
     def vault(self) -> Vault:
@@ -215,9 +239,50 @@ class FormService:
         run = _Run()
         try:
             with self.driver_factory() as d:
-                return self._fill(d, url, goal, run, approve, commit, cancel, emit, usage)
+                self._load_session(d, task_id)
+                try:
+                    result = self._fill(d, url, goal, run, approve, commit, cancel, emit, usage)
+                finally:
+                    self._save_session(d, task_id)
         except DriverError as e:
             raise FormError(str(e)) from e
+        self._trace(task_id, url, run, result)
+        return result
+
+    # ---- a task's browser session and its trace ---------------------------------------
+    def _load_session(self, d: BrowserDriver, task_id: int | None) -> None:
+        with self._cookie_lock:
+            jar = self._cookies.get(task_id) if task_id is not None else None
+        context = getattr(getattr(d, "page", None), "context", None)
+        if jar and context is not None:
+            try:
+                context.add_cookies(jar)
+            except Exception:   # a cookie the browser won't take back must not stop the fill
+                pass
+
+    def _save_session(self, d: BrowserDriver, task_id: int | None) -> None:
+        context = getattr(getattr(d, "page", None), "context", None)
+        if task_id is None or context is None:
+            return
+        try:
+            jar = context.cookies()
+        except Exception:
+            return
+        with self._cookie_lock:
+            self._cookies[task_id] = jar
+            while len(self._cookies) > 32:   # old tasks' sessions go first
+                self._cookies.pop(next(iter(self._cookies)))
+
+    def _trace(self, task_id: int | None, url: str, run: _Run, result: dict) -> None:
+        if self.memory is None or task_id is None:
+            return
+        evidence = (result.get("confirmation") or {}).get("content", "") if isinstance(result.get("confirmation"), dict) else ""
+        self.memory.log_step(task_id, "trace", {
+            "tool": "fill_form", "url": url, "fields": run.trace, "submit": run.submit_label,
+            "submitted": bool(result.get("submitted")), "final_url": result.get("final_url", ""),
+            "verified": bool(result.get("verified")), "advanced": bool(result.get("advanced")),
+            "evidence": evidence[:300], "visual": [f["label"] or f["id"] for f, _ in run.visual],
+            "left_for_you": [x["label"] for x in run.left]})
 
     def _fill(self, d: BrowserDriver, url: str, goal: str, run: _Run, approve: Approve, commit: Commit,
               cancel: threading.Event, emit: Events, usage) -> dict:
@@ -287,6 +352,7 @@ class FormService:
             return base(done=False, verified=False, submitted=False, reason=refused["reason"])
 
         before = d.url
+        run.submit_label = submit["label"]
         d.submit(submit["selector"])
         verified, evidence = d.verify_submission(before, self.settings.confirm_selectors,
                                                  self.settings.confirm_wait_ms)
@@ -295,9 +361,22 @@ class FormService:
         result = base(done=verified, verified=verified, submitted=True, screenshot=shot, final_url=d.url)
         if evidence:
             result["confirmation"] = wrap(evidence, d.url, kind="web")
+        elif d.url != before and not self._error_shown(d):
+            title = d.page.title() if getattr(d, "page", None) is not None else ""
+            result.update(done=True, advanced=True, next_page=wrap(title, d.url, kind="web"),
+                          reason="this page was accepted and the form moved on to its next page")
         else:
             result["reason"] = "no confirmation appeared after Submit; check the screenshot"
         return result
+
+    @staticmethod
+    def _error_shown(d: BrowserDriver) -> bool:
+        """An error summary on the page we landed on (role=alert), i.e. the form didn't accept it."""
+        try:
+            alert = d.page.query_selector("[role=alert]")
+            return alert is not None and alert.is_visible() and bool((alert.inner_text() or "").strip())
+        except Exception:
+            return False
 
     # ---- steps -------------------------------------------------------------------------
     def _plan(self, goal: str, fields: list[dict], usage) -> list[dict]:
@@ -355,6 +434,7 @@ class FormService:
                 run.visual.append((f, value))
                 continue
             run.filled.append({"field": label, "value": short(value, 60)})
+            run.trace.append(_trace_entry(f, value))
 
     def _upload(self, d: BrowserDriver, f: dict, path: str) -> tuple[bool, str]:
         try:

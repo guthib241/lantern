@@ -51,30 +51,6 @@ def portal():
     httpd.server_close()
 
 
-class OneBrowser:
-    """One browser for the whole application, as a person would keep it open: the portal's session cookie
-    lives between pages. (Lantern's FormService opens a fresh browser per fill_form call, which loses a
-    session cookie; keeping a browser per task for multi-page forms is left to S4/S5, see NEXT_SESSION.)
-    Playwright's sync API is bound to the thread that started it, so it opens in the task's own thread."""
-
-    def __init__(self, profile, exe):
-        self.profile, self.exe, self.d = profile, exe, None
-
-    def __call__(self):
-        return self
-
-    def __enter__(self):
-        if self.d is None:
-            self.d = BrowserDriver(self.profile, executable_path=self.exe).__enter__()
-        return self.d
-
-    def __exit__(self, *exc):
-        if "/apply/done" in self.d.page.url or exc[0] is not None:
-            self.d.__exit__(None, None, None)
-            self.d = None
-        return False
-
-
 def values(cid, **fields):
     return ([call("set_values", cid, values=[{"field": k, "value": v} for k, v in fields.items()])], "")
 
@@ -136,7 +112,9 @@ def test_three_tasks_from_the_phone_one_parks_the_others_finish_then_the_portal_
     policy = Policy.load(cfg.zones_file, cfg.roots)
     settings = FormSettings(profile_dir=tmp_path / "browser-profile", media_dir=tmp_path / "media",
                             vault_path=tmp_path / "profile.json", confirm_wait_ms=800)
-    forms = FormService(settings, None, policy, None, driver_factory=OneBrowser(settings.profile_dir, chromium))
+    # A fresh browser for every fill_form, as in production: the task's session cookie is carried between them.
+    forms = FormService(settings, None, policy, None,
+                        driver_factory=lambda: BrowserDriver(settings.profile_dir, executable_path=chromium))
     core = Core(cfg, client, policy=policy, forms=forms, reminder_tick=0, workers=3)
     forms.memory = core.memory
     events = []
@@ -177,8 +155,14 @@ def test_three_tasks_from_the_phone_one_parks_the_others_finish_then_the_portal_
         data = r.read().decode()
     assert "Asha Rao" in data and "home_renovation" in data
     assert hashlib.sha256(plan.read_bytes()).hexdigest() in data          # the right file went up
-    last = [json.loads(st["content"]) for st in core.memory.steps(ids["permit"]) if st["kind"] == "tool_result"][-2]
-    assert last["name"] == "fill_form" and last["result"]["verified"] is True
+    fills = [json.loads(st["content"])["result"] for st in core.memory.steps(ids["permit"])
+             if st["kind"] == "tool_result" and json.loads(st["content"])["name"] == "fill_form"]
+    assert all(f["advanced"] and f["done"] and not f["verified"] for f in fills[:5])   # middle pages: moved on
+    assert fills[-1]["verified"] is True                                            # the last: a reference number
+    traces = [json.loads(st["content"]) for st in core.memory.steps(ids["permit"]) if st["kind"] == "trace"]
+    assert [t["submit"] for t in traces] == ["Next"] * 4 + ["Continue to payment", "Submit application"]
+    assert {"label": "Full name", "name": "full_name", "html_id": "full_name", "type": "text",
+            "value": "Asha Rao"} in traces[0]["fields"]
     texts = [m["text"] for m in phone.messages()]
     assert "Sent." in texts and "Tidy." in texts and "Filed. Reference on the receipt." in texts
     hub.stop()

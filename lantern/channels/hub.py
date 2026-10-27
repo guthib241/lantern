@@ -8,6 +8,7 @@ Incoming, from the owner only (everyone else is ignored and counted):
   "undo"        -> put back the files the last task moved (one approval, no model call)
   "receipt [N]" -> the last finished task's receipt (or task N's): changes, checks, approvals, data sent, cost
   "#N answer"   -> the answer to task N's question (ask_user; the task was parked, scheduler.py), also by button
+  "learn [N]"   -> compile the last finished task (or task N) into a routine that runs with no model calls (S4)
   voice note    -> download -> ffmpeg 16 kHz WAV -> Muse Voice Transcribe (biased toward the
                    names Lantern knows) -> handled like text, with the transcript echoed back
   button tap    -> approve / deny / show an approval. Button ids carry the approval's nonce
@@ -45,10 +46,12 @@ HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
 ANSWER = re.compile(r"^\s*#(\d+)[\s:,.-]+(.+)$", re.S)   # "#12 residential": an answer to task 12's question
+LEARN = re.compile(r"^\W*/?learn(?:\s+(?:it|this|that|task))?(?:\s+#?(\d+))?\W*$", re.I)
 QUESTION_DELAY = 1.0   # seconds: questions that arrive together go out as one message
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
-         "resume, undo (puts back the files the last task moved), or receipt (proof of what the last task did). "
+         "resume, undo (puts back the files the last task moved), receipt (proof of what the last task did), or "
+         "learn (turn the last task into a routine that runs with no model calls). "
          "Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
@@ -73,6 +76,8 @@ class ChannelHub:
         self._asked: set[int] = set()             # tasks whose open question was already sent
         self._question_timer: threading.Timer | None = None
         self._question_lock = threading.Lock()
+        self._finished: dict[int, str] = {}       # recently finished task -> its channel (for learn offers)
+        self._offers: deque = deque(maxlen=20)   # tasks Lantern offered to learn, newest last
 
     # ---- lifecycle -------------------------------------------------------------------
     def start(self, listen: bool = True) -> "ChannelHub":
@@ -207,6 +212,8 @@ class ChannelHub:
             return self.say(ch.name, self._receipt(int(m.group(1)) if m.group(1) else None))
         if self._answer(ch, t):
             return
+        if m := LEARN.match(t):
+            return self._learn(ch, int(m.group(1)) if m.group(1) else None)
         if UNDO_WORDS.match(t):
             try:
                 task_id = self.core.undo_last()
@@ -217,6 +224,19 @@ class ChannelHub:
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
+
+    def _learn(self, ch: Channel, task_id: int | None) -> None:
+        if task_id is None:
+            task_id = self._offers[-1] if self._offers else next(
+                (t.id for t in self.core.memory.recent_tasks(10) if t.status == "done"), None)
+        if task_id is None:
+            return self.say(ch.name, "There's no finished task to learn yet.")
+        try:
+            job = self.core.learn(task_id)
+        except (ValueError, KeyError) as e:
+            return self.say(ch.name, f"Can't learn that one: {str(e).strip(chr(39))}.")
+        self.origin[job] = ch.name
+        self.say(ch.name, f"🧠 Learning task #{task_id} as a routine (task #{job}).")
 
     def _answer(self, ch: Channel, text: str) -> bool:
         """'#12 residential', or just an option of the only open question. True if it was an answer."""
@@ -394,6 +414,19 @@ class ChannelHub:
                        (f"deny:{a['id']}:{a['nonce']}:{h8}", "❌ Deny"),
                        (f"show:{a['id']}", "🔎 Show")]
             self._outbox.put((None, "buttons", (text, buttons)))
+        elif kind == "learn_offer":
+            task_id = event.get("task_id")
+            self._offers.append(task_id)
+            name = self._finished.get(task_id)
+            if event.get("auto"):
+                self._outbox.put((name, "text", (f"🧠 You've asked for this before, so I'm learning task #{task_id} "
+                                                  "as a routine: next time it runs with no model calls.",)))
+            elif name:
+                self.say(name, f"💡 Want me to learn this? Next time it would run with no model calls. "
+                               f"Reply: learn {task_id}")
+        elif kind == "queued" and (m := re.match(r"Learn task #(\d+) ", str(event.get("goal", "")))):
+            if (name := self._finished.get(int(m.group(1)))) and event.get("task_id") not in self.origin:
+                self.origin[event["task_id"]] = name   # an automatic learn reports back where the task came from
         elif kind == "questions":
             if {q["task_id"] for q in event.get("items", [])} - self._asked:
                 self._schedule_questions()
@@ -405,6 +438,10 @@ class ChannelHub:
             self._outbox.put((None, "text", (f"⏰ Reminder: {event.get('text', '')}{note}",)))
         elif kind == "done":
             name = self.origin.pop(event.get("id"), None)
+            if name:
+                self._finished[event.get("id")] = name
+                while len(self._finished) > 50:
+                    self._finished.pop(next(iter(self._finished)))
             if name and event.get("status") != "cancelled":  # STOP already got its own reply
                 reply = (event.get("reply") or event.get("summary") or "").strip()
                 status = event.get("status")

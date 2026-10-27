@@ -134,3 +134,37 @@
   - **Form filling:** a fill that didn't verify moves computer use (`gui_action`) from Spark (native tool) to Wonder (function harness) for the next fill in the task.
 - Oct 27 (S3): **switching models starts a fresh chain.** Spark low ↔ high stays on the same `previous_response_id` chain (same model, the `reasoning.effort` changes per request, dev.meta.ai/docs/reasoning). Moving to Wonder starts a new chain whose input is a recap: the goal, the steps so far and the latest results. Nothing documents chaining responses across models. The closing line stays on the rung that did the work.
 - Oct 27 (S3): **rungs 0 and 1.** Rung 0 (compiled routines) has no steps yet: S4 is Session B's. Rung 1 is what Lantern's own code already does without a model (file moves, writes, reminders, lookups, sending a mail the model wrote), so those steps are recorded and badged "Rule". `ladder_stats` holds kinds, rungs, outcomes, cost and seconds only, never content or task ids. "Forget everything" clears it; it is not tied to tasks, so forgetting one task leaves it.
+- Oct 27 (S4 routines): **the contract comes from Lantern's own records; the model only names, describes and parameterises.**
+  - **Recording.** Each `fill_form` leaves a local `trace` step: labels, full values, the button, where it led. It is encrypted in memory and never sent to a model.
+  - **Skeleton.** The compiler builds a skeleton contract from the traces deterministically:
+    - values that are in the profile vault become `{{vault.key}}`;
+    - anything else that looks private becomes a `secret` param with no stored default;
+    - select and radio fields become enum params, keyed by the option's value attribute ("home_renovation", "counter"), because labels change in a redesign;
+    - each step gets a postcondition, and the last page gets a success pattern made from the confirmation (letters and digits wherever the reference varies).
+  - **What the model adds.** Muse Spark adds a name, a title, examples and step descriptions, and may turn literal values into params. Its answer is merged into the skeleton, so it can't add, drop, reorder or retarget a step (`same_plan`), and a default can't differ from what was recorded.
+  - **Not yet:** routines are compiled from web form tasks only. File tasks and computer-use steps (custom widgets) are refused with the reason, since a fixed-path file routine wouldn't generalise.
+- Oct 27 (S4): **Muse Spark writes routine.py; a whitelist decides whether it runs.**
+  - **The checker (AST).** It allows one import (the runtime), one `def run(params)`, `with step(...)` blocks, the runtime's own calls, constants, `params["x"]`, f-strings and `+`, and `if` on params compared with constants. That's all: no loops, assignments, other calls, dunders or try/except.
+  - **Same calls as the contract.** The code must also make exactly the calls Lantern's own rendering of the contract makes (`same_calls`), so a checker-clean extra submit is still refused.
+  - **Fallback.** After a rejected answer and one retry a rung up, Lantern renders the code itself (rung 1). Heals always use Lantern's rendering: a heal needs no model to rewrite code.
+  - **Running it.** Checked code runs with no builtins at all and an import hook that only hands out this run's runtime. (Lantern's own loader uses `exec`; the routine can't.)
+- Oct 27 (S4): **structured output goes over Chat Completions** (`response_format` json_schema, `reasoning_effort` per rung), exactly as cookbook 04_structured_output and 06_reasoning_tokens show. The Responses API spells this `text.format`, and the agent loop doesn't need it. dev.meta.ai didn't load from this container, so the cookbook was the reference. Chat usage (`prompt_tokens` / `completion_tokens`) is costed through `models.chat_usage`.
+- Oct 27 (S4): **verify, then trust.**
+  - **Sandbox.** A new or healed routine runs in a sandbox, a throwaway copy of the site (`LANTERN_ROUTINE_SANDBOX`; the demo uses a second portal instance). Every step and the success check must pass.
+  - **Dry run.** Without a sandbox it runs dry on the real site up to its first submit. Nothing irreversible happens, and later pages can't be reached without one, so the recorded run stands as proof for the rest. Only a pass makes it `trusted`.
+  - **An unverified heal never replaces the trusted version.**
+- Oct 27 (S4): **running a routine:**
+  - **One approval for the whole run, bound to hashes of every value.** It's checked again in code before each submit; a value that differs from the approved one refuses the run. The summary shows the values in plain words, the payload only their hashes.
+  - **Cross-checked targets.** Every target is a visible, enabled control in the page itself (not a frame). Password, OTP, card and ID fields are hard stops, as in `fill_form`.
+  - **Restarts.** The first submit is checkpointed, so a restart never runs a routine twice after it submitted; it says so instead.
+  - **Failure before any submit** falls back to the normal agent for the same task. After a submit, nothing is repeated.
+  - **Goal matching.**
+    - The goal's words are compared with the routine's examples, and enum values are read from the goal ("street event"); that costs no model call.
+    - A goal that's close but not clear costs one Muse Spark call at low effort.
+    - A model may only set enum and plain-text params. A URL, path or secret is never a model's pick: a test caught the matcher setting `base_url` to another site.
+    - Prefix a goal with `[step by step] ` to skip routines.
+- Oct 27 (S4): **healing re-targets, never re-values.**
+  - **What the model sees.** When a field or button isn't on the page, one Muse Spark call gets the step's description, its old target and the page's fields or buttons. The page content is wrapped as untrusted.
+  - **What it may answer.** One label from that list, or "none". Labels are compared case-insensitively, because the portal's CSS uppercases its buttons. An answer that isn't on the page costs one more try a rung up.
+  - **What a heal can't change.** The value, the action and the order. The patched contract is re-rendered, verified and saved as v<N+1> ("healed"), with the patches recorded in `meta.json`.
+- Oct 27 (S4): **multi-page forms in production.** `FormService` carries a task's session cookies from one `fill_form` to the next, in memory only and dropped after 32 tasks. A page that moves on without an error now reports `advanced: true` (done, not verified), and recovery treats that as success, not approach_failed. This supersedes the S1 "known limit". The portal e2e now uses a fresh browser per page, as in production.

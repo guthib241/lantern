@@ -116,6 +116,19 @@ class Usage:
         )
 
 
+def chat_usage(usage: Any) -> Usage:
+    """Parse a Chat Completions `usage` (prompt/completion tokens) into the same Usage as the Responses API.
+    Reasoning tokens are part of completion_tokens (cookbook 06_reasoning_tokens)."""
+    if usage is None:
+        return Usage()
+    return Usage(
+        input_tokens=int(_get(usage, "prompt_tokens", 0) or 0),
+        cached_tokens=int(_get(_get(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
+        output_tokens=int(_get(usage, "completion_tokens", 0) or 0),
+        reasoning_tokens=int(_get(_get(usage, "completion_tokens_details", None), "reasoning_tokens", 0) or 0),
+    )
+
+
 def token_cost(model: str, usage: Usage) -> float:
     """USD cost of one call. Cached tokens are part of input_tokens, billed at the cached rate.
     Reasoning tokens are already counted inside output_tokens."""

@@ -130,9 +130,12 @@ class Core:
         self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
         self._undo_lock = threading.Lock()
         self.scheduler = None   # S1: with workers > 0, up to that many tasks run at once (scheduler.py)
+        self.compiler = None    # S4: learned routines (compiler.py), with the scheduler
         if workers > 0:
+            from .compiler import Compiler
             from .scheduler import Scheduler
             self.scheduler = Scheduler(self, workers, approval_timeout=approval_timeout)
+            self.compiler = Compiler(self)
         keep = self.scheduler.recover() if self.scheduler is not None else set()
         self.interrupted = recover_interrupted(self.memory, keep)   # before the worker starts taking tasks
         self.bus.subscribe(self._approval_event)
@@ -208,6 +211,63 @@ class Core:
 
     def questions(self) -> list[dict]:
         return self.scheduler.questions() if self.scheduler is not None else []
+
+    # ---- learned routines (S4, compiler.py) ------------------------------------------------
+    def learn(self, task_id: int, auto: bool = False) -> int:
+        """Compile a finished, verified task into a routine, as a task of its own (its model calls are counted)."""
+        if self.compiler is None:
+            raise ValueError("learning routines needs Lantern's scheduler (lantern --serve)")
+        source = self.memory.get_task(task_id)   # KeyError if unknown
+        if not self.compiler.learnable(task_id):
+            try:
+                self.compiler.skeleton(task_id)
+            except Exception as e:
+                raise ValueError(f"task #{task_id} can't be learned: {e}") from e
+        goal = f"Learn task #{task_id} as a routine: {source.goal.splitlines()[0][:80]}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "learn_from": task_id, "auto": auto})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._learn_job(agent, job.id, goal, task_id))
+        return job.id
+
+    def _learn_job(self, agent, job_id: int, goal: str, task_id: int) -> None:
+        from .compiler import CompileError
+        agent.cancel.clear()
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            info = self.compiler.learn(task_id, client=agent.client, ladder=agent.ladder, job_id=job_id)
+        except (CompileError, KeyError, ValueError) as e:
+            status, summary = "failed", f"Couldn't learn task #{task_id}: {e}"
+        except Exception as e:   # never leave the learning task hanging as "active"
+            from .reliability import explain
+            self.memory.log_step(job_id, "note", f"error: {type(e).__name__}: {e}")
+            status, summary = "failed", f"Couldn't learn task #{task_id}: {explain(e)}"
+        else:
+            status = "done"
+            summary = (f"Learned '{info['name']}' v{info['version']}: {info['steps']} steps"
+                       + (f", with {', '.join(info['params'])} to choose" if info["params"] else "")
+                       + (f". Verified: {info['verify']}. Next time it runs with no model calls."
+                          if info["trusted"] else f". Not verified yet ({info['verify']}), so it won't run by itself."))
+        self.memory.log_step(job_id, "reply", summary)
+        self.memory.finish_task(job_id, status, summary)
+        agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
+
+    def routines(self) -> list[dict]:
+        return self.compiler.list() if self.compiler is not None else []
+
+    def forget_routine(self, name: str) -> bool:
+        if self.compiler is None:
+            return False
+        path = self.compiler.store.path(name)   # KeyError for a name that can't be a routine
+        if not path.exists():
+            return False
+        self.policy.erase_lantern_data(path, Path(self.cfg.db_path).expanduser().parent)   # overwritten, then gone
+        self.emit({"type": "routines", "changed": "forgot", "name": name})
+        return True
 
     def _running(self, task_id: int) -> bool:
         return task_id == self.current_task or (self.scheduler is not None and self.scheduler.active(task_id))
@@ -383,7 +443,8 @@ class Core:
         self.wait_idle(15)
         result = {"memory": self.memory.forget_everything(), "audit": self.audit.forget_all(), "files": {}, "skipped": []}
         home = Path(self.cfg.db_path).expanduser().parent
-        for target in (self.cfg.media_dir, self.cfg.browser_profile_dir, self.cfg.profile_path):
+        routines = Path(self.cfg.db_path).expanduser().parent / "routines"   # contracts can hold typed values
+        for target in (self.cfg.media_dir, self.cfg.browser_profile_dir, self.cfg.profile_path, routines):
             try:
                 result["files"][str(target)] = self.policy.erase_lantern_data(target, home)
             except (PolicyError, OSError) as e:

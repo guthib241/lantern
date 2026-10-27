@@ -337,3 +337,20 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - `tests/test_phase2_live_script.py` dry-runs all 5 against a scripted model (plumbing only). **The real run is still to do**; this container has no key and can't reach api.meta.ai.
 - `demo.build(workers=…)` so the rehearsal folder can run the scheduler.
 - `docs/NEXT_SESSION.md`: the Phase 2 state, the live check to run, known limits, and what Session B builds next (S4, S0, S8).
+
+## Oct 27 (Phase 2, S4: self-compiling routines)
+- `lantern/compiler.py` + `lantern/routines/` (contract, checker, runtime, store, runner):
+  - **learn:** a verified task becomes a Routine Contract (from the local traces; vault placeholders, enum params, postconditions, a success check). Muse Spark names and describes it and may add params, but can't change the plan. Muse Spark then writes `routine.py`, which must pass the whitelist checker and make exactly the contract's calls, or Lantern writes it itself.
+  - **verify:** on a sandbox copy of the site, or dry up to the first submit. Only then is it trusted. Stored in `~/.lantern/routines/<name>/v<N>/`.
+  - **match:** by the goal's words, enum values included (no model), or one cheap call when unsure.
+  - **run (rung 0):** one plan-bound approval, zero model calls, every target cross-checked in the page, every step checked.
+  - **heal:** a moved field or button gets one Muse Spark call to pick the new target from the page; the run passes, then v<N+1> is verified and saved.
+  - Learning is offered after a verified task, and happens automatically for a repeated goal.
+- Forms: session cookies carried per task between `fill_form` calls (multi-page portals now work with a fresh browser per page); `advanced` for pages that move on; local `trace` steps; stable option values.
+- Everywhere: "learn [N]" on the phone, `POST /routines/learn`, `GET /routines`, `POST /routines/{name}/forget`, `lantern --routines`, a routine line on receipts, routines erased by "forget everything". On the desktop: a learn offer card, and Learned routines in Costs with a cost-per-run chart and heal marks.
+- Tests:
+  - **The full story on `demo/portal` in Chromium** (`tests/test_routines.py`): the agent fills 6 pages; learning costs 2 scripted Spark calls and is verified on a fresh portal; the rerun takes 0 model calls and 1 approval; then the layout flips to v2 and every label, id and button changes; the run heals (one repair call per moved target) and saves v2, verified on a fresh v2 portal; the next run is back at 0 model calls.
+  - **Unit tests:** checker (14 forbidden shapes), runtime (dry stop, plan-bound approval, hard stops, heal by re-targeting), store math, matching, fallback, restart, API.
+  - Plus `scripts/phase2_live.py` check 6, dry-run on a scripted model.
+- Guards that caught things on the way: the renderer lockdown test (no `innerHTML`: the chart is built with DOM calls), the "only policy.py touches files" test (a routine is forgotten through `erase_lantern_data`), and the matcher test (a model could have set `base_url`; now urls, paths and secrets are never a model's pick).
+- Real-API check: not possible in this container (no key, api.meta.ai blocked). `python scripts/phase2_live.py --only 6` runs it where the key works.

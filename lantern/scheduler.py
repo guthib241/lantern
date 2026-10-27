@@ -214,8 +214,48 @@ class Scheduler:
         with self._lock:
             self.runs[task_id] = run
         self.core.memory.save_task_state(task_id, "queued", "", {"goal": goal})
-        self._start(run, lambda agent: agent.run(goal, task_id=task_id))
+        self._start(run, lambda agent: self._goal(run, agent, goal))
         self._juggling()
+
+    def submit_job(self, task_id: int, goal: str, job: Callable[[ResumableAgent], Any]) -> None:
+        """Work that isn't an agent run (learning a routine) but still wants a slot, a client and a budget."""
+        run = Run(task_id, goal)
+        with self._lock:
+            self.runs[task_id] = run
+        self.core.memory.save_task_state(task_id, "queued", "", {"goal": goal, "job": True})
+        self._start(run, job)
+        self._juggling()
+
+    def _goal(self, run: Run, agent: ResumableAgent, goal: str) -> Any:
+        """A learned routine if one matches (S4, rung 0), else the agent. Afterwards, offer to learn it."""
+        compiler = getattr(self.core, "compiler", None)
+        if compiler is None:
+            return agent.run(goal, task_id=run.id)
+        match = compiler.match(goal, client=agent.client, ladder=agent.ladder, task_id=run.id)
+        if match is not None:
+            return compiler.run_task(run.id, goal, match, agent=agent, sched=self)
+        result = agent.run(goal, task_id=run.id)
+        if getattr(result, "status", None) == "done":
+            try:
+                offer = compiler.offer(run.id)
+            except Exception:   # an offer is a nicety; it must never fail a finished task
+                offer = None
+            if offer is not None:
+                self.core.emit({"type": "learn_offer", "task_id": run.id, "goal": goal, "auto": offer == "auto"})
+                if offer == "auto":   # the same goal done before: learn it without asking
+                    self.core.learn(run.id, auto=True)
+        return result
+
+    @contextmanager
+    def browser(self):
+        """Lantern's one browser profile, for as long as the block runs; a task waiting for it parks."""
+        if not self._browser.acquire(blocking=False):
+            with self.parked("waiting_browser"):
+                self._browser.acquire()
+        try:
+            yield
+        finally:
+            self._browser.release()
 
     def recover(self) -> set[int]:
         """After a restart: take back every unfinished task with a saved state. Threads start in start()."""
@@ -231,6 +271,15 @@ class Scheduler:
             if task.status != "active":
                 memory.delete_task_state(task_id)
                 continue
+            if st.get("job") or (st.get("routine") and st.get("acted")):
+                # Learning: just say it again. A routine that had already submitted: never run it twice.
+                why = ("stopped by a restart; ask Lantern to learn it again" if st.get("job") else
+                       f"Lantern stopped while the routine '{st['routine']}' was running, after it had submitted "
+                       "something; nothing was repeated. Check the site before trying again.")
+                memory.log_step(task_id, "note", why)
+                memory.finish_task(task_id, "failed", why)
+                memory.delete_task_state(task_id)
+                continue
             keep.add(task_id)
             run = Run(task_id, task.goal, state=st if st.get("instructions") else None)
             with self._lock:
@@ -239,7 +288,7 @@ class Scheduler:
             if row["reason"] == "waiting_user" and st.get("ask"):
                 run.phase, run.reason, run.question = "parked", "waiting_user", st["ask"]
             elif run.state is None:
-                self._pending.append((run, lambda agent, g=task.goal, t=task_id: agent.run(g, task_id=t)))
+                self._pending.append((run, lambda agent, r=run, g=task.goal: self._goal(r, agent, g)))
             else:
                 self._pending.append((run, lambda agent, s=st, t=task_id: agent.resume(t, s)))
         return keep

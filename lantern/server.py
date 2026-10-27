@@ -114,6 +114,10 @@ class AnswerIn(BaseModel):
     answer: str
 
 
+class LearnIn(BaseModel):
+    task_id: int
+
+
 class ProfileIn(BaseModel):
     key: str
     value: str
@@ -202,6 +206,26 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     @app.get("/questions", dependencies=[Depends(auth)])
     def questions():
         return core.questions()
+
+    @app.get("/routines", dependencies=[Depends(auth)])
+    def routines():
+        return core.routines()
+
+    @app.post("/routines/learn", dependencies=[Depends(auth)])
+    def learn(body: LearnIn):
+        try:
+            return {"task_id": core.learn(body.task_id)}
+        except KeyError:
+            raise HTTPException(404, "no such task")
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/routines/{name}/forget", dependencies=[Depends(auth)])
+    def forget_routine(name: str):
+        try:
+            return {"forgot": core.forget_routine(name)}
+        except KeyError:
+            raise HTTPException(404, "no such routine")
 
     @app.get("/router", dependencies=[Depends(auth)])
     def router_table():

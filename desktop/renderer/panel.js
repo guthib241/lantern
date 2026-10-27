@@ -54,7 +54,7 @@
   }
 
   // ---- tabs ---------------------------------------------------------------------------------
-  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets,
+  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: () => { loadCosts(); loadRoutines(); }, widgets: loadWidgets,
                     setup: () => { loadSettings(); loadDoctor(); } };
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
@@ -139,6 +139,74 @@
           ? h('div', { class: 'row-btns' }, q.options.map((o) => h('button', { class: 'allow', onclick: () => answer(q, o) }, o)))
           : null,
         h('div', { class: 'row-btns' }, input, h('button', { class: 'allow', onclick: () => answer(q, input.value) }, 'Answer'))));
+    }
+  }
+
+  // ---- learned routines (S4): offers to learn a task, and the list with cost per run ------------------
+  const offers = new Map();   // task id -> goal, offered after a verified task
+
+  async function learn(taskId) {
+    offers.delete(taskId);
+    renderOffers();
+    try {
+      const r = await api.post('/routines/learn', { task_id: taskId });
+      toast(`Learning it as a routine (task #${r.task_id}).`);
+    } catch (e) {
+      toast(`Couldn't learn that one: ${e.message}`);
+    }
+  }
+
+  function renderOffers() {
+    const box = $('offers');
+    box.textContent = '';
+    for (const [taskId, goal] of offers) {
+      box.append(h('div', { class: 'approval offer', role: 'group', 'aria-label': `Learn task #${taskId}` },
+        h('div', { class: 'meta' }, h('span', {}, `#${taskId}`), h('span', {}, 'done and checked')),
+        h('h3', {}, 'Learn this?'),
+        h('p', { class: 'summary' }, `${goal} — next time it runs as a small program, with no model calls.`),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'deny', onclick: () => { offers.delete(taskId); renderOffers(); } }, 'Not now'),
+          h('button', { class: 'allow', onclick: () => learn(taskId) }, 'Learn this'))));
+    }
+  }
+
+  function routineChart(r) {   // SVG through DOM calls only
+    const NS = 'http://www.w3.org/2000/svg';
+    const d = LanternRoutines.chartData(r);
+    const svg = document.createElementNS(NS, 'svg');
+    for (const [k, v] of [['class', 'routine-chart'], ['viewBox', `0 0 ${d.w} ${d.h}`], ['width', d.w], ['height', d.h],
+                          ['role', 'img'], ['aria-label', d.label]]) svg.setAttribute(k, String(v));
+    for (const b of d.bars) {
+      const rect = document.createElementNS(NS, 'rect');
+      for (const [k, v] of [['class', b.cls], ['x', b.x], ['y', b.y], ['width', b.w], ['height', b.h], ['rx', 2]]) {
+        rect.setAttribute(k, String(v));
+      }
+      svg.append(rect);
+      if (b.heal) {
+        const mark = document.createElementNS(NS, 'path');
+        mark.setAttribute('class', 'heal');
+        mark.setAttribute('d', b.heal);
+        svg.append(mark);
+      }
+    }
+    return svg;
+  }
+
+  async function loadRoutines() {
+    const box = $('routines');
+    let list = [];
+    try { list = await api.get('/routines'); } catch (e) { list = []; }
+    box.textContent = '';
+    if (!list.length) {
+      box.append(h('p', { class: 'row muted' }, 'Nothing learned yet. After a task finishes and checks out, choose “Learn this”.'));
+      return;
+    }
+    for (const r of list) {
+      const chart = h('div', { class: 'chart' });
+      chart.append(routineChart(r));
+      box.append(h('div', { class: 'row routine' },
+        h('div', { class: 'grow' }, h('div', { class: 'title' }, r.title || r.name),
+          h('div', { class: 'sub' }, LanternRoutines.line(r))), chart));
     }
   }
 
@@ -573,6 +641,10 @@
     if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
     if (e.type === 'budget') toast(`Lantern has spent ${LanternAudit.money(e.spent_usd)} of its ${LanternAudit.money(e.limit_usd)} limit.`);
     if (e.type === 'done' || e.type === 'budget') loadCosts();
+    if (e.type === 'learn_offer' && !e.auto) { offers.set(e.task_id, e.goal || ''); renderOffers(); }
+    if (e.type === 'routine_learned' || e.type === 'routine_healed' || e.type === 'routines' ||
+        (e.type === 'done' && tab === 'costs')) loadRoutines();
+    if (e.type === 'routine_healed') toast(`The page had changed: healed ${(e.steps || []).length} step(s), now v${e.version}.`);
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
     $('conn').className = 'status ' + (up ? 'up' : 'down');

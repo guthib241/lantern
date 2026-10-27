@@ -306,6 +306,8 @@ class Recovery:
             if result.get("uncertain"):
                 return "needs_human"
             return "tool_error"
+        if result.get("advanced") and result.get("submitted"):
+            return None   # a multi-page form's middle page: accepted, moved on (no confirmation of its own)
         if result.get("verified") is False or result.get("done") is False:
             if result.get("reason") == "user declined":
                 return None   # the user said no: not a failure to work around (agent rules: no workarounds)
