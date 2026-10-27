@@ -53,6 +53,7 @@ Keep the persona on **Smug** for the replies; it's part of the character.
 - Lantern fills web forms in its own browser, sends emails, tidies folders, sets reminders, answers "which projects use torch?", and writes small sandboxed widgets.
 - Every change waits for your OK on the desktop or your phone, and the approval is bound to a hash of exactly what you saw.
 - Then Lantern checks the result on disk or in the app (form confirmation page, Sent folder) and says whether it's verified.
+- Changed your mind? **Undo** puts back every file a task moved: one tap, one approval, no model call.
 
 *How we built it, on Meta's models:*
 - **Muse Spark 1.3** runs the agent (Responses API, tools, `previous_response_id`, tool search for MCP tools).
@@ -70,10 +71,12 @@ Keep the persona on **Smug** for the replies; it's part of the character.
 - Hard stops for password / OTP / card / ID fields and CAPTCHAs.
 - Untrusted content (web pages, files, emails, MCP) is wrapped and can't give orders.
 - No deletes, and STOP from anywhere.
+- Spending limits checked before every model call ($150 total, $3 per task by default), so a runaway loop can't eat the credit.
 - Memory is encrypted at rest, and forgetting really deletes.
 
 *Challenges:*
 - Getting computer use reliable on custom widgets.
+- Making a Windows laptop behave like the Linux sandbox it was built in. Text files default to cp1252 there, and PowerShell saves `.env` as UTF-16. A test now refuses any file access without an explicit encoding.
 - Making approvals readable *and* binding.
 - Finding the bugs only an end-to-end run exposes. Examples: a secret at the start of a line slipping past a regex inside JSON; an email Message-ID that looked like a card number.
 
