@@ -25,6 +25,7 @@ in the browser can't drive Lantern through localhost.
   POST /tasks/resume                resume every task cut short when Lantern stopped (M20)
   GET  /reminders, POST /reminders/{id}/cancel   upcoming reminders (M18)
   GET  /doctor                      setup checklist with fixes (M21)
+  GET  /settings, POST /settings {persona}   preferences from the desktop (M27; saved next to memory.db)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   WS   /events?token=...            live events; every step carries a model badge
@@ -79,6 +80,10 @@ class DecisionIn(BaseModel):
 class ZoneIn(BaseModel):
     path: str
     zone: str
+
+
+class SettingsIn(BaseModel):
+    persona: str
 
 
 class CheckInIn(BaseModel):
@@ -156,6 +161,24 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    def settings_view() -> dict:
+        from .agent import PERSONAS
+        return {"persona": core.agent.persona, "personas": sorted(PERSONAS)}
+
+    @app.get("/settings", dependencies=[Depends(auth)])
+    def get_settings():
+        return settings_view()
+
+    @app.post("/settings", dependencies=[Depends(auth)])
+    def set_settings(body: SettingsIn):
+        from . import config as config_mod
+        from .agent import PERSONAS
+        if body.persona not in PERSONAS:
+            raise HTTPException(400, f"persona must be one of {', '.join(sorted(PERSONAS))}")
+        core.agent.persona = core.cfg.persona = body.persona   # the next task speaks this way
+        config_mod.save_setting("persona", body.persona, Path(core.cfg.db_path).parent)
+        return settings_view()
 
     @app.get("/doctor", dependencies=[Depends(auth)])
     def doctor():

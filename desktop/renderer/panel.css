@@ -277,3 +277,34 @@ table.rows td:last-child { text-align: right; color: var(--label-2); font-varian
 @media (prefers-contrast: more) {
   :root { --separator: rgba(0, 0, 0, .5); --label-2: rgba(0, 0, 0, .8); }
 }
+
+/* ---- segmented control ---- */
+.segmented { display: flex; flex: 1; padding: 2px; border-radius: 9px; background: var(--fill); }
+.segmented button { flex: 1; border: 0; background: transparent; border-radius: 7px; padding: 6px 4px; font-size: 13.5px; font-weight: 500;
+                    transition: background .2s var(--spring), box-shadow .2s var(--spring); }
+.segmented button[aria-checked="true"] { background: var(--card); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 0 0 .5px rgba(0, 0, 0, .04); }
+kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; border-radius: 6px; background: var(--fill); letter-spacing: .04em; }
+
+/* ---- welcome sheet ---- */
+.backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: end center; background: rgba(0, 0, 0, .28); animation: fade .25s ease; }
+.backdrop[hidden] { display: none; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet { width: 100%; max-height: 96vh; overflow-y: auto; background: var(--card); border-radius: 18px 18px 0 0; padding: 30px 24px 18px;
+         box-shadow: 0 -10px 40px rgba(0, 0, 0, .2); animation: up .42s var(--spring); }
+@keyframes up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.welcome { text-align: center; }
+.app-icon.big { width: 72px; height: 72px; border-radius: 17px; margin: 0 auto 14px; }
+.app-icon.big .ico { width: 44px; height: 44px; stroke-width: 1.5; }
+.welcome h1 { margin: 0 0 22px; font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+.features { list-style: none; margin: 0 0 24px; padding: 0; text-align: left; display: grid; gap: 18px; }
+.features li { display: flex; gap: 14px; align-items: flex-start; }
+.features .row-icon { width: 38px; height: 38px; border-radius: 10px; }
+.features .row-icon .ico { width: 22px; height: 22px; }
+.features b { display: block; font-size: 15px; }
+.features small { display: block; color: var(--label-2); font-size: 13.5px; line-height: 1.35; }
+.row-icon.green { background: var(--green); } .row-icon.purple { background: var(--purple); }
+.primary { width: 100%; height: 50px; border: 0; border-radius: 14px; font-size: 17px; font-weight: 600; color: #fff; background: var(--tint);
+           transition: transform .15s var(--spring), filter .15s; }
+.primary:hover { filter: brightness(1.06); }
+.primary:active { transform: scale(.98); }
+.welcome .row.link { margin-top: 4px; }

@@ -187,3 +187,19 @@ def test_zones_say_whether_each_path_exists(tmp_path):
     by_path = {z["path"]: z["exists"] for z in zones}
     assert by_path[str(root.resolve())] is True
     assert any(z["zone"] == "hidden" and z["exists"] is False for z in zones)   # other systems' defaults
+
+
+def test_settings_change_the_persona_and_are_remembered(tmp_path):
+    import json as _json
+    core, c, _ = make(tmp_path, [])
+    assert c.get("/settings", headers=H).json() == {"persona": "smug", "personas": ["helpful", "sarcastic", "smug"]}
+    assert c.post("/settings", json={"persona": "helpful"}, headers=H).json()["persona"] == "helpful"
+    assert core.agent.persona == "helpful" and "warm, upbeat" in core.agent.instructions()
+    saved = _json.loads((tmp_path / "config.json").read_text())   # next to memory.db, not the real ~/.lantern
+    assert saved == {"persona": "helpful"}
+    assert c.post("/settings", json={"persona": "rude"}, headers=H).status_code == 400
+    assert c.post("/settings", json={"persona": "smug"}).status_code == 401
+    from lantern import config as config_mod
+    import pytest as _pytest
+    with _pytest.raises(ValueError):
+        config_mod.save_setting("roots", ["/"], tmp_path)   # only allowlisted keys

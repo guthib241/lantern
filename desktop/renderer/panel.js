@@ -54,7 +54,8 @@
   }
 
   // ---- tabs ---------------------------------------------------------------------------------
-  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets, setup: loadDoctor };
+  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets,
+                    setup: () => { loadSettings(); loadDoctor(); } };
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
   function showTab(name) {
@@ -147,6 +148,45 @@
     });
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
     renderGlance();
+  }
+
+  // ---- welcome (first launch) and preferences ------------------------------------------------------
+  const keyName = (k) => k.replace('CommandOrControl', cfg.platform === 'darwin' ? '⌘' : 'Ctrl').replace(/Shift/, '⇧')
+    .replace(/\+/g, ' ');
+  if (cfg.askHotkey) {
+    $('kbd-ask').textContent = keyName(cfg.askHotkey);
+    $('welcome-ask').textContent = keyName(cfg.askHotkey);
+    $('kbd-stop').textContent = keyName('CommandOrControl+Shift+X');
+    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – 6';
+  }
+  function seen() {
+    try { return window.localStorage.getItem('lantern.welcomed') === '1'; } catch (e) { return false; }
+  }
+  function closeWelcome(then) {
+    try { window.localStorage.setItem('lantern.welcomed', '1'); } catch (e) { /* private storage: show again next time */ }
+    $('welcome').hidden = true;
+    if (then) then();
+  }
+  if (!seen()) $('welcome').hidden = false;
+  $('welcome-go').addEventListener('click', () => closeWelcome());
+  $('welcome-setup').addEventListener('click', () => closeWelcome(() => showTab('setup')));
+
+  const PERSONA_NAMES = { smug: 'Smug', sarcastic: 'Sarcastic', helpful: 'Helpful' };
+  async function loadSettings() {
+    let st;
+    try { st = await api.get('/settings'); } catch (e) { return; }
+    $('persona').replaceChildren(...st.personas.map((p) => h('button', {
+      role: 'radio', 'aria-checked': String(p === st.persona), type: 'button',
+      onclick: async () => {
+        try {
+          await api.post('/settings', { persona: p });
+          toast(`Lantern will be ${PERSONA_NAMES[p] || p} from the next task.`);
+        } catch (err) {
+          toast(`Couldn't change it: ${err.message}`);
+        }
+        loadSettings();
+      },
+    }, PERSONA_NAMES[p] || p)));
   }
 
   // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------

@@ -25,6 +25,7 @@ function createMock() {
   let nextTask = 1;
   const reminders = [];   // {id, text, due_at, due, repeat, status}
   let nextReminder = 1;
+  const settings = { persona: 'smug' };
 
   const now = () => Date.now() / 1000;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -199,6 +200,12 @@ function createMock() {
     'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
     'GET /reminders': () => reminders.filter((r) => r.status === 'pending'),
     'POST /tasks/resume': () => ({ task_ids: [] }),
+    'GET /settings': () => ({ persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] }),
+    'POST /settings': (b) => {
+      if (!['helpful', 'sarcastic', 'smug'].includes(b.persona)) return [400, { detail: 'unknown persona' }];
+      settings.persona = b.persona;
+      return { persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] };
+    },
     'GET /doctor': () => ({
       checks: [
         { id: 'python', title: 'Python 3.11+', status: 'ok', detail: '3.12.4', fix: '', needed_for: ['rehearsal', 'demo'] },

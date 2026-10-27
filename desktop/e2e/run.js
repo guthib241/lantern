@@ -58,7 +58,8 @@ async function main() {
 
     const args = [DESKTOP];
     if (process.getuid && process.getuid() === 0) args.push('--no-sandbox');   // containers run as root
-    app = await electron.launch({ executablePath: require('electron'), args, env: { ...env, LANTERN_API: api } });
+    app = await electron.launch({ executablePath: require('electron'), args,
+                                  env: { ...env, LANTERN_API: api, LANTERN_USER_DATA: path.join(tmp, 'electron-data') } });
     const pages = await until('both windows', async () => {
       const w = app.windows();
       const panel = w.find((p) => p.url().endsWith('panel.html'));
@@ -71,6 +72,11 @@ async function main() {
 
     await until('connected header', async () => /rehearsal/i.test(await panel.textContent('#conn')));
     check(true, 'panel connected to the real server and shows rehearsal mode');
+    await panel.waitForSelector('#welcome:not([hidden])', { timeout: 10000 });
+    await sleep(500);
+    await panel.screenshot({ path: path.join(OUT, '00-welcome.png') });
+    await panel.click('#welcome-go');
+    check(await panel.isHidden('#welcome'), 'first launch shows the welcome sheet; Continue dismisses it');
     const secure = await panel.evaluate(() => typeof require === 'undefined' && typeof process === 'undefined');
     check(secure, 'renderer has no Node access (sandbox + context isolation)');
 
@@ -203,6 +209,17 @@ async function main() {
     check(/→ home\/Downloads\/Images/.test(phone) && !/→ \//.test(phone), 'tidy card shows short paths, not /tmp/...');
     await panel.screenshot({ path: path.join(OUT, '5-phone.png') });
     await panel.click('.tabs button[data-tab=setup]');
+    await panel.click('#persona button >> text=Helpful');
+    const persona = await until('the persona to change', async () => {
+      const r = await fetch(`${api}/settings`, { headers: { 'X-Lantern-Token': fs.readFileSync(path.join(home, 'token'), 'utf8').trim() } });
+      const j = await r.json();
+      return j.persona === 'helpful' && j;
+    }, 10000);
+    const savedTo = path.join(tmp, 'rehearsal', 'config.json');
+    check(persona && JSON.parse(fs.readFileSync(savedTo, 'utf8')).persona === 'helpful',
+      'Preferences switch the personality and save it next to the rehearsal’s memory');
+    await until('the segmented control to update', async () =>
+      (await panel.getAttribute('#persona button >> text=Helpful', 'aria-checked')) === 'true', 5000);
     const checks = await until('the setup checks', async () => (await panel.$$('#doctor .check')).length);
     check(checks >= 10, `setup tab lists ${checks} checks`);
     await panel.screenshot({ path: path.join(OUT, '6-setup.png') });

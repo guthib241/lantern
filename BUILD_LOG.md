@@ -127,3 +127,9 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **Code and tests:** the main process follows Lantern's events over its own WebSocket. `lib/native.js` is pure and tested. Mock mode now keeps the platform settings, and the avatar's right-click menu gained "Ask Lantern…". The e2e checks "1 approval waiting", the badge, that it clears, and that no notification carries form values; a test keeps the committed tray PNGs identical to what the script draws.
   - 1 new Python test plus 1 desktop test; 352 passing.
 - Fix: the doctor and NEXT_SESSION told you to set `LANTERN_FORMS_PROTOCOL` / `LANTERN_FORMS_COORDS`, but `config.py` reads `LANTERN_CUA_PROTOCOL` / `LANTERN_CUA_COORDS`, so following the advice would silently have done nothing. Everything now uses the names config reads. `python scripts/smoke.py cua` ends with the exact `.env` line to paste, and a test checks that config picks that line up.
+- M27: Welcome and Preferences.
+  - **Welcome sheet:** on first launch, a native-style sheet slides up: what Lantern does, that it asks before anything changes, that private files stay on the computer, the Quick Ask shortcut. It has Continue and "Check this computer's setup".
+  - **Preferences:** the Setup tab gained a personality segmented control (Smug / Sarcastic / Helpful), saved through `POST /settings` into `config.json` next to `memory.db` (only allowlisted keys; under `--demo` that's the rehearsal's own folder). The next task uses it. A shortcuts list shows the right modifier keys for the platform.
+  - **e2e:** Electron app data can be isolated with `LANTERN_USER_DATA`. The e2e sees the welcome sheet, dismisses it, switches the personality and checks it was saved.
+  - **Also:** the calibration variable names were fixed (see above).
+  - 1 new Python test; 354 passing.

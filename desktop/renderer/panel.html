@@ -123,6 +123,19 @@
 
     <section data-panel="setup" aria-label="Setup">
       <div class="large-title"><p class="eyebrow">This computer</p><h1>Setup</h1></div>
+      <h2 class="section">Personality</h2>
+      <div class="group">
+        <div class="row"><div class="segmented" id="persona" role="radiogroup" aria-label="Lantern's personality"></div></div>
+      </div>
+      <p class="footnote" id="persona-note">How Lantern talks to you. It never changes what Lantern is allowed to do.</p>
+      <h2 class="section">Shortcuts</h2>
+      <div class="group">
+        <div class="row"><span class="row-text">Quick Ask</span><kbd id="kbd-ask">⌘ ⇧ Space</kbd></div>
+        <div class="row"><span class="row-text">Stop everything</span><kbd id="kbd-stop">⌘ ⇧ X</kbd></div>
+        <div class="row"><span class="row-text">Switch sections</span><kbd id="kbd-tabs">⌘ 1 – 6</kbd></div>
+      </div>
+      <p class="footnote">Appearance follows your system's light or dark mode.</p>
+      <h2 class="section">Setup check</h2>
       <div class="group">
         <div class="hero">
           <p class="hero-number small" id="ready-demo">…</p>
@@ -143,6 +156,25 @@
     <button role="tab" data-tab="widgets"><svg class="ico"><use href="#i-widgets"/></svg><span>Widgets</span></button>
     <button role="tab" data-tab="setup"><svg class="ico"><use href="#i-setup"/></svg><span>Setup</span></button>
   </nav>
+
+  <div id="welcome" class="backdrop" hidden>
+    <div class="sheet welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <div class="app-icon big" aria-hidden="true"><svg class="ico"><use href="#i-lantern"/></svg></div>
+      <h1 id="welcome-title">Welcome to Lantern</h1>
+      <ul class="features">
+        <li><span class="row-icon blue"><svg class="ico"><use href="#i-today"/></svg></span>
+          <div><b>Does the boring computer work</b><small>Forms, emails, files and reminders, by asking in plain words, here or from your phone.</small></div></li>
+        <li><span class="row-icon orange"><svg class="ico"><use href="#i-bell"/></svg></span>
+          <div><b>Asks before anything changes</b><small>Every send, submit or move waits for your OK, bound to exactly what you saw.</small></div></li>
+        <li><span class="row-icon green"><svg class="ico"><use href="#i-privacy"/></svg></span>
+          <div><b>Keeps your private folder private</b><small>Private files are read only by the model on this computer. Privacy shows what left.</small></div></li>
+        <li><span class="row-icon purple"><svg class="ico"><use href="#i-search"/></svg></span>
+          <div><b>Always within reach</b><small><span id="welcome-ask">⌘ ⇧ Space</span> opens Quick Ask anywhere. The island above Lantern shows each step.</small></div></li>
+      </ul>
+      <button class="primary" id="welcome-go">Continue</button>
+      <button class="row link" id="welcome-setup">Check this computer's setup</button>
+    </div>
+  </div>
 
   <div id="toast" class="toast" role="status" hidden></div>
 

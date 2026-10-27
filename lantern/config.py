@@ -54,6 +54,24 @@ PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_p
                "envmap_path", "widgets_dir", "mcp_config")
 
 
+SETTABLE = ("persona",)   # what the desktop's Preferences may change
+
+
+def save_setting(key: str, value, home: str | Path) -> Path:
+    """Write one preference into <home>/config.json (merged, written atomically). home is the folder
+    that holds Lantern's memory: ~/.lantern normally, the rehearsal's own folder under --demo."""
+    if key not in SETTABLE:
+        raise ValueError(f"{key} can't be set from the app")
+    path = Path(home).expanduser() / "config.json"
+    data = json.loads(path.read_text()) if path.exists() else {}
+    data[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    tmp.replace(path)
+    return path
+
+
 def _flag(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 

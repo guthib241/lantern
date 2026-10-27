@@ -33,3 +33,5 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 - [x] M24 Live activity pill: Dynamic-Island-style status for the avatar with inline Allow / Deny
 - [x] M25 Quick Ask: Spotlight-style bar on a global hotkey, native vibrancy / acrylic
 - [x] M26 Native integration: menu bar icon and menu, notifications for approvals and reminders, badge count
+- [x] M27 First-run welcome sheet and Preferences (personality picker saved next to memory, shortcuts list)
+- [ ] M28 Submission kit: shot-by-shot video script, architecture slide, write-up

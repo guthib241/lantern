@@ -9,6 +9,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const MOCK = process.argv.includes('--mock') || process.env.LANTERN_MOCK === '1';
+// Separate app data (window state, the welcome flag, widget storage) for tests and rehearsals.
+if (process.env.LANTERN_USER_DATA) app.setPath('userData', process.env.LANTERN_USER_DATA);
 const STOP_HOTKEY = 'CommandOrControl+Shift+X';
 const ASK_HOTKEY = 'CommandOrControl+Shift+Space';
 // Native glass behind Quick Ask: macOS vibrancy, Windows 11 acrylic. Elsewhere the page draws its own surface.

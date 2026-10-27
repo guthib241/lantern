@@ -78,3 +78,4 @@
   - **Reminders:** always notify; they're the user's own words.
   - **Successes:** no notification; the island shows them.
   - **Event source:** the main process follows the event stream itself (Node 24's built-in WebSocket) instead of relaying through a renderer, which Chromium throttles while hidden.
+- Oct 27 (M27): Preferences are saved into `config.json` beside `memory.db`, the same folder `config.load()` reads. A rehearsal therefore writes into its own temp folder and never into the user's real `~/.lantern`. Only allowlisted keys (`persona`) can be written from the app, so a compromised renderer can't change roots, zones or models through it. `LANTERN_PERSONA` in the environment still wins at startup. The "welcome seen" flag lives in the app's local storage: a per-machine convenience, and losing it only shows the sheet again.
