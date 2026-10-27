@@ -80,6 +80,15 @@ async function main() {
     const secure = await panel.evaluate(() => typeof require === 'undefined' && typeof process === 'undefined');
     check(secure, 'renderer has no Node access (sandbox + context isolation)');
 
+    // a second launch (same user data) hands over to the running app and exits: no second tray, no lost hotkeys
+    const second = spawn(require('electron'), args, { env: { ...env, LANTERN_API: api, LANTERN_USER_DATA: path.join(tmp, 'electron-data') },
+                                                      stdio: 'ignore' });
+    const code = await new Promise((resolve) => {
+      const t = setTimeout(() => { second.kill(); resolve('still running'); }, 15000);
+      second.on('exit', (c) => { clearTimeout(t); resolve(c); });
+    });
+    check(code === 0, `a second launch exits and leaves the running Lantern in charge (exit ${code})`);
+
     async function ask(goal) {
       await panel.fill('#goal', goal);
       await panel.click('#ask button[type=submit]');

@@ -224,3 +224,7 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - CLI and script prints use `errors="replace"`, so a piped cp1252 console can't crash on ✓ or 🏮
   - **Keeping it fixed:** `tests/test_portability.py` parses every module and fails on any text-mode open, `read_text`, `write_text` or text subprocess without an explicit encoding. Run against the previous commit, it finds all 27. Zone matching was already safe: it compares `Path` objects, and `WindowsPath` is case-insensitive.
   - 3 new tests; 393 passing.
+- Desktop on Windows:
+  - **AppUserModelID:** set on win32. Unpackaged, Electron's path is the ID; packaged, `app.lantern.desktop`. Without it Windows may drop the approval and reminder notifications.
+  - **One instance:** a single-instance lock, so a second launch hands over to the running app (shows the panel) and exits instead of adding a second tray icon and losing the global shortcuts. The lock follows `LANTERN_USER_DATA`, so tests and rehearsals stay isolated.
+  - **Checks:** the e2e now launches a second copy and checks it exits; a static test checks the setup order. 394 passing.

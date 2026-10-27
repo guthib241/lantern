@@ -225,7 +225,16 @@ function startNative() {
   refresh();
 }
 
+// One Lantern per user: a second launch (double-clicked shortcut, autostart plus a manual start) would add a
+// second tray icon and lose the global shortcuts. It shows the running panel instead.
+const firstInstance = app.requestSingleInstanceLock();
+if (!firstInstance) app.quit();
+app.on('second-instance', () => togglePanel(true));
+// Windows shows notifications only for an app with an AppUserModelID; unpackaged, Electron's own path is the ID.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.lantern.desktop' : process.execPath);
+
 app.whenReady().then(async () => {
+  if (!firstInstance) return;
   lockDown();
   if (MOCK) {
     const mock = await require('./mock/server.js').start(Number(process.env.LANTERN_MOCK_PORT || 8766));

@@ -31,6 +31,15 @@ def test_renderers_are_locked_down():
         assert ".innerHTML" not in (DESKTOP / "renderer" / script).read_text(), script
 
 
+def test_one_instance_and_windows_notifications():
+    main = (DESKTOP / "main.js").read_text(encoding="utf-8")
+    lock = main.index("requestSingleInstanceLock()")
+    assert main.index("app.setPath('userData'") < lock          # the lock follows LANTERN_USER_DATA (tests, rehearsals)
+    assert "app.on('second-instance', () => togglePanel(true))" in main
+    assert "if (!firstInstance) return;" in main
+    assert "app.setAppUserModelId(" in main and "process.platform === 'win32'" in main
+
+
 def test_tray_icons_are_ours_and_up_to_date():
     import importlib.util
     spec = importlib.util.spec_from_file_location("make_tray_icons", DESKTOP.parent / "scripts" / "make_tray_icons.py")
