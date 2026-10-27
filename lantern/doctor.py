@@ -133,7 +133,7 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     if not url:
         add(Check("glimmer", "Private lane (Muse Glimmer)", WARN,
                   "not set: questions about private files are refused until it is",
-                  "Serve Muse Glimmer with llama.cpp (llama-server ... --port 8080), then set "
+                  "Serve Muse Glimmer with llama.cpp (llama-server ... --port 8080; see docs/GLIMMER.md), then set "
                   "LANTERN_GLIMMER_URL=http://127.0.0.1:8080/v1"))
     else:
         from .router import lane_for_url

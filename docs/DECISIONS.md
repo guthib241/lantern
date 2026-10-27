@@ -86,3 +86,4 @@
   - **Taint is broad on purpose.** Names that come from disk (file names, project folders, package scripts) can be chosen by whoever made the files, so they count as untrusted text. A tidy-up therefore asks for a full Review rather than a one-tap Allow. That costs a tap and buys a guarantee.
   - **MCP goals.** Goals from other programs are marked `[mcp]` and treated the same way.
   - **Symlinks.** They are never moved; moving one would act on what it points to.
+- Oct 27: Supersedes the M4 note "default mode is `fake`": without `LANTERN_GLIMMER_URL` the private lane is now `off` and refuses. `docs/GLIMMER.md` is the laptop walkthrough (2-bit GGUF, llama-server on 127.0.0.1:8080, partial GPU offload). It leaves the exact download to dev.meta.ai's Glimmer page rather than guessing a link.
