@@ -127,6 +127,19 @@ def _units(x: float, y: float) -> str:
     return "unclear"
 
 
+def recommend(native: str, function: str) -> str:
+    """The .env line for what the calibration found (names as lantern/config.py reads them)."""
+    if native == "pixel":
+        return "LANTERN_CUA_PROTOCOL=native"
+    if native == "normalized":
+        return "LANTERN_CUA_PROTOCOL=native LANTERN_CUA_COORDS=normalized"
+    if function == "normalized":
+        return "LANTERN_CUA_PROTOCOL=function"
+    if function == "pixel":
+        return "LANTERN_CUA_PROTOCOL=function LANTERN_CUA_COORDS=pixel"
+    return "neither protocol clicked the button: paste this whole line into the session"
+
+
 def check_cua() -> str:
     import json as _json
     from lantern.forms.computer import CUA_RULES, FUNCTION_EXTRA, FUNCTION_TOOLS, NATIVE_TOOL, call_actions, data_url, parse_action
@@ -138,13 +151,14 @@ def check_cua() -> str:
     goal = [{"role": "user", "content": [{"type": "input_text", "text": "Click the orange OK button."},
                                          {"type": "input_image", "image_url": shot}]}]
     report = []
+    native_units = function_units = "none"
     try:
         r = client().responses.create(model=model, instructions=CUA_RULES, input=goal, tools=[NATIVE_TOOL])
         calls = [o for o in r.output if getattr(o, "type", "") == "computer_call"]
         acts = [a for c in calls for a in call_actions(c) if a["kind"] == "click"]
         raw = [getattr(c, "model_dump", lambda **k: c)(exclude_none=True) for c in calls]
-        units = _units(acts[0]["x"], acts[0]["y"]) if acts else "no click"
-        report.append(f"native: {units} {_json.dumps(raw, default=str)[:300]}")
+        native_units = _units(acts[0]["x"], acts[0]["y"]) if acts else "no click"
+        report.append(f"native: {native_units} {_json.dumps(raw, default=str)[:300]}")
     except Exception as e:
         report.append(f"native: rejected ({type(e).__name__}: {str(e)[:120]})")
     r = client().responses.create(model=model, instructions=CUA_RULES + FUNCTION_EXTRA, input=goal,
@@ -152,10 +166,11 @@ def check_cua() -> str:
     fcs = [o for o in r.output if getattr(o, "type", "") == "function_call" and o.name == "computer.computer"]
     if fcs:
         a = parse_action(_json.loads(fcs[0].arguments))
-        report.append(f"function: {_units(a.get('x', -1), a.get('y', -1))} {fcs[0].arguments[:120]}")
+        function_units = _units(a.get('x', -1), a.get('y', -1))
+        report.append(f"function: {function_units} {fcs[0].arguments[:120]}")
     else:
         report.append("function: no computer.computer call")
-    return f"{model}: " + " | ".join(report)
+    return f"{model}: " + " | ".join(report) + f"  →  put in .env: {recommend(native_units, function_units)}"
 
 
 CHECKS = {

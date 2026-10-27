@@ -48,7 +48,7 @@ The remaining work is **laptop-side bring-up with real keys, calibration against
 
 ## Not yet verified against the real API (do these first, with the key)
 1. `python scripts/smoke.py`: Spark, Wonder, Image, Voice and SAM each make one call. Fix any request-shape mismatch where it lives (`computer.py`, `voice.py`, `sam.py`, `avatar.py`), never in tests.
-2. `python scripts/smoke.py cua`: confirms which computer-use protocol the API accepts (native `computer` tool vs the cookbook's `computer.computer` functions) and whether coordinates are pixels or 0..1000. Set `LANTERN_FORMS_PROTOCOL` / `LANTERN_FORMS_COORDS` from its output.
+2. `python scripts/smoke.py cua`: confirms which computer-use protocol the API accepts (native `computer` tool vs the cookbook's `computer.computer` functions) and whether coordinates are pixels or 0..1000. It ends with the exact `LANTERN_CUA_PROTOCOL=… LANTERN_CUA_COORDS=…` line to put in `.env`.
 3. Tool search with deferred MCP tools: run once with a small `~/.lantern/mcp.json`. The shape was taken from search snippets of `/docs/tool-search`, because the page itself was unreachable.
 4. One real `--serve` run of the full story with `LANTERN_FORMS_MODEL=muse-wonder-1.0`. Note the real cost from `python -m lantern --usage` and put it in the README's "Cost so far".
 

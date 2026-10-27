@@ -128,3 +128,24 @@ def test_smoke_skips_without_key(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert out.count("SKIP") == len(smoke.CHECKS) == 7
     assert smoke.tiny_png().startswith(b"\x89PNG")
+
+
+def test_cua_calibration_prints_the_env_line_config_reads(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    from lantern import config as config_mod
+    spec = importlib.util.spec_from_file_location("smoke", Path(__file__).parent.parent / "scripts" / "smoke.py")
+    smoke = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(smoke)
+    assert smoke.recommend("pixel", "normalized") == "LANTERN_CUA_PROTOCOL=native"
+    assert smoke.recommend("normalized", "none") == "LANTERN_CUA_PROTOCOL=native LANTERN_CUA_COORDS=normalized"
+    assert smoke.recommend("rejected", "normalized") == "LANTERN_CUA_PROTOCOL=function"
+    assert smoke.recommend("no click", "pixel") == "LANTERN_CUA_PROTOCOL=function LANTERN_CUA_COORDS=pixel"
+    assert "paste" in smoke.recommend("unclear", "unclear")
+    # the printed names are the ones config.load() actually reads
+    for line in ("LANTERN_CUA_PROTOCOL=function LANTERN_CUA_COORDS=pixel",):
+        for pair in line.split():
+            k, v = pair.split("=")
+            monkeypatch.setenv(k, v)
+    cfg = config_mod.load()
+    assert (cfg.forms_protocol, cfg.forms_coords) == ("function", "pixel")

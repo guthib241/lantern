@@ -34,7 +34,7 @@ def env(vars, which=("ffmpeg", "node", "cloudflared"), modules=True, glimmer_up=
     return e, probed
 
 
-READY = {"MODEL_API_KEY": KEY, "LANTERN_FORMS_MODEL": "muse-wonder-1.0", "LANTERN_FORMS_PROTOCOL": "native",
+READY = {"MODEL_API_KEY": KEY, "LANTERN_FORMS_MODEL": "muse-wonder-1.0", "LANTERN_CUA_PROTOCOL": "native",
          "LANTERN_GLIMMER_URL": "http://127.0.0.1:8080/v1", "LANTERN_CHANNELS": "whatsapp",
          "WHATSAPP_TOKEN": "t" * 40, "WHATSAPP_PHONE_NUMBER_ID": "123", "WHATSAPP_APP_SECRET": "s" * 32,
          "WHATSAPP_VERIFY_TOKEN": "v", "LANTERN_WHATSAPP_OWNER": "919900000000", "LANTERN_EMAIL_MODE": "smtp",
