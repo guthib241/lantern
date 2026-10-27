@@ -177,6 +177,16 @@
     </div>
   </div>
 
+  <div id="receipt" class="backdrop" hidden>
+    <div class="sheet receipt" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+      <p class="eyebrow" id="receipt-eyebrow">Receipt</p>
+      <h1 id="receipt-title"></h1>
+      <div id="receipt-body"></div>
+      <p class="footnote">From Lantern's own records: the task log, the audit log of every call and the cost meter. No model wrote this.</p>
+      <button class="primary" id="receipt-done">Done</button>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="../assets/avatar/manifest.js"></script>
@@ -187,6 +197,7 @@
   <script src="lib/api.js"></script>
   <script src="lib/setup.js"></script>
   <script src="lib/today.js"></script>
+  <script src="lib/receipt.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

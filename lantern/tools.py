@@ -68,6 +68,8 @@ class Toolbox:
         self.tainted = False
         self.untrusted_emails = set()
         self.task_id = task_id
+        if self.router is not None and hasattr(self.router, "set_task"):
+            self.router.set_task(task_id)
         if goal.startswith(EXTERNAL_PREFIX):   # written by another program, not typed by the user
             self._saw_untrusted(goal)
 

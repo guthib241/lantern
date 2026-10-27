@@ -54,6 +54,7 @@ Keep the persona on **Smug** for the replies; it's part of the character.
 - Every change waits for your OK on the desktop or your phone, and the approval is bound to a hash of exactly what you saw.
 - Then Lantern checks the result on disk or in the app (form confirmation page, Sent folder) and says whether it's verified.
 - Changed your mind? **Undo** puts back every file a task moved: one tap, one approval, no model call.
+- Every task has a **receipt**: what changed and whether it was checked, what you approved (with the payload hash), every byte that left and where, all from Lantern's own logs.
 
 *How we built it, on Meta's models:*
 - **Muse Spark 1.3** runs the agent (Responses API, tools, `previous_response_id`, tool search for MCP tools).

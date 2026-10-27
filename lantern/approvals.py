@@ -115,8 +115,8 @@ class ApprovalBus:
             if due:
                 a.status = EXPIRED
         if due:
-            a._event.set()
             self._emit("expired", a)
+            a._event.set()
 
     def decide(self, approval_id: str, nonce: str, approve: bool, *, by: str = "user",
                expected_hash: str | None = None) -> Approval:
@@ -132,8 +132,10 @@ class ApprovalBus:
                 raise ApprovalError("the action changed since it was shown; ask again")
             a.status = APPROVED if approve else DENIED
             a.decided_by, a.decided_at = by, self.clock()
-        a._event.set()
+        # Listeners hear the decision before the waiting task wakes and uses it, so every record of it
+        # (the receipt, the phone, the panel) sees "approved"/"denied" first and "used" after.
         self._emit("decided", a)
+        a._event.set()
         return a
 
     def wait(self, approval_id: str, timeout: float | None = None) -> bool:
@@ -164,8 +166,8 @@ class ApprovalBus:
                 if a.status != PENDING:   # answered in the meantime
                     continue
                 a.status, a.decided_by, a.decided_at = DENIED, reason, self.clock()
-            a._event.set()
             self._emit("decided", a)
+            a._event.set()
             n += 1
         return n
 

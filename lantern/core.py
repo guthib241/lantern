@@ -165,6 +165,11 @@ class Core:
         self.emit(event)
 
     def _approval_event(self, kind: str, approval) -> None:
+        if kind in ("decided", "expired", "used") and self.current_task is not None:   # for the task's receipt
+            self.memory.log_step(self.current_task, "approval", {
+                "id": approval.id, "event": kind, "action": approval.action, "summary": approval.summary,
+                "payload_hash": approval.payload_hash, "status": approval.status, "by": approval.decided_by,
+                "tainted": approval.tainted})
         self.emit({"type": "approval", "event": kind, "approval": approval.public(include_nonce=(kind == "requested")),
                    "task_id": self.current_task})
 

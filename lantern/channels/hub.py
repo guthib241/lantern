@@ -6,6 +6,7 @@ Incoming, from the owner only (everyone else is ignored and counted):
   "status"      -> what Lantern is doing
   "resume"      -> run the tasks cut short when Lantern stopped
   "undo"        -> put back the files the last task moved (one approval, no model call)
+  "receipt [N]" -> the last finished task's receipt (or task N's): changes, checks, approvals, data sent, cost
   voice note    -> download -> ffmpeg 16 kHz WAV -> Muse Voice Transcribe (biased toward the
                    names Lantern knows) -> handled like text, with the transcript echoed back
   button tap    -> approve / deny / show an approval. Button ids carry the approval's nonce
@@ -40,9 +41,11 @@ STOP = re.compile(r"^\W*/?stop\b", re.I)
 STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
+RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
-         "resume, or undo (puts back the files the last task moved). Approvals arrive here as buttons.")
+         "resume, undo (puts back the files the last task moved), or receipt (proof of what the last task did). "
+         "Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
 
@@ -190,6 +193,8 @@ class ChannelHub:
                 self.origin[task_id] = ch.name
             return self.say(ch.name, f"🏮 Resuming {len(new_ids)} task{'s' if len(new_ids) != 1 else ''} "
                                      f"(#{', #'.join(map(str, new_ids))})." if new_ids else "Nothing to resume.")
+        if m := RECEIPT.match(t):
+            return self.say(ch.name, self._receipt(int(m.group(1)) if m.group(1) else None))
         if UNDO_WORDS.match(t):
             try:
                 task_id = self.core.undo_last()
@@ -200,6 +205,18 @@ class ChannelHub:
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
+
+    def _receipt(self, task_id: int | None) -> str:
+        from ..receipt import as_text, build
+        if task_id is None:
+            done = [t for t in self.core.memory.recent_tasks(10) if t.status not in ("active",)]
+            if not done:
+                return "No finished tasks yet, so no receipt."
+            task_id = done[0].id
+        try:
+            return as_text(build(self.core.memory, self.core.audit, task_id))
+        except KeyError:
+            return f"There's no task #{task_id}."
 
     def _status(self) -> str:
         cur = self.core.current_task

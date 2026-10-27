@@ -76,6 +76,10 @@ class OpenAIGlimmer:
             client = OpenAI(base_url=url, api_key=api_key, timeout=120, max_retries=1)
         self.client = GuardedClient(client, audit, lane=self.lane, destination=url) if audit else client
 
+    def set_task(self, task_id: int | None) -> None:
+        if isinstance(self.client, GuardedClient):
+            self.client.set_task(task_id)
+
     def ask(self, system: str, user: str) -> str:
         try:
             r = self.client.chat.completions.create(
@@ -104,12 +108,17 @@ class FakeGlimmer:
     def __init__(self, audit: AuditLog | None = None):
         self.audit = audit
         self.calls: list[tuple[str, str]] = []
+        self.task_id: int | None = None
+
+    def set_task(self, task_id: int | None) -> None:
+        self.task_id = task_id
 
     def ask(self, system: str, user: str) -> str:
         self.calls.append((system, user))
         if self.audit:
             self.audit.record(lane="local", destination="fake://glimmer", endpoint="chat.completions",
-                              model="muse-glimmer-fake", payload=(system + user).encode(), preview=user)
+                              model="muse-glimmer-fake", payload=(system + user).encode(), preview=user,
+                              task_id=self.task_id)
         question, _, doc = user.partition("\n<document>\n")
         doc = doc.rsplit("\n</document>", 1)[0]
         words = {w for w in re.findall(r"[a-z0-9]+", question.lower()) if len(w) > 2}
@@ -169,6 +178,11 @@ class Router:
     def __init__(self, policy: Policy, backend: Backend):
         self.policy = policy
         self.backend = backend
+
+    def set_task(self, task_id: int | None) -> None:
+        """Tag the private lane's audit rows with the task, so its receipt counts them and forgetting it removes them."""
+        if hasattr(self.backend, "set_task"):
+            self.backend.set_task(task_id)
 
     def lane_for(self, path: str) -> str:
         """Which lane may see this file's contents: 'private' or 'cloud'."""

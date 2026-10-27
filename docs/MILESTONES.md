@@ -39,3 +39,4 @@ Tags: ☁ can be fully built and tested in Claude Code on the web. 💻 final st
 ## While waiting for the key (requested: "keep improving until I send the key")
 - [x] M29 Undo: one tap (or "undo" typed or sent from the phone) puts back what a task moved. It runs from the task's own verified move log through one approval card, with no model call
 - [x] M30 Spending limits enforced in code: total ($150), per task ($3) and optional daily, checked before every model call. Refused calls never leave and are never retried; a ledger that forgetting doesn't reset; Costs tab and `--doctor` show them
+- [x] M31 Task receipts: what a task changed and checked, what you approved (with payload hashes), what left and where, redactions, local-lane questions, cost, built from Lantern's own records. On the desktop (Receipt sheet), the phone ("receipt") and the CLI (`--receipt`)

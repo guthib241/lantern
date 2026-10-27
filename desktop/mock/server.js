@@ -248,6 +248,16 @@ function createMock() {
         emit({ type: 'forgot', task_id: Number(f[1]) });
         return send(200, { forgot_task: Number(f[1]) });
       }
+      const rt = url.pathname.match(/^\/tasks\/(\d+)\/receipt$/);
+      if (rt && req.method === 'GET' && req.headers['x-lantern-token'] === TOKEN) {   // same shape as lantern/receipt.py
+        const t = tasks.find((x) => x.id === Number(rt[1]));
+        if (!t) return send(404, { detail: 'no such task' });
+        return send(200, { task: { id: t.id, goal: t.goal, status: t.status, summary: t.summary }, actions: [], looked: 1,
+                           checked: 0, unchecked: 0, approvals: [], cost_usd: t.usage.cost_usd,
+                           models: [{ model: 'muse-spark-1.3', badge: 'Muse Spark', calls: t.usage.calls, cost_usd: t.usage.cost_usd }],
+                           sent: [{ lane: 'cloud', to: "Meta's API", simulated: true, kinds: ['model'], calls: t.usage.calls, bytes: 4096,
+                                    redactions: {} }], left_bytes: 0, stayed_local: 0, redactions: {}, text: '' });
+      }
       const rc = url.pathname.match(/^\/reminders\/(\d+)\/cancel$/);
       if (rc && req.method === 'POST' && req.headers['x-lantern-token'] === TOKEN) {
         const r = reminders.find((x) => x.id === Number(rc[1]));

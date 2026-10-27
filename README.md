@@ -126,6 +126,7 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
 - **Hard stops:** Lantern never types into password, OTP, card, CVV, PIN or government-ID fields, and stops at CAPTCHAs ("you do this part").
 - **Untrusted content:** anything read from files, web pages, emails or MCP is wrapped as untrusted data. Once it's in context, every risky tool needs approval, and instructions inside it are ignored.
 - **Verified, or it says so:** every action checks its result on disk or via the API and reports `verified: true/false`.
+- **A receipt for every task:** tap **Receipt** on a task (or send "receipt" from your phone, or `lantern --receipt 12`). It shows what changed and whether each change was checked, what you approved (and the payload hash it was bound to), every byte that left and where it went, what was redacted, what stayed on the local lane, and the cost. It's built from Lantern's own logs, never written by a model.
 - **Other rules:** Lantern never deletes. The server listens on 127.0.0.1 only, with a token. **STOP** (button, Ctrl/Cmd+Shift+X, or the word STOP on WhatsApp) cancels everything.
 - **Encrypted memory, real forgetting:** memory and the audit log are encrypted on disk with a key in your OS keychain. "Forget" overwrites the rows and rebuilds the database file.
 

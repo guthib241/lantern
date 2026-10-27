@@ -273,6 +273,14 @@ class Memory:
         return dict(row)
 
     @_locked
+    def task_usage_by_model(self, task_id: int) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT model, COUNT(*) AS calls, SUM(input_tokens) AS input_tokens, SUM(cached_tokens) AS cached_tokens,"
+            " SUM(output_tokens) AS output_tokens, SUM(cost_usd) AS cost_usd FROM usage WHERE task_id = ?"
+            " GROUP BY model ORDER BY model", (task_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    @_locked
     def usage_by_model(self, since: float = 0.0) -> list[dict]:
         rows = self.db.execute(
             "SELECT model, COUNT(*) AS calls, SUM(input_tokens) AS input_tokens,"

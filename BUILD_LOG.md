@@ -257,3 +257,20 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
     - a server you started yourself is used as is; `LANTERN_NO_AUTOSTART=1` opts out
   - **Checks:** the e2e launches the app with no server running and checks three things: the panel reaches the server it started, quitting stops that server, and the log was kept.
   - **Docs:** the README, desktop README and submission checklist now say `npm start` / `npm run rehearsal`.
+- M31 Task receipts.
+  - **What it shows:** `lantern/receipt.py` builds a task's receipt from the task's steps, approval outcomes, the audit rows for the task and its usage:
+    - each change with whether it was checked on disk or via the API
+    - lookups counted, not itemised
+    - each approval: what it asked, approved or denied, where (desktop, WhatsApp, the simulated phone), used once, the payload hash
+    - every destination with bytes, call count and kind (model / email / message / voice / MCP)
+    - what was redacted, private-lane questions that stayed local, and cost per model
+  - **Honest about stand-ins:** rehearsal and fake modes say "Would have sent … Simulated: nothing actually left" instead of claiming data left.
+  - **Where you see it:**
+    - the desktop: a **Receipt** button on every finished task opens a sheet (Escape closes it; passes axe)
+    - the phone: "receipt" / "receipt 12"
+    - the CLI: `--receipt 12`
+    - the API: `GET /tasks/{id}/receipt`, with a `text` version
+  - **What changed underneath:**
+    - Core now logs approval outcomes (decided / expired / used) as encrypted task steps.
+    - **Fix found on the way:** the private lane's audit rows weren't tagged with their task, so "forget this task" left them behind. Each row keeps a 300-character preview of the question and document, encrypted. The router now tags them (`Router.set_task`, called from `Toolbox.begin_task`), so they show on the receipt and go with the task.
+  - **Tests:** 5 new tests, 1 desktop test, e2e checks on the main form task's receipt.

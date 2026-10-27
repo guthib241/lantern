@@ -200,6 +200,7 @@ def main(argv=None) -> None:
     p.add_argument("goal", nargs="*", help="what you want done")
     p.add_argument("--tasks", action="store_true", help="list recent tasks")
     p.add_argument("--task", type=int, help="show one task's full timeline")
+    p.add_argument("--receipt", type=int, metavar="TASK", help="a task's receipt: changes, checks, approvals, data sent, cost")
     p.add_argument("--memory", action="store_true", help="show remembered facts")
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
     p.add_argument("--zones", action="store_true", help="show privacy zones")
@@ -242,6 +243,12 @@ def main(argv=None) -> None:
         return print_tasks(mem)
     if a.task:
         return print_task(mem, a.task)
+    if a.receipt:
+        from .receipt import as_text, build
+        try:
+            return print(as_text(build(mem, AuditLog(cfg.audit_path, mem.cipher), a.receipt)))
+        except KeyError:
+            sys.exit(f"No task #{a.receipt}.")
     if a.usage:
         return print_usage(mem)
     if a.audit:

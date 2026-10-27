@@ -8,6 +8,7 @@ in the browser can't drive Lantern through localhost.
   POST /task         {goal}         queue a task -> {task_id}
   GET  /tasks                       recent tasks with status, summary, cost
   GET  /tasks/{id}                  one task with its step timeline
+  GET  /tasks/{id}/receipt          what it changed and checked, what you approved, what left, what it cost
   GET  /approvals                   pending approvals (with nonce, for the approval card)
   POST /approvals/{id} {nonce, approve, expected_hash?}
   POST /stop                        kill switch
@@ -164,6 +165,15 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         view["steps"] = core.memory.steps(task_id)
         return view
 
+    @app.get("/tasks/{task_id}/receipt", dependencies=[Depends(auth)])
+    def task_receipt(task_id: int):
+        from .receipt import as_text, build
+        try:
+            r = build(core.memory, core.audit, task_id)
+        except KeyError:
+            raise HTTPException(404, "no such task")
+        return {**r, "text": as_text(r)}
+
     @app.post("/tasks/resume", dependencies=[Depends(auth)])
     def resume_tasks():
         return {"task_ids": core.resume()}
@@ -234,7 +244,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
                                 expected_hash=body.expected_hash)
         except ApprovalError as e:
             raise HTTPException(409, str(e))
-        return a.public()
+        # The decision itself: by the time this returns, the task may already have used the approval.
+        return {**a.public(), "status": "approved" if body.approve else "denied"}
 
     @app.post("/stop", dependencies=[Depends(auth)])
     def stop():

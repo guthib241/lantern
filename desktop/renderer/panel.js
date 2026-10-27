@@ -147,6 +147,7 @@
           t.undoneBy ? h('span', { class: 'undone' }, `Undone in #${t.undoneBy}`) : null,
           ['failed', 'cancelled', 'interrupted'].includes(t.status)
             ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
+          !live ? h('button', { class: 'forget', onclick: () => showReceipt(t.id) }, 'Receipt') : null,
           !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)));
     });
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
@@ -272,6 +273,33 @@
       toast(`Couldn't retry: ${e.message}`);
     }
   }
+
+  // ---- receipts: what a task changed and checked, what you approved, what left, what it cost --------
+  let receiptFrom = null;   // the button that opened the sheet gets focus back
+  async function showReceipt(id) {
+    try {
+      const v = LanternReceipt.view(await api.get(`/tasks/${id}/receipt`));
+      $('receipt-eyebrow').textContent = `Receipt · task #${id} · ${v.status}`;
+      $('receipt-title').textContent = v.title;
+      $('receipt-body').replaceChildren(...v.sections.flatMap((sec) => [
+        h('h2', {}, sec.title),
+        h('ul', {}, sec.rows.map((r) => h('li', { class: r.tone }, h('span', { class: 'mark', 'aria-hidden': 'true' }, r.mark),
+          h('div', {}, h('b', {}, r.text), r.detail ? h('small', {}, r.detail) : null))))]));
+      receiptFrom = document.activeElement;
+      $('receipt').hidden = false;
+      document.querySelector('#receipt .sheet').scrollTop = 0;   // open at the title
+      $('receipt-done').focus({ preventScroll: true });
+    } catch (e) {
+      toast(`Couldn't load the receipt: ${e.message}`);
+    }
+  }
+  function closeReceipt() {
+    $('receipt').hidden = true;
+    if (receiptFrom && receiptFrom.focus) receiptFrom.focus();
+  }
+  $('receipt-done').addEventListener('click', closeReceipt);
+  $('receipt').addEventListener('click', (e) => { if (e.target === $('receipt')) closeReceipt(); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('receipt').hidden) closeReceipt(); });
 
   async function undoTask(id) {
     try {

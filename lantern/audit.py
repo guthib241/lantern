@@ -95,9 +95,15 @@ class AuditLog:
         return row
 
     def entries(self, since: float = 0.0, limit: int = 200) -> list[dict]:
-        rows = self.db.execute(
-            "SELECT * FROM audit WHERE ts >= ? ORDER BY id DESC LIMIT ?", (since, limit)
-        ).fetchall()
+        return self._decoded(self.db.execute(
+            "SELECT * FROM audit WHERE ts >= ? ORDER BY id DESC LIMIT ?", (since, limit)).fetchall())
+
+    def for_task(self, task_id: int) -> list[dict]:
+        """Every call made for one task, oldest first (for its receipt)."""
+        return self._decoded(self.db.execute(
+            "SELECT * FROM audit WHERE task_id = ? ORDER BY id", (task_id,)).fetchall())
+
+    def _decoded(self, rows) -> list[dict]:
         out = []
         for r in rows:
             d = dict(r)

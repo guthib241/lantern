@@ -17,7 +17,7 @@
   /* Text in colour meets WCAG AA (4.5:1) at these small sizes; the system colours above stay for fills and dots. */
   --label-2: rgba(60, 60, 67, .8);
   --tint-text: #0062cc; --red-text: #d70015; --orange-text: #a05a00; --green-text: #1f7a37;
-  --tint-fill: #0a6ed1; --red-fill: #d70015;   /* white text sits on these */
+  --tint-fill: #0a6ed1; --red-fill: #d70015; --green-fill: #1f7a37;   /* white text sits on these */
   --shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px rgba(0, 0, 0, .06);
   --radius: 12px;
   --spring: cubic-bezier(.2, .8, .2, 1);
@@ -315,3 +315,18 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; borde
 .primary:hover { filter: brightness(1.06); }
 .primary:active { transform: scale(.98); }
 .welcome .row.link { margin-top: 4px; }
+
+/* ---- receipt sheet ---- */
+.receipt h1 { margin: 0 0 14px; font-size: 21px; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; }
+.receipt h2 { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--label-2); text-transform: uppercase; letter-spacing: .02em; }
+.receipt ul { list-style: none; margin: 0; padding: 0; border-radius: var(--radius); background: var(--fill); overflow: hidden; }
+.receipt li { display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px; }
+.receipt li + li { border-top: .5px solid var(--separator); }
+.receipt .mark { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px;
+                 font-weight: 700; color: #fff; background: var(--gray); }
+.receipt .good .mark { background: var(--green-fill); } .receipt .bad .mark { background: var(--red-fill); }
+.receipt .info .mark { background: var(--tint-fill); }
+.receipt .quiet .mark { background: transparent; color: var(--label-2); box-shadow: inset 0 0 0 1.5px var(--label-3); }
+.receipt li b { display: block; font-weight: 600; font-size: 14.5px; }
+.receipt li small { display: block; color: var(--label-2); font-size: 12.5px; word-break: break-word; }
+.receipt .footnote { margin: 14px 2px 14px; }

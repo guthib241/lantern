@@ -168,6 +168,18 @@ async function main() {
     await panel.screenshot({ path: path.join(OUT, '1-form-verified.png') });
     const island = await until('the island', async () => (await avatar.textContent('#island-text')).trim());
     check(/Done/.test(island), `live activity island reports: “${island}” (${(await avatar.textContent('#island-detail')).slice(0, 50)}…)`);
+    // the receipt: proof of what the task did, from Lantern's own records
+    await panel.click('#tasks .task .actions button >> text=Receipt');
+    await panel.waitForSelector('#receipt:not([hidden])', { timeout: 10000 });
+    await sleep(450);
+    const receipt = await panel.textContent('#receipt');
+    check(/Submitted a form\s*checked/.test(receipt) && /Sent an email\s*checked/.test(receipt) && /Submit the form/.test(receipt)
+          && /simulated: nothing actually left/.test(receipt) && /bound to [0-9a-f]{12}/.test(receipt),
+          'the receipt lists the checked changes, the approvals with their hashes, and what (would have) left');
+    await panel.screenshot({ path: path.join(OUT, '1-receipt.png') });
+    violations = violations.concat(await a11y(panel, 'receipt sheet'));
+    await panel.keyboard.press('Escape');
+    check(await panel.isHidden('#receipt'), 'Escape closes the receipt');
     await avatar.screenshot({ path: path.join(OUT, '1-avatar.png') });
     await avatar.locator('.stage').screenshot({ path: path.join(OUT, '1-island-cut.png'), omitBackground: true });
 

@@ -1,7 +1,7 @@
 # Handoff: from "all milestones built" to "submitted"
 
 State (Oct 27, session 4, waiting for the key):
-- **M0–M30 are all done** on branch `claude/determined-gates-ubpm6u`, PR https://github.com/guthib241/lantern/pull/2 (supersedes #1).
+- **M0–M31 are all done** on branch `claude/determined-gates-ubpm6u`, PR https://github.com/guthib241/lantern/pull/2 (supersedes #1).
   - M18–M22, extras: reminders, tidy a folder, resume after restart, `lantern --doctor`, packaging + CI.
   - M23–M28, design pass:
     - an Apple-style panel (light/dark, Today view, approval sheet with a field table)
@@ -16,7 +16,15 @@ State (Oct 27, session 4, waiting for the key):
     - **`docs/GLIMMER.md`**, the laptop walkthrough for the private lane.
     - **M29 Undo:** the Undo button, or "undo" typed or sent from the phone. It replays the task's own move log backwards with one approval and no model call.
     - **M30 Spending limits** enforced in code before every model call: $150 total, $3 per task, optional daily; see `.env.example`.
-- **Tests:** 390 Python tests plus 26 desktop node tests. They include `desktop/e2e/run.js`, which drives the **real Electron app** against the real server in rehearsal mode (needs `cd desktop && npm install`, plus Xvfb on a headless Linux).
+    - **Windows pass:** explicit UTF-8 for all text I/O (enforced by `tests/test_portability.py`), exact newlines, safe console, `.env` in any encoding (PowerShell writes UTF-16), PowerShell quick start, single-instance lock and AppUserModelID in Electron.
+    - **Accessibility:** axe-core WCAG 2.1 AA runs inside the e2e (all tabs, light and dark, Quick Ask, island, receipt sheet); 0 violations; text and fill colour tokens are split.
+    - **One command:** `cd desktop && npm start` starts and stops `lantern --serve` itself (`npm run rehearsal` for `--demo`).
+    - **M31 Task receipts** (`lantern/receipt.py`, `GET /tasks/{id}/receipt`, `lantern --receipt N`, "receipt" on the phone, Receipt sheet on the desktop).
+      - Core now logs approval outcomes per task.
+      - The private lane's audit rows are now tagged with their task, so "forget task" removes them; before this they were left behind.
+      - Approval listeners now hear "decided" before the waiting task wakes. The HTTP decide route returns the decision itself, which fixes a race where it could return "used".
+- **⚠ First thing next session:** the last commit (receipts + approval ordering) was pushed when the user stopped the full test run, before it completed. Before that change, 400 of 401 passed; the one failure was the race fixed in that commit. After the fix, these were run: the server, approval, receipt and channel tests (54 passed), the race tests 25× (all green), the desktop node tests (27 passed) and the e2e (passed). **Run the full `python -m pytest -q`, pyflakes and `cd desktop && npm test` first** and fix anything red before new work.
+- **Tests:** about 401 Python tests plus 27 desktop node tests. They include `desktop/e2e/run.js`, which drives the **real Electron app** against the real server in rehearsal mode (needs `cd desktop && npm install`, plus Xvfb on a headless Linux).
 - **CI:** GitHub Actions jobs are refused by the account's Actions or billing settings, not by the code. Run the checks by hand before every push.
 - **Visibility:** the user chose to keep the repo private. CLAUDE.md and the hackathon rules ask for a public repo, so check the submission requirements with the user before submitting.
 - **Real API:** nothing has been called against the real Meta API yet ($0 of $150). The cloud sandbox's network blocks `api.meta.ai`; the user will provide the key (laptop, or allow the domain and add `MODEL_API_KEY` to this environment).

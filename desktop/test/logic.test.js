@@ -203,6 +203,30 @@ test('costs: spent against the limits Lantern enforces', () => {
   assert.equal(spend(undefined), 'model calls only');
 });
 
+test('receipt: what it did, what you approved, what left, what it cost', () => {
+  const R = require('../renderer/lib/receipt.js');
+  const v = R.view({
+    task: { id: 1, goal: 'Fill the form\n[Resuming…]', status: 'done' }, looked: 1,
+    actions: [{ what: 'Submitted a form', verified: true, note: '' }, { what: 'Sent an email', verified: false, note: 'user declined' }],
+    approvals: [{ asked: 'Submit the form', status: 'approved', where: 'on WhatsApp', used: true, payload_hash: 'ab'.repeat(32) }],
+    sent: [{ lane: 'cloud', to: "Meta's API", simulated: false, kinds: ['model'], calls: 6, bytes: 283000, redactions: {} },
+           { lane: 'local', to: '127.0.0.1', simulated: false, kinds: ['model'], calls: 1, bytes: 900, redactions: {} }],
+    redactions: { aws_access_key: 1 }, cost_usd: 0.0412, models: [{ badge: 'Muse Spark', calls: 4 }, { badge: 'Muse Wonder', calls: 2 }],
+  });
+  assert.equal(v.title, 'Fill the form');
+  assert.deepEqual(v.sections.map((s) => s.title), ['What it did', 'What you approved', 'What left this laptop', 'Cost']);
+  assert.deepEqual(v.sections[0].rows.map((r) => [r.mark, r.text, r.detail]), [
+    ['✓', 'Submitted a form', 'checked'], ['✗', 'Sent an email', 'user declined'],
+    ['·', 'Looked something up', 'reading and searching; nothing changed']]);
+  assert.equal(v.sections[1].rows[0].detail, `approved on WhatsApp · used once · bound to ${'ab'.repeat(6)}`);
+  assert.deepEqual(v.sections[2].rows.map((r) => r.text), ["276 KB to Meta's API", '1 question to the private lane', 'Redacted before sending']);
+  assert.equal(v.sections[2].rows[1].detail, 'stayed on this computer');
+  assert.deepEqual(v.sections[3].rows[0], { tone: 'quiet', mark: '$', text: '$0.04', detail: 'Muse Spark ×4, Muse Wonder ×2' });
+  const empty = R.view({ task: { goal: 'hi', status: 'done' }, looked: 0, actions: [], approvals: [], sent: [], redactions: {},
+                         cost_usd: 0, models: [] });
+  assert.deepEqual(empty.sections.map((s) => s.rows[0].text), ['Nothing changed', 'Nothing', '$0.00']);
+});
+
 test('setup check: failures first, fixes only where needed, a plain readiness line', () => {
   const Setup = require('../renderer/lib/setup.js');
   const v = Setup.view({
