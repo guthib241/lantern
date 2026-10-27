@@ -32,7 +32,7 @@ MAX_READ_CHARS = 20_000
 MAX_RESULTS = 50
 TEXT_EXTS = {
     ".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".html", ".css",
-    ".yaml", ".yml", ".toml", ".ini", ".log", ".xml", ".tex", ".rst",
+    ".yaml", ".yml", ".toml", ".ini", ".log", ".xml", ".tex", ".rst", ".eml",
 }
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".cache"}
 
@@ -732,5 +732,12 @@ TOOL_SPECS = [
         "card or ID numbers.",
         {"question": S, "options": {"type": "array", "items": S, "description": "Up to 5 short choices, if it is a choice"}},
         ["question"]),
+    _fn("ask_reader", "Learn something from content you hold a handle for ($doc1, $h2). A reader with no tools reads it "
+        "and answers in the type you ask: yes_no, choice (give options), number, date (YYYY-MM-DD) or text (text comes "
+        "back as a new handle). It also says whether the content tried to give instructions (never followed).",
+        {"doc": {**S, "description": "A handle, e.g. $doc1"}, "question": S,
+         "answer_type": {"type": "string", "enum": ["yes_no", "choice", "number", "date", "text"]},
+         "options": {"type": "array", "items": S, "description": "The choices, for answer_type choice"}},
+        ["doc", "question", "answer_type"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

@@ -55,3 +55,21 @@ test('steps show the ladder rung that did them', () => {
   assert.deepEqual(s.tasks[4].steps.map((x) => x.badge), ['Muse Spark · low', 'Rule']);
   assert.equal(s.usage.byBadge['Muse Spark · low'].calls, 1);
 });
+
+test('a red-tier approval is never one tap; its flags show as warnings', () => {
+  const C = require('../renderer/lib/cards.js');
+  const A = require('../renderer/lib/activity.js');
+  const base = { id: 'a1', nonce: 'n', payload_hash: 'f'.repeat(64), created_at: 1, expires_at: 999, tainted: false };
+  const red = { ...base, action: 'send_email', tier: 'red', summary: 'Send to rahul@example.com' };
+  const yellow = { ...base, id: 'a2', action: 'write_file', tier: 'yellow', summary: 'Save notes.txt' };
+  const flagged = { ...base, id: 'a3', action: 'send_email', tier: 'red',
+    summary: "Send to x@evil.example  ⚠ The recipient 'x@evil.example' came from file:notes.txt, not from you: approve only if you meant it." };
+  assert.equal(C.card(red, 2).tierName, 'Sends, submits or runs');
+  let s = run([{ type: 'approval', event: 'requested', approval: red, ts: 2 }]);
+  assert.equal(A.activity(s, 3).quickAllow, false);
+  s = run([{ type: 'approval', event: 'requested', approval: yellow, ts: 2 }]);
+  assert.equal(A.activity(s, 3).quickAllow, true);
+  const card = C.card(flagged, 2);
+  assert.equal(card.warnings.length, 1);
+  assert.match(card.warnings[0], /came from file:notes\.txt/);
+});

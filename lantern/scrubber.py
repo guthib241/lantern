@@ -90,6 +90,12 @@ SECRET_PATTERNS = [
     _p("password_assignment",
        r"(?i)\b(?:password|passwd|pwd|passphrase|secret|api[_\-]?key|access[_\-]?token|auth[_\-]?token|"
        r"client[_\-]?secret|private[_\-]?key)\b[\"']?\s*[:=]\s*[\"']?([^\s\"',;]{6,})", group=1),
+    # S0: env-style names (LANTERN_DEMO_API_KEY=..., DB_PASSWORD=...): the \b above can't see a word after "_"
+    _p("env_secret", r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_(?:API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASS|PWD)\b\s*[:=]\s*"
+                     r"[\"']?([^\s\"',;]{6,})", group=1),
+    # S0: one-time codes and card security codes after their label ("last OTP: 482913", "CVV 123")
+    _p("one_time_code", r"(?i)\b(?:OTP|one[- ]time (?:password|passcode|code)|verification code|security code|CVV|"
+                        r"CVC)\b\s*(?:is|:|=|-|#)?\s*(\d{3,8})(?!\d)", group=1),
 ]
 
 PII_PATTERNS = [

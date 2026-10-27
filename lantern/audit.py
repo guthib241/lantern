@@ -10,12 +10,17 @@ private content is allowed there: lane="local" never leaves the machine,
 lane="selfhosted" goes to the user's own server (e.g. Modal) and is shown separately.
 
 The UI's "What left my laptop today" view is `AuditLog.summary(since=today)`.
+
+S0: a GuardedClient can be given `deny`, the task's private and secret values (labels.Handles.deny). A cloud
+request that contains one is refused before it is recorded or sent: private content never reaches a cloud model,
+whatever the model or a tool did with it.
 """
 from __future__ import annotations
 
 import datetime as dt
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -24,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from . import models
+from .reliability import UserFacingError
 from .scrubber import DEFAULT, Scrubber, scrub_payload
 
 SCHEMA = """
@@ -65,6 +71,10 @@ def _plain(obj: Any) -> Any:
     if isinstance(obj, dict):
         return {k: _plain(v) for k, v in obj.items()}
     return obj
+
+
+class EgressBlocked(UserFacingError):
+    """A cloud request would have carried a private value (S0). The message is meant for the user."""
 
 
 class AuditLog:
@@ -184,6 +194,7 @@ class GuardedClient:
         self.destination = destination
         self.scrubber = scrubber
         self.task_id: int | None = None
+        self.deny = None   # () -> strings that must never leave on the cloud lane (S0); None: no such list
         if hasattr(client, "responses"):
             self.responses = _Endpoint(self, client.responses, "responses")
         if hasattr(client, "chat"):
@@ -203,9 +214,25 @@ class GuardedClient:
                     kw[name], _ = scrub_payload(self.scrubber, _plain(kw[name]), found)
         return kw, found
 
+    def _carries(self, text: str) -> bool:
+        """Does this request body hold a denied value: as it is, as JSON writes it, or as the scrubber left it?"""
+        for value in self.deny():
+            if not value:
+                continue
+            forms = {value, json.dumps(value, ensure_ascii=False)[1:-1]}
+            scrubbed = self.scrubber.scrub(value).text
+            if len(re.sub(r"\[REDACTED:[a-z_]+\]", "", scrubbed).strip()) >= 6:   # not only placeholders
+                forms.add(scrubbed)
+            if any(f in text for f in forms if len(f) >= 4):
+                return True
+        return False
+
     def _send(self, target: Any, endpoint: str, kw: dict):
         sent, found = self.prepare(kw)
         body = canonical_bytes({k: v for k, v in sent.items() if k != "stream"})
+        if self.lane == "cloud" and self.deny is not None and self._carries(body.decode("utf-8", "replace")):
+            raise EgressBlocked("Lantern stopped a request that would have carried private content to a cloud "
+                                "model. Nothing was sent.")
         preview_src = sent.get("input", sent.get("messages", ""))
         preview = preview_src if isinstance(preview_src, str) else json.dumps(preview_src, default=str)
         self.audit.record(lane=self.lane, destination=self.destination, endpoint=endpoint,

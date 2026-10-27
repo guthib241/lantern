@@ -51,7 +51,7 @@ BUILTIN_FORMS = {
     "reimbursement": "reimbursement.html",
     "demo traps": "traps.html",
 }
-CONFIRM_SELECTORS = ("#confirmation", "[data-confirmation]", "[data-testid=confirmation]")
+CONFIRM_SELECTORS = ("#confirmation", "[data-confirmation]", "[data-testid=confirmation]", "[data-reference]")
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 

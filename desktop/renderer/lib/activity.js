@@ -36,7 +36,8 @@
       const a = pending[0];
       const card = cards.card(a, now);
       return { mode: 'approval', text: card.title, badge: pending.length > 1 ? `+${pending.length - 1}` : '',
-               approval: a, card, quickAllow: !card.untrusted && !card.warnings.length && !card.expired,
+               approval: a, card,
+               quickAllow: !card.untrusted && !card.warnings.length && !card.expired && card.tier !== 'red',
                detail: card.fields ? `${card.lead} · ${card.fields.length} fields` : card.summary };
     }
     const since = (t) => (t ? now - t : Infinity);

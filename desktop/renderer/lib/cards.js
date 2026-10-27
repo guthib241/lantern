@@ -19,7 +19,11 @@
     set_reminder: 'Set this reminder?',
     cancel_reminder: 'Cancel this reminder?',
     mcp_call: "Use another program's tool?",
+    run_routine: 'Run this learned routine?',
+    open_untrusted_url: 'Open this address?',
   };
+  // S0 risk tiers (lantern/security.py): red never gets a one-tap Allow.
+  const TIER_NAMES = { green: 'Read only', yellow: 'Reversible change', red: 'Sends, submits or runs' };
   const UNTRUSTED_MARK = '[after reading untrusted content]';
 
   function mmss(seconds) {
@@ -50,6 +54,8 @@
       warnings,
       leftForYou: left ? left[1].split(/,\s*/) : [],
       untrusted,
+      tier: approval.tier || '',
+      tierName: TIER_NAMES[approval.tier] || '',
       expired: remaining <= 0,
       expiresIn: mmss(remaining),
       hash: String(approval.payload_hash || '').slice(0, 12),

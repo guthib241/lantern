@@ -339,3 +339,8 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; borde
 .routine-chart rect.run { fill: var(--tint, #0a64d6); }
 .routine-chart rect.failed { fill: var(--red-text, #c4271c); }
 .routine-chart .heal { fill: var(--green-text, #1b7f3b); }
+
+/* S0 risk tiers on approval cards */
+.approval .tier { font-weight: 600; }
+.approval .tier.red { color: var(--red-text, #d70015); }
+.approval .tier.yellow { color: var(--orange-text, #a05a00); }

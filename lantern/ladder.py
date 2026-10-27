@@ -74,6 +74,7 @@ CAN: dict[str, tuple[int, ...]] = {
     "compile": (3, 4),     # S4: a task's step log -> a routine contract and its code
     "repair": (3, 4),      # S4: re-target one failed routine step
     "match": (3,),         # S4: which routine a goal means, when the words alone don't say
+    "read": (2, 3),        # S0: the Reader (no tools): the private lane for private content, else Spark low
 }
 TOOL_KINDS = {
     "list_folders": "lookup", "list_dir": "lookup", "search_files": "lookup", "read_file": "lookup",
@@ -81,7 +82,7 @@ TOOL_KINDS = {
     "write_file": "file_op", "move_file": "file_op", "organize_files": "file_op", "undo_moves": "file_op",
     "remember": "file_op", "forget": "file_op", "set_reminder": "file_op", "cancel_reminder": "file_op",
     "run_in_project": "file_op", "send_email": "file_op", "ask_private": "extract", "fill_form": "form_fill",
-    "make_widget": "generate",
+    "make_widget": "generate", "ask_reader": "read",
 }
 
 

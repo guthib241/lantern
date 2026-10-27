@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS spend (             -- dollars per local day, for the
     day TEXT PRIMARY KEY,                      -- YYYY-MM-DD; no tasks, no content: kept when you forget things
     cost_usd REAL NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS quoted_tasks (      -- tasks whose summary quotes untrusted content (S0): kept out of
+    task_id INTEGER PRIMARY KEY                -- later briefings, so a file or page can't speak to the model later
+);
 CREATE TABLE IF NOT EXISTS task_state (        -- what the scheduler needs to resume an unfinished task (scheduler.py)
     task_id INTEGER PRIMARY KEY,
     phase TEXT NOT NULL,                       -- queued | running | parked
@@ -90,6 +93,7 @@ CREATE TABLE IF NOT EXISTS ladder_stats (      -- model ladder outcomes (ladder.
 """
 
 PRIVATE_SUMMARY = "(answered from a private file; the details stay on this computer)"
+QUOTED_SUMMARY = "(the summary quotes a file, page or email; not repeated here)"
 TASK_STATUSES = {"active", "done", "failed", "cancelled", "interrupted", "resumed"}
 
 
@@ -347,6 +351,7 @@ class Memory:
         counts = {table: self.db.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,)).rowcount
                   for table in ("steps", "usage", "reminders")}
         self.db.execute("DELETE FROM private_tasks WHERE task_id = ?", (task_id,))
+        self.db.execute("DELETE FROM quoted_tasks WHERE task_id = ?", (task_id,))
         self.db.execute("DELETE FROM task_state WHERE task_id = ?", (task_id,))
         counts["tasks"] = self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount
         self._vacuum()
@@ -357,6 +362,7 @@ class Memory:
         counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount
                   for table in ("steps", "usage", "tasks", "facts", "reminders")}
         self.db.execute("DELETE FROM private_tasks")
+        self.db.execute("DELETE FROM quoted_tasks")
         self.db.execute("DELETE FROM task_state")
         self.db.execute("DELETE FROM ladder_stats")
         self.db.execute("DELETE FROM sqlite_sequence")
@@ -436,8 +442,10 @@ class Memory:
         lines.append("\n## Recently finished")
         finished = [t for t in self.recent_tasks(task_limit) if t.status != "active"]
         private = self._private_task_ids()
+        quoted = {r[0] for r in self.db.execute("SELECT task_id FROM quoted_tasks").fetchall()}
         lines += [
             (f"- #{t.id} [{t.status}] {t.goal} -> {PRIVATE_SUMMARY}" if t.id in private else
+             f"- #{t.id} [{t.status}] {t.goal} -> {QUOTED_SUMMARY}" if t.id in quoted else
              f"- #{t.id} [{t.status}] {t.goal} -> {t.summary or ''}".rstrip(" ->"))
             for t in finished
         ] or ["- (none)"]
@@ -449,6 +457,12 @@ class Memory:
         """This task used the private lane: its summary may hold what Glimmer read, so the
         briefing (sent to the cloud with every later request) shows only that it happened."""
         self.db.execute("INSERT OR IGNORE INTO private_tasks (task_id) VALUES (?)", (task_id,))
+        self.db.commit()
+
+    @_locked
+    def mark_quoted(self, task_id: int) -> None:
+        """This task's summary quotes untrusted content (S0): later briefings show only that it happened."""
+        self.db.execute("INSERT OR IGNORE INTO quoted_tasks (task_id) VALUES (?)", (task_id,))
         self.db.commit()
 
     @_locked

@@ -22,6 +22,7 @@ slots gives the scheduling the spec asks for without rewriting them (docs/DECISI
 from __future__ import annotations
 
 import dataclasses
+import os
 import threading
 import time
 from collections import deque
@@ -88,8 +89,8 @@ class TaskGate(Gate):
     def __init__(self, sched: "Scheduler", bus: ApprovalBus, timeout: float | None = None):
         self.sched, self.bus, self.timeout = sched, bus, timeout
 
-    def ask(self, action, summary, payload, tainted=False):
-        a = self.bus.request(action, summary, payload, tainted)
+    def ask(self, action, summary, payload, tainted=False, **meta):
+        a = self.bus.request(action, summary, payload, tainted, **meta)
         with self.sched.parked("waiting_approval", approval_id=a.id, summary=summary[:200]):
             ok = self.bus.wait(a.id, self.timeout)
         if not ok:
@@ -179,6 +180,8 @@ class Scheduler:
         self.retry = dict(retry or {})        # RetryingClient options (tests make backoff fast)
         self.recovery_limits = None           # recovery.Limits (tests make waits short)
         self.ladder = Ladder(core.memory)     # S3: which rung does each kind of step well
+        # S0: the Planner/Reader split and labels (security.py). LANTERN_READER=off only to compare, never by default.
+        self.reader_split = os.environ.get("LANTERN_READER", "on").strip().lower() != "off"
         self.runs: dict[int, Run] = {}
         self.closing = threading.Event()
         self._lock = threading.RLock()
@@ -356,10 +359,18 @@ class Scheduler:
         limit = core.budget.limits.task
         ladder = TaskLadder(self.ladder, budget_left=lambda: None if limit is None else
                             limit - core.memory.task_usage(run.id)["cost_usd"])
-        toolbox = Toolbox(core.policy, core.memory, TaskGate(self, core.bus, self.approval_timeout),
-                          router=_PrivateLane(core.router, self._private, run.id),
-                          forms=_SharedBrowser(core.forms, self, client, ladder) if core.forms is not None else None,
-                          email=core.email, envmap=core.envmap, widgets=core.widgets, mcp=core.mcp)
+        lane = _PrivateLane(core.router, self._private, run.id)
+        parts = dict(router=lane, forms=_SharedBrowser(core.forms, self, client, ladder) if core.forms is not None else None,
+                     email=core.email, envmap=core.envmap, widgets=core.widgets, mcp=core.mcp)
+        gate = TaskGate(self, core.bus, self.approval_timeout)
+        if self.reader_split:   # S0: the planner never sees raw untrusted content; private values never leave
+            from .reader import Reader
+            from .security import GuardedToolbox
+            reader = Reader(client, core.memory, task_id=run.id, router=lane, ladder=ladder, emit=core.emit)
+            toolbox = GuardedToolbox(core.policy, core.memory, gate, reader=reader, **parts)
+            guarded.deny = toolbox.handles.deny
+        else:
+            toolbox = Toolbox(core.policy, core.memory, gate, **parts)
         toolbox.client = client
         toolbox.command_runner = getattr(core.toolbox, "command_runner", None)
         toolbox.on_event = events

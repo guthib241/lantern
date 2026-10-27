@@ -91,7 +91,8 @@
     for (const a of LanternState.pendingList(state)) {
       const c = LanternCards.card(a, now());
       box.append(h('div', { class: 'approval', role: 'alertdialog', 'aria-label': c.title },
-        h('div', { class: 'meta' }, h('span', {}, `#${c.id}`), h('span', {}, c.expired ? 'expired' : `expires in ${c.expiresIn}`)),
+        h('div', { class: 'meta' }, h('span', {}, `#${c.id}`), c.tierName ? h('span', { class: `tier ${c.tier}` }, c.tierName) : null,
+          h('span', {}, c.expired ? 'expired' : `expires in ${c.expiresIn}`)),
         h('h3', {}, c.title),
         c.fields
           ? [h('p', { class: 'summary lead' }, c.lead),

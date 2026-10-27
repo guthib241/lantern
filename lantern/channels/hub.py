@@ -443,7 +443,8 @@ class ChannelHub:
                 while len(self._finished) > 50:
                     self._finished.pop(next(iter(self._finished)))
             if name and event.get("status") != "cancelled":  # STOP already got its own reply
-                reply = (event.get("reply") or event.get("summary") or "").strip()
+                # S0: a reply that quotes private content goes out with that part kept on the computer
+                reply = (event.get("reply_public") or event.get("reply") or event.get("summary") or "").strip()
                 status = event.get("status")
                 if status == "failed" and not reply:
                     reply = f"That didn't work: {event.get('summary', '')}"

@@ -28,6 +28,7 @@ from .agent import Agent, Result
 from .tools import AskUser, ToolError
 
 STATE_VERSION = 1
+PRIVATE_SHOWN = "‹private: shown on your computer›"   # what a channel gets instead of a private value (S0)
 
 
 class Parked(BaseException):
@@ -70,13 +71,47 @@ class ResumableAgent(Agent):
         self.kind_now = "plan"
         self._turn_meta: tuple | None = None               # (kind, rung, seconds, cost) of the latest call
         self._tool_seconds = 0.0
+        self._public: tuple | None = None                  # S0: (summary, reply) without private values
         inner = self.on_event
 
         def on_event(kind: str, data: dict) -> None:       # usage events carry the rung for the model badge
             if kind == "usage" and self.rung_now is not None:
                 data = {**data, "rung": self.rung_now.n, "rung_badge": self.rung_now.badge, "kind": self.kind_now}
+            if kind == "done" and self._public is not None:   # channels get the copy without private values
+                data = {**data, "summary_public": self._public[0], "reply_public": self._public[1]}
             inner(kind, data)
         self.on_event = on_event
+
+    def instructions(self) -> str:
+        """With the S0 toolbox, the planner is also told how handles work (a fixed block: the prefix stays cacheable)."""
+        from .agent import BASE_RULES
+        from .security import S0_RULES
+        base = super().instructions()
+        return base.replace(BASE_RULES, BASE_RULES + S0_RULES, 1) if hasattr(self.toolbox, "handles") else base
+
+    def _finish(self, task_id: int, status: str, summary: str, reply: str, step: int, calls_made: list) -> Result:
+        """Handles in the reply are filled in for the user's own screen only (S0). The stored summary is the filled
+        one, but a task whose summary quotes private or untrusted content is kept out of later briefings."""
+        handles = getattr(self.toolbox, "handles", None)
+        self._public = None
+        if handles is not None:
+            shown_reply, lab_r, used_r = handles.expand(reply)
+            shown_summary, lab_s, used_s = handles.expand(summary)
+            if used_r or used_s:
+                label = lab_r.join(lab_s)
+                self._public = (handles.expand(summary, private_as=PRIVATE_SHOWN)[0],
+                                handles.expand(reply, private_as=PRIVATE_SHOWN)[0])
+                if label.confidential:
+                    self.memory.mark_private(task_id)
+                elif label.untrusted:
+                    self.memory.mark_quoted(task_id)
+            reply, summary = shown_reply, shown_summary
+        self.memory.log_step(task_id, "reply", reply)
+        self.memory.finish_task(task_id, status, summary)
+        try:
+            return self._result(task_id, status, summary, reply, step, calls_made)
+        finally:
+            self._public = None
 
     def _model(self, task_id: int, kind: str, rung: Any = None, **kw):
         """One model call on the ladder's rung for this kind of step (or the agent's model without a ladder)."""
@@ -124,6 +159,8 @@ class ResumableAgent(Agent):
         state["untrusted_emails"] = sorted(getattr(self.toolbox, "untrusted_emails", set()) or set())
         if self.ladder is not None:
             state["floors"] = dict(self.ladder.floor)   # escalations made in this task survive a pause
+        if hasattr(self.toolbox, "dump_state"):        # S0 handles and labels survive a pause too (encrypted)
+            state["toolbox"] = self.toolbox.dump_state()
         self.checkpoint(task_id, state, phase, reason)
 
     def _restore_taint(self, state: dict) -> None:
@@ -163,6 +200,8 @@ class ResumableAgent(Agent):
         if hasattr(self.toolbox, "begin_task"):
             self.toolbox.begin_task(task_id, goal)
         self._restore_taint(state)
+        if hasattr(self.toolbox, "load_state"):
+            self.toolbox.load_state(state.get("toolbox"))
         if self.ladder is not None:
             self.ladder.floor.update(state.get("floors") or {})
         if hasattr(self.client, "set_task"):
@@ -200,9 +239,7 @@ class ResumableAgent(Agent):
                 if not fcalls:
                     text = getattr(response, "output_text", "") or ""
                     summary = text.strip().splitlines()[0][:200] if text.strip() else "(no reply)"
-                    self.memory.log_step(task_id, "reply", text)
-                    self.memory.finish_task(task_id, "done", summary)
-                    return self._result(task_id, "done", summary, text, step, calls_made)
+                    return self._finish(task_id, "done", summary, text, step, calls_made)
                 state.update(response_id=response.id, results={}, in_flight=None, ask=None,
                              calls=[{"name": fc.name, "call_id": fc.call_id, "arguments": fc.arguments or "{}"}
                                     for fc in fcalls])
@@ -222,9 +259,7 @@ class ResumableAgent(Agent):
                 status, summary = finished
                 response = self._turn(task_id, state, outputs, "reply")   # the in-character closing line
                 reply = getattr(response, "output_text", "") or summary
-                self.memory.log_step(task_id, "reply", reply)
-                self.memory.finish_task(task_id, status, summary)
-                return self._result(task_id, status, summary, reply, step, calls_made)
+                return self._finish(task_id, status, summary, reply, step, calls_made)
             state["step"] = step + 1
             self._save(task_id, state)
             self.on_turn(task_id)
@@ -294,11 +329,12 @@ class ResumableAgent(Agent):
         kind = tool_kind(name)
         if isinstance(result, dict) and isinstance(result.get("rung"), int):
             return result["rung"], kind
-        return {"extract": 2, "lookup": 1, "file_op": 1, "form_fill": 3, "generate": 3}.get(kind), kind
+        return {"extract": 2, "lookup": 1, "file_op": 1, "form_fill": 3, "generate": 3, "read": 3}.get(kind), kind
 
     def _tool_outcome(self, name: str, result: Any, rung: int | None, kind: str) -> None:
-        if self.ladder is None or rung is None or name in ("finish", "ask_user") or not isinstance(result, dict):
-            return
+        if self.ladder is None or rung is None or name in ("finish", "ask_user", "ask_reader") or \
+                not isinstance(result, dict):
+            return   # (the reader records its own outcomes: reader.py)
         from .recovery import Recovery
         cls = Recovery.classify(name, result)
         if result.get("refused_by_recovery") or cls == "needs_human":

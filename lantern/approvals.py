@@ -45,6 +45,8 @@ class Approval:
     created_at: float
     expires_at: float
     tainted: bool = False
+    tier: str = ""                 # S0: green | yellow | red (security.py); "" from callers that don't say
+    flags: list = field(default_factory=list)   # S0: warnings the card must show (untrusted targets, private data)
     status: str = PENDING
     decided_by: str | None = None
     decided_at: float | None = None
@@ -82,12 +84,13 @@ class ApprovalBus:
                 pass
 
     # ---- lifecycle -----------------------------------------------------------
-    def request(self, action: str, summary: str, payload: dict, tainted: bool = False) -> Approval:
+    def request(self, action: str, summary: str, payload: dict, tainted: bool = False, *, tier: str = "",
+                flags: list | None = None) -> Approval:
         now = self.clock()
         a = Approval(
             id=secrets.token_hex(4), nonce=secrets.token_urlsafe(16), action=action, summary=summary,
             payload=payload, payload_hash=payload_hash(payload), created_at=now,
-            expires_at=now + self.expiry, tainted=tainted,
+            expires_at=now + self.expiry, tainted=tainted, tier=tier, flags=list(flags or []),
         )
         with self._lock:
             self._items[a.id] = a
@@ -176,7 +179,9 @@ class ApprovalBus:
 class Gate:
     """What a tool calls. Returns a callable `commit(payload)` on yes, or None on no."""
 
-    def ask(self, action: str, summary: str, payload: dict, tainted: bool = False) -> Callable[[dict], None] | None:
+    def ask(self, action: str, summary: str, payload: dict, tainted: bool = False,
+            **meta) -> Callable[[dict], None] | None:
+        """meta: tier and flags (S0), passed on to the approval."""
         raise NotImplementedError
 
 
@@ -187,8 +192,8 @@ class CallbackGate(Gate):
         self.fn = fn
         self.bus = bus or ApprovalBus()
 
-    def ask(self, action, summary, payload, tainted=False):
-        a = self.bus.request(action, summary, payload, tainted)
+    def ask(self, action, summary, payload, tainted=False, **meta):
+        a = self.bus.request(action, summary, payload, tainted, **meta)
         ok = bool(self.fn(summary))
         self.bus.decide(a.id, a.nonce, ok, by="callback")
         return (lambda final: self.bus.consume(a.id, final)) if ok else None
@@ -201,8 +206,8 @@ class BusGate(Gate):
         self.bus = bus
         self.timeout = timeout
 
-    def ask(self, action, summary, payload, tainted=False):
-        a = self.bus.request(action, summary, payload, tainted)
+    def ask(self, action, summary, payload, tainted=False, **meta):
+        a = self.bus.request(action, summary, payload, tainted, **meta)
         if not self.bus.wait(a.id, self.timeout):
             if self.bus.get(a.id).status == PENDING:  # timed out waiting; don't leave it open
                 self.bus.decide(a.id, a.nonce, False, by="timeout")
