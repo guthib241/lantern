@@ -50,6 +50,7 @@ class Config:
     mcp_config: str = str(HOME / "mcp.json")
     encrypt: bool = True                  # memory + audit log encrypted at rest (key in the OS keychain)
     timeout: float = 120.0                # seconds per model call (LANTERN_TIMEOUT)
+    workers: int = 3                      # tasks the server runs at once (LANTERN_WORKERS; scheduler.py)
 
 
 PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
@@ -129,4 +130,6 @@ def load() -> Config:
         cfg.timeout = float(os.environ["LANTERN_TIMEOUT"])
     if os.environ.get("LANTERN_ENCRYPT"):
         cfg.encrypt = _flag(os.environ["LANTERN_ENCRYPT"])
+    if os.environ.get("LANTERN_WORKERS", "").strip().isdigit():
+        cfg.workers = int(os.environ["LANTERN_WORKERS"])
     return cfg

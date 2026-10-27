@@ -17,6 +17,7 @@ import datetime as dt
 import hashlib
 import json
 import sqlite3
+import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -76,6 +77,7 @@ class AuditLog:
         self.db.execute("PRAGMA secure_delete = ON")
         self.db.executescript(SCHEMA)
         self.db.commit()
+        self._lock = threading.RLock()   # several tasks run at once (scheduler.py) and share this connection
 
     def record(self, *, lane: str, destination: str, endpoint: str, model: str, payload: bytes,
                redactions: Counter | dict | None = None, task_id: int | None = None,
@@ -86,22 +88,25 @@ class AuditLog:
             "redactions": json.dumps(dict(redactions or {})), "preview": preview[:300],
         }
         stored = dict(row, preview=self.cipher.encrypt(row["preview"]) if self.cipher else row["preview"])
-        self.db.execute(
-            "INSERT INTO audit (ts, task_id, lane, destination, endpoint, model, bytes, sha256, redactions, preview)"
-            " VALUES (:ts, :task_id, :lane, :destination, :endpoint, :model, :bytes, :sha256, :redactions, :preview)",
-            stored,
-        )
-        self.db.commit()
+        with self._lock:
+            self.db.execute(
+                "INSERT INTO audit (ts, task_id, lane, destination, endpoint, model, bytes, sha256, redactions, preview)"
+                " VALUES (:ts, :task_id, :lane, :destination, :endpoint, :model, :bytes, :sha256, :redactions, :preview)",
+                stored,
+            )
+            self.db.commit()
         return row
 
     def entries(self, since: float = 0.0, limit: int = 200) -> list[dict]:
-        return self._decoded(self.db.execute(
-            "SELECT * FROM audit WHERE ts >= ? ORDER BY id DESC LIMIT ?", (since, limit)).fetchall())
+        with self._lock:
+            rows = self.db.execute("SELECT * FROM audit WHERE ts >= ? ORDER BY id DESC LIMIT ?", (since, limit)).fetchall()
+        return self._decoded(rows)
 
     def for_task(self, task_id: int) -> list[dict]:
         """Every call made for one task, oldest first (for its receipt)."""
-        return self._decoded(self.db.execute(
-            "SELECT * FROM audit WHERE task_id = ? ORDER BY id", (task_id,)).fetchall())
+        with self._lock:
+            rows = self.db.execute("SELECT * FROM audit WHERE task_id = ? ORDER BY id", (task_id,)).fetchall()
+        return self._decoded(rows)
 
     def _decoded(self, rows) -> list[dict]:
         out = []
@@ -114,15 +119,17 @@ class AuditLog:
         return out
 
     def forget_task(self, task_id: int) -> int:
-        n = self.db.execute("DELETE FROM audit WHERE task_id = ?", (task_id,)).rowcount
-        self.db.commit()
-        self.db.execute("VACUUM")
+        with self._lock:
+            n = self.db.execute("DELETE FROM audit WHERE task_id = ?", (task_id,)).rowcount
+            self.db.commit()
+            self.db.execute("VACUUM")
         return n
 
     def forget_all(self) -> int:
-        n = self.db.execute("DELETE FROM audit").rowcount
-        self.db.commit()
-        self.db.execute("VACUUM")
+        with self._lock:
+            n = self.db.execute("DELETE FROM audit").rowcount
+            self.db.commit()
+            self.db.execute("VACUUM")
         return n
 
     def summary(self, since: float | None = None) -> dict:

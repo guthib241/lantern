@@ -328,7 +328,7 @@ def main(argv=None) -> None:
         if a.serve:
             refuse_second_server(a.port)
         mem.close()
-        core = Core(cfg)
+        core = Core(cfg, workers=cfg.workers if a.serve else 0)
         hub = ChannelHub(core, channels_from_env(dict(os.environ)))
         if a.channel_test:  # prove the phone side works before the demo
             for ch in hub.channels.values():

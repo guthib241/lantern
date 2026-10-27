@@ -11,6 +11,8 @@ Tables:
   facts      - long-lived things Lantern learned ("manager's email is priya@...")
   usage      - tokens and USD cost of every model call, per task
   reminders  - plain timers that ping the phone and the desktop (reminders.py)
+  task_state - how to pick an unfinished task up again after parking or a restart (scheduler.py)
+  ladder_stats - which model rung worked for which kind of step (ladder.py)
 """
 from __future__ import annotations
 
@@ -69,6 +71,21 @@ CREATE TABLE IF NOT EXISTS private_tasks (     -- tasks that used the private la
 CREATE TABLE IF NOT EXISTS spend (             -- dollars per local day, for the spending limits (budget.py)
     day TEXT PRIMARY KEY,                      -- YYYY-MM-DD; no tasks, no content: kept when you forget things
     cost_usd REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS task_state (        -- what the scheduler needs to resume an unfinished task (scheduler.py)
+    task_id INTEGER PRIMARY KEY,
+    phase TEXT NOT NULL,                       -- queued | running | parked
+    reason TEXT NOT NULL DEFAULT '',           -- parked: waiting_user | waiting_approval | backoff | waiting_browser
+    state TEXT NOT NULL,                       -- JSON (encrypted): response id, the turn's calls and results, question
+    updated_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS ladder_stats (      -- model ladder outcomes (ladder.py): kinds and rungs only, no content
+    kind TEXT NOT NULL,
+    rung INTEGER NOT NULL,
+    ok INTEGER NOT NULL,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    seconds REAL NOT NULL DEFAULT 0,
+    created_at REAL NOT NULL
 );
 """
 
@@ -330,6 +347,7 @@ class Memory:
         counts = {table: self.db.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,)).rowcount
                   for table in ("steps", "usage", "reminders")}
         self.db.execute("DELETE FROM private_tasks WHERE task_id = ?", (task_id,))
+        self.db.execute("DELETE FROM task_state WHERE task_id = ?", (task_id,))
         counts["tasks"] = self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount
         self._vacuum()
         return counts
@@ -339,6 +357,8 @@ class Memory:
         counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount
                   for table in ("steps", "usage", "tasks", "facts", "reminders")}
         self.db.execute("DELETE FROM private_tasks")
+        self.db.execute("DELETE FROM task_state")
+        self.db.execute("DELETE FROM ladder_stats")
         self.db.execute("DELETE FROM sqlite_sequence")
         self._vacuum()
         return counts
@@ -437,6 +457,51 @@ class Memory:
 
     def _private_task_ids(self) -> set[int]:
         return {r[0] for r in self.db.execute("SELECT task_id FROM private_tasks").fetchall()}
+
+    # ---- scheduler state (scheduler.py) ---------------------------------------------
+    @_locked
+    def save_task_state(self, task_id: int, phase: str, reason: str, state: dict) -> None:
+        self.db.execute(
+            "INSERT INTO task_state (task_id, phase, reason, state, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(task_id) DO UPDATE SET phase = excluded.phase, reason = excluded.reason, "
+            "state = excluded.state, updated_at = excluded.updated_at",
+            (task_id, phase, reason, self._enc(json.dumps(state, ensure_ascii=False, default=str)), time.time()))
+        self.db.commit()
+
+    @_locked
+    def load_task_state(self, task_id: int) -> dict | None:
+        row = self.db.execute("SELECT * FROM task_state WHERE task_id = ?", (task_id,)).fetchone()
+        return None if row is None else self._state_row(row)
+
+    @_locked
+    def task_states(self) -> list[dict]:
+        return [self._state_row(r) for r in self.db.execute("SELECT * FROM task_state ORDER BY task_id").fetchall()]
+
+    def _state_row(self, row) -> dict:
+        return {"task_id": row["task_id"], "phase": row["phase"], "reason": row["reason"],
+                "state": json.loads(self._dec(row["state"])), "updated_at": row["updated_at"]}
+
+    @_locked
+    def delete_task_state(self, task_id: int) -> None:
+        self.db.execute("DELETE FROM task_state WHERE task_id = ?", (task_id,))
+        self.db.commit()
+
+    # ---- model ladder outcomes (ladder.py) ---------------------------------------------
+    @_locked
+    def log_ladder(self, kind: str, rung: int, ok: bool, cost_usd: float = 0.0, seconds: float = 0.0) -> None:
+        self.db.execute("INSERT INTO ladder_stats (kind, rung, ok, cost_usd, seconds, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?)", (kind, rung, int(bool(ok)), cost_usd, seconds, time.time()))
+        self.db.commit()
+
+    @_locked
+    def ladder_outcomes(self, kind: str | None = None, limit: int = 1000) -> list[dict]:
+        """Newest first."""
+        if kind is None:
+            rows = self.db.execute("SELECT * FROM ladder_stats ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
+        else:
+            rows = self.db.execute("SELECT * FROM ladder_stats WHERE kind = ? ORDER BY rowid DESC LIMIT ?",
+                                   (kind, limit)).fetchall()
+        return [dict(r) for r in rows]
 
     @_locked
     def close(self) -> None:

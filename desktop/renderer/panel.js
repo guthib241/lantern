@@ -107,6 +107,41 @@
     }
   }
 
+  // ---- questions from parked tasks (ask_user): answering one lets that task continue -------------------
+  let shownQuestions = '';
+  async function answer(q, text) {
+    if (!String(text || '').trim()) return;
+    try {
+      await api.post(`/tasks/${q.task_id}/answer`, { answer: String(text).trim() });
+      toast(`Thanks. Task #${q.task_id} continues.`);
+    } catch (e) {
+      toast(`Couldn't answer: ${e.message}`);
+    }
+  }
+
+  function renderQuestions() {
+    const qs = state.questions || [];
+    const key = JSON.stringify(qs.map((q) => [q.task_id, q.question]));
+    if (key === shownQuestions) return;   // keep what's being typed: only redraw when the questions change
+    shownQuestions = key;
+    const box = $('questions');
+    box.textContent = '';
+    for (const q of qs) {
+      const input = h('input', { type: 'text', class: 'answer', 'aria-label': `Answer for task #${q.task_id}`,
+                                 placeholder: 'Your answer' });
+      input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') answer(q, input.value); });
+      box.append(h('div', { class: 'approval question', role: 'group', 'aria-label': `Task #${q.task_id} asks` },
+        h('div', { class: 'meta' }, h('span', {}, `#${q.task_id}`), h('span', {}, 'waiting for you · other tasks keep going')),
+        h('h3', {}, q.question),
+        h('p', { class: 'summary' }, q.goal || ''),
+        q.tainted ? h('div', { class: 'warn untrusted' }, 'Asked after reading untrusted content (a file, web page or email).') : null,
+        (q.options || []).length
+          ? h('div', { class: 'row-btns' }, q.options.map((o) => h('button', { class: 'allow', onclick: () => answer(q, o) }, o)))
+          : null,
+        h('div', { class: 'row-btns' }, input, h('button', { class: 'allow', onclick: () => answer(q, input.value) }, 'Answer'))));
+    }
+  }
+
   // ---- tasks ------------------------------------------------------------------------------------
   const STATE_MARK = { done: '✓', failed: '!', cancelled: '✕', interrupted: '‖', resumed: '↻' };
   const openSteps = new Set();   // tasks whose steps the user expanded
@@ -524,13 +559,14 @@
   // ---- live events -------------------------------------------------------------------------------------------
   function renderAll() {
     renderApprovals();
+    renderQuestions();
     renderTasks();
   }
 
   api.events((e) => {
     state = LanternState.reduce(state, { ts: now(), ...e });
     renderAll();
-    if (e.type === 'approval' && e.event === 'requested') window.lantern.showPanel();
+    if ((e.type === 'approval' && e.event === 'requested') || (e.type === 'task_parked' && e.reason === 'waiting_user')) window.lantern.showPanel();
     if (e.type === 'done' && tab === 'privacy') loadPrivacy();
     if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);
     if (e.type === 'reminder') toast(`⏰ ${e.text}`);

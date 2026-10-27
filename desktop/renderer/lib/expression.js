@@ -4,7 +4,7 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.LanternExpression = api;
 })(typeof self !== 'undefined' ? self : this, function () {
-  const EXPRESSIONS = ['idle', 'thinking', 'smug', 'annoyed', 'celebrating', 'needs-approval', 'sleeping'];
+  const EXPRESSIONS = ['idle', 'thinking', 'smug', 'annoyed', 'celebrating', 'needs-approval', 'sleeping', 'juggling'];
   const SLEEP_AFTER = 5 * 60;   // seconds without events
   const CELEBRATE_FOR = 8;
   const SMUG_FOR = 6;
@@ -13,7 +13,7 @@
 
   /** now: seconds since epoch (same clock as event.ts). */
   function pick(state, now) {
-    if (Object.keys(state.approvals || {}).length) return 'needs-approval';
+    if (Object.keys(state.approvals || {}).length || (state.questions || []).length) return 'needs-approval';
     const since = (t) => (t ? now - t : Infinity);
     if (since(state.lastStop) < ANNOYED_FOR) return 'annoyed';
     const done = state.lastDone;
@@ -22,6 +22,7 @@
     if (state.lastCheckin && since(state.lastCheckin.at) < SMUG_FOR) return state.lastCheckin.found ? 'smug' : 'annoyed';
     if (done && done.verified && since(done.at) < CELEBRATE_FOR) return 'celebrating';
     if (done && done.status === 'done' && since(done.at) < SMUG_FOR) return 'smug';
+    if (state.juggling && state.juggling.on) return 'juggling';   // more than one task in flight (S1)
     if (state.current != null) return 'thinking';
     if (state.lastEvent && since(state.lastEvent) > SLEEP_AFTER) return 'sleeping';
     return 'idle';
@@ -37,12 +38,15 @@
     const r = state.lastRetry;
     if (r && now - r.at < r.wait_s + 2 && state.current != null) return `The network's wobbly. Retrying in ${Math.ceil(r.wait_s)} s…`;
     const n = Object.keys(state.approvals || {}).length;
+    const q = state.questions || [];
+    if (!n && q.length) return q.length > 1 ? `${q.length} tasks have a question for you.` : `Task #${q[0].task_id} asks: ${q[0].question}`;
     const lines = {
       'needs-approval': n > 1 ? `${n} things need your OK.` : 'I need your OK for this one.',
       annoyed: state.lastStop && now - state.lastStop < ANNOYED_FOR ? 'Fine. Stopped.' : 'That did not go to plan.',
       celebrating: 'Done, and I checked it. You are welcome.',
       smug: 'Done. Obviously.',
       thinking: 'Working on it…',
+      juggling: `Juggling ${(state.juggling && state.juggling.active) || 2} tasks…`,
       sleeping: 'zzz',
       idle: '',
     };

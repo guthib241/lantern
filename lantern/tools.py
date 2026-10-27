@@ -16,6 +16,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import re
 import threading
 from pathlib import Path
 from typing import Callable
@@ -40,6 +41,23 @@ class ToolError(Exception):
     """A problem the model should see and recover from."""
 
 
+class AskUser(Exception):
+    """Raised by `ask_user` when the task may park: the scheduler (scheduler.py) parks the task, sends the
+    question to the user and resumes the task with the answer as this tool call's result."""
+
+    def __init__(self, question: str, options: list[str], tainted: bool = False):
+        super().__init__(question)
+        self.question, self.options, self.tainted = question, options, tainted
+
+
+# Questions that fish for secrets are refused in code: Lantern never collects these in chat.
+SECRET_QUESTION = re.compile(
+    r"pass(word|code|phrase)|\b(otp|cvv|cvc|ssn|2fa|mfa|pin)\b|one[- ]time (code|password)|verification code|"
+    r"security code|card (number|no\b)|credit card|debit card|passport (number|no\b)|social security|aadhaa?r|"
+    r"\bpan (number|card)|account number|routing number|(api|secret|private) key|seed phrase|recovery (phrase|code)",
+    re.I)
+
+
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
                  router=None, forms=None, email=None, envmap=None, widgets=None, mcp=None):
@@ -61,6 +79,7 @@ class Toolbox:
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
+        self.can_park = False   # True when a scheduler can park this task while it waits for an answer
         self.cancel = threading.Event()  # the agent swaps in its own (STOP / kill switch)
         self.on_event: Callable[[str, dict], None] = lambda kind, data: None
 
@@ -596,6 +615,24 @@ class Toolbox:
                 return refused
         return {"forgot": key, "existed": self.memory.forget(key)}
 
+    # ---- questions for the user (scheduler.py parks the task) ---------------------
+    def ask_user(self, question: str, options: list[str] | None = None) -> dict:
+        """Ask the user something only they know. Never returns normally while parking is possible:
+        raises AskUser, and the answer arrives later as this call's result."""
+        question = " ".join(str(question).split())
+        if not question:
+            raise ToolError("ask_user: the question is empty")
+        if len(question) > 300:
+            raise ToolError("ask_user: keep the question under 300 characters")
+        if SECRET_QUESTION.search(question):
+            raise ToolError("Lantern never asks for passwords, codes, card or ID numbers in chat. Tell the user "
+                            "which field is theirs to fill in themselves.")
+        opts = [" ".join(str(o).split())[:40] for o in (options or []) if str(o).strip()][:5]
+        if not self.can_park:
+            raise ToolError("this Lantern can't wait for an answer right now; finish and put the question "
+                            "in your summary")
+        raise AskUser(question, opts, tainted=self.tainted)
+
     # ---- dispatch ----------------------------------------------------------
     def call(self, name: str, args: dict) -> dict:
         if self.mcp is not None and name in self.mcp.tools:
@@ -690,5 +727,10 @@ TOOL_SPECS = [
                        **S, "description": "Target folder (ending in /) or full new path"}},
                        "required": ["source", "destination"], "additionalProperties": False}}},
         ["moves"]),
+    _fn("ask_user", "Ask the user something only they can answer (a choice, a missing detail). Other tasks keep "
+        "running while this one waits; the answer comes back as this tool's result. Never ask for passwords, codes, "
+        "card or ID numbers.",
+        {"question": S, "options": {"type": "array", "items": S, "description": "Up to 5 short choices, if it is a choice"}},
+        ["question"]),
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SPECS}

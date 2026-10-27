@@ -110,6 +110,10 @@ class PhoneIn(BaseModel):
     button: str = ""
 
 
+class AnswerIn(BaseModel):
+    answer: str
+
+
 class ProfileIn(BaseModel):
     key: str
     value: str
@@ -132,7 +136,7 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     def health():
         return {"ok": True, "version": __version__, "model": core.cfg.model,
                 "badge": models.badge(core.cfg.model), "has_key": bool(os.environ.get(models.API_KEY_ENV)),
-                "private_lane": core.router.backend.name, "busy": core.current_task is not None,
+                "private_lane": core.router.backend.name, "busy": core.current_task is not None or bool(core.scheduler and core.scheduler.busy()),
                 "channels": sorted(hub.channels) if hub else [], "demo": bool(getattr(core, "demo", False))}
 
     @app.post("/task", dependencies=[Depends(auth)])
@@ -186,6 +190,23 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, "no such task")
         except ValueError as e:
             raise HTTPException(409, str(e))
+
+    @app.post("/tasks/{task_id}/answer", dependencies=[Depends(auth)])
+    def answer_task(task_id: int, body: AnswerIn):
+        try:
+            core.answer(task_id, body.answer, by="desktop")
+        except ValueError as e:   # not waiting for an answer, or an empty answer
+            raise HTTPException(409, str(e))
+        return {"task_id": task_id, "answered": True}
+
+    @app.get("/questions", dependencies=[Depends(auth)])
+    def questions():
+        return core.questions()
+
+    @app.get("/scheduler", dependencies=[Depends(auth)])
+    def scheduler_view():
+        snap = core.scheduler.snapshot() if core.scheduler is not None else {"workers": 0}
+        return {**snap, "questions": core.questions()}
 
     @app.post("/tasks/{task_id}/undo", dependencies=[Depends(auth)])
     def undo_task(task_id: int):
@@ -386,7 +407,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             await ws.send_json({"type": "hello", "version": __version__,
                                 "pending": [a.public(include_nonce=True) for a in core.bus.pending()],
                                 "interrupted": [{"id": t.id, "goal": t.goal.split("\n")[0]}
-                                                for t in core.memory.tasks_with_status("interrupted")]})
+                                                for t in core.memory.tasks_with_status("interrupted")],
+                                "questions": core.questions()})
             while True:
                 event = await q.get()
                 await ws.send_json(_jsonable(event))

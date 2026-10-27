@@ -177,7 +177,9 @@ const H = {
     let cands = [...scope.querySelectorAll('button[type=submit], input[type=submit], button:not([type])')].filter(H.vis);
     if (!cands.length && best && best.id) cands = [...document.querySelectorAll(`[form="${CSS.escape(best.id)}"]`)].filter(H.vis);
     if (!cands.length) return null;
-    const b = cands[0];
+    // Multi-page forms put Back/Previous/Cancel next to Next as submit buttons too: never pick those.
+    const isBack = e => e.hasAttribute('formnovalidate') || /\b(back|previous|prev|cancel)\b|←/i.test(`${e.value || ''} ${H.txt(e)}`);
+    const b = cands.find(e => !isBack(e)) || cands[0];
     document.querySelectorAll('[data-lantern-submit]').forEach(e => e.removeAttribute('data-lantern-submit'));
     b.setAttribute('data-lantern-submit', '1');
     return {selector: '[data-lantern-submit="1"]', label: (H.txt(b) || b.value || 'Submit').slice(0, 60)};

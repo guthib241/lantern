@@ -25,6 +25,8 @@
       lastRetry: null,    // {at, wait_s, error}: the network wobbled and Lantern is retrying
       lastReminder: null, // {text, late, at}: a reminder just went off
       interrupted: [],    // [{id, goal}]: tasks cut short when Lantern stopped, waiting for "resume"
+      questions: [],      // [{task_id, question, options, tainted}]: parked tasks waiting for an answer (S1)
+      juggling: null,     // {on, active, running, queued, parked}: the scheduler's snapshot (S1)
       connected: false,
     };
   }
@@ -95,7 +97,29 @@
         s.approvals = {};
         for (const a of e.pending || []) s.approvals[a.id] = a;
         s.interrupted = (e.interrupted || []).map((t) => ({ id: t.id, goal: t.goal || '' }));
+        s.questions = e.questions || [];
         break;
+      case 'questions':
+        s.questions = e.items || [];
+        break;
+      case 'juggling':
+        s.juggling = { on: !!e.on, active: e.active || 0, running: e.running || [], queued: e.queued || [],
+                       parked: e.parked || [] };
+        break;
+      case 'task_parked': {
+        const t = ensureTask(s, tid, '', at);
+        t.status = 'parked';
+        t.parked = e.reason || '';
+        if (e.reason === 'waiting_user') addStep(t, { kind: 'question', label: `Asked you: ${e.question || ''}`, badge: 'you', ok: true, at });
+        if (s.current === tid) s.current = null;
+        break;
+      }
+      case 'task_resumed': {
+        const t = ensureTask(s, tid, '', at);
+        t.status = 'running';
+        t.parked = '';
+        break;
+      }
       case 'resumed':
         s.interrupted = s.interrupted.filter((t) => t.id !== e.from);
         if (s.tasks[e.from]) s.tasks[e.from].status = 'resumed';

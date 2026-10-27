@@ -53,10 +53,13 @@ INTERRUPTED = "cut short when Lantern stopped; say 'resume' to continue"
 RESUME_NOTE = "\n\n[Resuming task #"
 
 
-def recover_interrupted(memory: Memory) -> list:
-    """Tasks still 'active' from a previous run were cut short (crash, restart, power): mark them."""
+def recover_interrupted(memory: Memory, keep: set[int] | frozenset = frozenset()) -> list:
+    """Tasks still 'active' from a previous run were cut short (crash, restart, power): mark them.
+    `keep`: tasks the scheduler picks up again from their checkpoint (scheduler.py)."""
     out = []
     for t in memory.active_tasks():
+        if t.id in keep:
+            continue
         memory.log_step(t.id, "note", "interrupted: Lantern stopped before this task finished")
         memory.finish_task(t.id, "interrupted", INTERRUPTED)
         out.append(memory.get_task(t.id))
@@ -90,7 +93,7 @@ class Core:
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
                  bus: ApprovalBus | None = None, approval_timeout: float | None = None,
                  forms: FormService | None = None, email: EmailService | None = None,
-                 mcp: MCPHub | None = None, reminder_tick: float = 1.0):
+                 mcp: MCPHub | None = None, reminder_tick: float = 1.0, workers: int = 0):
         self.cfg = cfg
         cipher = None if (memory and audit) else cipher_for(cfg)
         self.memory = memory or Memory(cfg.db_path, cipher)
@@ -126,7 +129,12 @@ class Core:
         self._queue: queue.Queue = queue.Queue()
         self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
         self._undo_lock = threading.Lock()
-        self.interrupted = recover_interrupted(self.memory)   # before the worker starts taking tasks
+        self.scheduler = None   # S1: with workers > 0, up to that many tasks run at once (scheduler.py)
+        if workers > 0:
+            from .scheduler import Scheduler
+            self.scheduler = Scheduler(self, workers, approval_timeout=approval_timeout)
+        keep = self.scheduler.recover() if self.scheduler is not None else set()
+        self.interrupted = recover_interrupted(self.memory, keep)   # before the worker starts taking tasks
         self.bus.subscribe(self._approval_event)
         self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
         self._worker.start()
@@ -134,6 +142,8 @@ class Core:
         self.reminder_tick = reminder_tick
         if reminder_tick > 0:
             threading.Thread(target=self._remind_loop, name="lantern-reminders", daemon=True).start()
+        if self.scheduler is not None:
+            self.scheduler.start()   # tasks saved before a restart continue
 
     def _default_client(self):
         key = os.environ.get(models.API_KEY_ENV)
@@ -165,13 +175,16 @@ class Core:
         self.emit(event)
 
     def _approval_event(self, kind: str, approval) -> None:
-        if kind in ("decided", "expired", "used") and self.current_task is not None:   # for the task's receipt
-            self.memory.log_step(self.current_task, "approval", {
+        task_id = self.current_task
+        if self.scheduler is not None and (owner := self.scheduler.task_for_approval(approval.id)) is not None:
+            task_id = owner
+        if kind in ("decided", "expired", "used") and task_id is not None:   # for the task's receipt
+            self.memory.log_step(task_id, "approval", {
                 "id": approval.id, "event": kind, "action": approval.action, "summary": approval.summary,
                 "payload_hash": approval.payload_hash, "status": approval.status, "by": approval.decided_by,
                 "tainted": approval.tainted})
         self.emit({"type": "approval", "event": kind, "approval": approval.public(include_nonce=(kind == "requested")),
-                   "task_id": self.current_task})
+                   "task_id": task_id})
 
     # ---- tasks -----------------------------------------------------------------
     def submit(self, goal: str) -> int:
@@ -179,9 +192,25 @@ class Core:
         if not goal:
             raise ValueError("goal is empty")
         task = self.memory.start_task(goal)
+        if self.scheduler is not None:
+            self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+            self.scheduler.submit(task.id, goal)
+            return task.id
         self._queue.put((task.id, goal, None))
         self.emit({"type": "queued", "task_id": task.id, "goal": goal})
         return task.id
+
+    def answer(self, task_id: int, text: str, by: str = "user") -> None:
+        """The user's answer to a task's question (ask_user); the task continues where it stopped."""
+        if self.scheduler is None:
+            raise ValueError("no task is waiting for an answer")
+        self.scheduler.answer(task_id, text, by)
+
+    def questions(self) -> list[dict]:
+        return self.scheduler.questions() if self.scheduler is not None else []
+
+    def _running(self, task_id: int) -> bool:
+        return task_id == self.current_task or (self.scheduler is not None and self.scheduler.active(task_id))
 
     def _work(self) -> None:
         while True:
@@ -201,7 +230,7 @@ class Core:
         """For tests and the demo script: wait until the queue is drained."""
         end = time.time() + timeout
         while time.time() < end:
-            if self._queue.unfinished_tasks == 0:
+            if self._queue.unfinished_tasks == 0 and not (self.scheduler is not None and self.scheduler.busy()):
                 return True
             time.sleep(0.01)
         return False
@@ -209,9 +238,11 @@ class Core:
     def stop(self) -> dict:
         """Kill switch: stop the running task and deny every pending approval."""
         self.agent.cancel.set()
+        stopped = self.scheduler.stop_all() if self.scheduler is not None else []
         denied = self.bus.cancel_all("stopped")
         self.emit({"type": "stopped", "denied_approvals": denied})
-        return {"stopped": True, "denied_approvals": denied, "task_id": self.current_task}
+        first = self.current_task if self.current_task is not None else (stopped[0] if stopped else None)
+        return {"stopped": True, "denied_approvals": denied, "task_id": first, "task_ids": stopped}
 
     def retry_task(self, task_id: int) -> int:
         """Run a failed or cancelled task's goal again as a new task (an interrupted one is resumed)."""
@@ -248,8 +279,8 @@ class Core:
     def undo(self, task_id: int) -> int:
         """Put back what task #task_id moved, as a new task. Raises KeyError, or UndoError with the reason."""
         with self._undo_lock:
-            if task_id == self.current_task or task_id in self._undoing:
-                raise UndoError("that task is still running" if task_id == self.current_task else
+            if self._running(task_id) or task_id in self._undoing:
+                raise UndoError("that task is still running" if self._running(task_id) else
                                 f"an undo of task #{task_id} is already queued")
             plan = undo_plan(self.memory, task_id)
             self._undoing.add(task_id)
@@ -262,8 +293,11 @@ class Core:
 
     def undo_last(self) -> int:
         """UNDO from the phone: the most recent finished task that moved files and isn't undone yet."""
-        if self.current_task is not None:   # it may be the one about to move things: don't reach past it
-            raise UndoError(f"task #{self.current_task} is still running; undo once it has finished (or say STOP)")
+        busy = self.current_task
+        if busy is None and self.scheduler is not None and self.scheduler.busy():
+            busy = (self.scheduler.snapshot()["running"] or [min(self.scheduler.runs, default=0)])[0]
+        if busy is not None:   # it may be the one about to move things: don't reach past it
+            raise UndoError(f"task #{busy} is still running; undo once it has finished (or say STOP)")
         for t in self.memory.recent_tasks(20):   # undo tasks are skipped, so UNDO again goes one task further back
             if t.status not in ("active", "interrupted") and self._undo_of(t.id) is None:
                 try:
@@ -326,13 +360,16 @@ class Core:
 
     def task_view(self, task_id: int) -> dict:
         t = self.memory.get_task(task_id)
-        return {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
+        view = {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
                 "created_at": t.created_at, "updated_at": t.updated_at,
                 "usage": self.memory.task_usage(t.id), "undoable": undoable(self.memory, t.id)}
+        if self.scheduler is not None and (run := self.scheduler.runs.get(t.id)) is not None:
+            view["phase"], view["reason"] = run.phase, run.reason   # e.g. parked / waiting_user
+        return view
 
     # ---- forgetting (real deletes: secure_delete + VACUUM; Lantern's own files overwritten) -------
     def forget_task(self, task_id: int) -> dict:
-        if task_id == self.current_task:
+        if self._running(task_id):
             raise ValueError("that task is still running; stop it first")
         self.memory.get_task(task_id)  # KeyError if unknown
         counts = self.memory.forget_task(task_id)
@@ -384,7 +421,11 @@ class Core:
 
     def shutdown(self) -> None:
         self._closing.set()
-        self.stop()
+        if self.scheduler is not None:   # scheduled tasks keep their checkpoints and continue on the next start
+            self.scheduler.shutdown()
+            self.agent.cancel.set()
+        else:
+            self.stop()
         self.mcp.close()
         self._queue.put((None, None, None))
 

@@ -12,6 +12,13 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
 .sprite.celebrating { animation: hop .6s ease-in-out 3, bob 3.2s ease-in-out 1.8s infinite; }
 .sprite.needs-approval { animation: nudge 1.4s ease-in-out infinite; }
 .sprite.annoyed { animation: shake .35s ease-in-out 2, bob 3.2s ease-in-out .7s infinite; }
+.sprite.juggling { position: relative; }   /* more than one task in flight: three lights orbit the face */
+.sprite.juggling::before, .sprite.juggling::after { content: ''; position: absolute; left: 50%; top: 4px; width: 12px; height: 12px;
+  margin-left: -6px; border-radius: 50%; background: #ffb347; box-shadow: 0 0 10px rgba(255, 170, 60, .8);
+  transform-origin: 6px 75px; animation: orbit 1.6s linear infinite; }
+.sprite.juggling::after { animation-delay: -.8s; background: #ffd27a; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sprite.juggling::before, .sprite.juggling::after { animation: none; } }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-20px) rotate(-4deg); } }
 @keyframes nudge { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }

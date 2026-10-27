@@ -7,6 +7,7 @@ Incoming, from the owner only (everyone else is ignored and counted):
   "resume"      -> run the tasks cut short when Lantern stopped
   "undo"        -> put back the files the last task moved (one approval, no model call)
   "receipt [N]" -> the last finished task's receipt (or task N's): changes, checks, approvals, data sent, cost
+  "#N answer"   -> the answer to task N's question (ask_user; the task was parked, scheduler.py), also by button
   voice note    -> download -> ffmpeg 16 kHz WAV -> Muse Voice Transcribe (biased toward the
                    names Lantern knows) -> handled like text, with the transcript echoed back
   button tap    -> approve / deny / show an approval. Button ids carry the approval's nonce
@@ -14,6 +15,7 @@ Incoming, from the owner only (everyone else is ignored and counted):
                    answer, and only for the action it showed.
 Outgoing (core events): every approval request becomes a card with Approve / Deny / Show
 buttons on every channel; a finished task's reply goes back to the channel it came from.
+Questions from parked tasks that arrive within a second of each other go out as one message.
 
 Work happens on two small threads (inbox, outbox), so webhooks answer fast and a slow
 network never blocks the agent. Outgoing text is scrubbed and audited like any cloud call.
@@ -42,6 +44,8 @@ STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
+ANSWER = re.compile(r"^\s*#(\d+)[\s:,.-]+(.+)$", re.S)   # "#12 residential": an answer to task 12's question
+QUESTION_DELAY = 1.0   # seconds: questions that arrive together go out as one message
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
          "resume, undo (puts back the files the last task moved), or receipt (proof of what the last task did). "
@@ -65,6 +69,10 @@ class ChannelHub:
         self._outbox: queue.Queue = queue.Queue()
         self._threads: list[threading.Thread] = []
         self._unsubscribe: Callable[[], None] | None = None
+        self.question_delay = QUESTION_DELAY
+        self._asked: set[int] = set()             # tasks whose open question was already sent
+        self._question_timer: threading.Timer | None = None
+        self._question_lock = threading.Lock()
 
     # ---- lifecycle -------------------------------------------------------------------
     def start(self, listen: bool = True) -> "ChannelHub":
@@ -77,6 +85,8 @@ class ChannelHub:
         if listen:
             for c in self.channels.values():
                 c.start(self.receive)
+        if hasattr(self.core, "questions") and self.core.questions():   # asked before a restart: ask again
+            self._schedule_questions()
         cut = getattr(self.core, "interrupted", [])
         if cut:
             names = "; ".join(f"#{t.id} {t.goal.split(chr(10))[0][:60]}" for t in cut[:3])
@@ -195,6 +205,8 @@ class ChannelHub:
                                      f"(#{', #'.join(map(str, new_ids))})." if new_ids else "Nothing to resume.")
         if m := RECEIPT.match(t):
             return self.say(ch.name, self._receipt(int(m.group(1)) if m.group(1) else None))
+        if self._answer(ch, t):
+            return
         if UNDO_WORDS.match(t):
             try:
                 task_id = self.core.undo_last()
@@ -205,6 +217,27 @@ class ChannelHub:
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
+
+    def _answer(self, ch: Channel, text: str) -> bool:
+        """'#12 residential', or just an option of the only open question. True if it was an answer."""
+        questions = self.core.questions() if hasattr(self.core, "questions") else []
+        m = ANSWER.match(text)
+        if m:
+            task_id, answer = int(m.group(1)), m.group(2).strip()
+        elif len(questions) == 1 and any(text.lower() == o.lower() for o in questions[0]["options"]):
+            task_id, answer = questions[0]["task_id"], text
+        else:
+            return False
+        try:
+            self.core.answer(task_id, answer, by=ch.name)
+        except ValueError as e:
+            if m and not any(q["task_id"] == task_id for q in questions):
+                return False   # "#3 is great" with no question open for #3: an ordinary message
+            self.say(ch.name, f"Couldn't use that answer: {e}.")
+            return True
+        self.origin.setdefault(task_id, ch.name)
+        self.say(ch.name, f"✅ Thanks. Task #{task_id} continues.")
+        return True
 
     def _receipt(self, task_id: int | None) -> str:
         from ..receipt import as_text, build
@@ -221,6 +254,14 @@ class ChannelHub:
     def _status(self) -> str:
         cur = self.core.current_task
         lines = [f"Working on task #{cur}: {self.core.memory.get_task(cur).goal}" if cur else "Idle."]
+        sched = getattr(self.core, "scheduler", None)
+        if sched is not None:
+            snap = sched.snapshot()
+            if snap["running"] or snap["queued"] or snap["parked"]:
+                lines[0] = (f"Running {len(snap['running'])}, queued {len(snap['queued'])}, "
+                            f"waiting {len(snap['parked'])} (of {snap['workers']} at once).")
+            for q in self.core.questions():
+                lines.append(f"#{q['task_id']} asks: {q['question'][:100]}")
         pending = self.core.bus.pending()
         if pending:
             lines.append(f"{len(pending)} approval(s) waiting: " + "; ".join(a.summary[:60] for a in pending))
@@ -235,6 +276,8 @@ class ChannelHub:
     def _button(self, ch: Channel, inc: Incoming) -> None:
         parts = inc.button.split(":")
         verb, aid = parts[0], parts[1] if len(parts) > 1 else ""
+        if verb == "answer":
+            return self._answer_button(ch, inc, parts)
         try:
             a = self.core.bus.get(aid)
             if verb == "show":
@@ -254,6 +297,37 @@ class ChannelHub:
         ch.acknowledge(inc, "Approved" if verb == "approve" else "Denied")
         mark = "✅ Approved" if verb == "approve" else "❌ Denied"
         self.say(ch.name, f"{mark}: {a.summary[:120]}")
+
+    def _answer_button(self, ch: Channel, inc: Incoming, parts: list[str]) -> None:
+        """answer:<task>:<option index>, from a question card."""
+        try:
+            task_id, index = int(parts[1]), int(parts[2])
+            [q] = [q for q in self.core.questions() if q["task_id"] == task_id]
+            self.core.answer(task_id, q["options"][index], by=ch.name)
+        except (ValueError, IndexError):
+            ch.acknowledge(inc, "Not open any more")
+            self.say(ch.name, "That question isn't open any more.")
+            return
+        ch.acknowledge(inc, "Answered")
+        self.origin.setdefault(task_id, ch.name)
+        self.say(ch.name, f"✅ {q['options'][index][:60]}: task #{task_id} continues.")
+
+    # ---- questions from parked tasks, batched -------------------------------------------
+    def _schedule_questions(self) -> None:
+        with self._question_lock:
+            if self._question_timer is None:
+                self._question_timer = threading.Timer(self.question_delay, self._send_questions)
+                self._question_timer.daemon = True
+                self._question_timer.start()
+
+    def _send_questions(self) -> None:
+        with self._question_lock:
+            self._question_timer = None
+            open_now = self.core.questions()
+            new = [q for q in open_now if q["task_id"] not in self._asked]
+            self._asked = {q["task_id"] for q in open_now}
+        if new:
+            self._outbox.put(question_message(new))
 
     @staticmethod
     def _details(a) -> str:
@@ -320,6 +394,12 @@ class ChannelHub:
                        (f"deny:{a['id']}:{a['nonce']}:{h8}", "❌ Deny"),
                        (f"show:{a['id']}", "🔎 Show")]
             self._outbox.put((None, "buttons", (text, buttons)))
+        elif kind == "questions":
+            if {q["task_id"] for q in event.get("items", [])} - self._asked:
+                self._schedule_questions()
+            else:   # answered or withdrawn: forget them, so a new question for the same task is sent
+                with self._question_lock:
+                    self._asked &= {q["task_id"] for q in event.get("items", [])}
         elif kind == "reminder":
             note = " (it was due while Lantern was off)" if event.get("late") else ""
             self._outbox.put((None, "text", (f"⏰ Reminder: {event.get('text', '')}{note}",)))
@@ -332,3 +412,26 @@ class ChannelHub:
                     reply = f"That didn't work: {event.get('summary', '')}"
                 if reply:
                     self.say(name, reply)
+
+
+def question_message(questions: list[dict]) -> tuple:
+    """One outbox item for one or more open questions. A single question with up to 3 short options gets buttons;
+    otherwise people reply "#<task> <answer>"."""
+    def warn(q: dict) -> str:
+        return " (asked after reading untrusted content)" if q.get("tainted") else ""
+
+    if len(questions) == 1:
+        q = questions[0]
+        text = f"🏮 Task #{q['task_id']} needs an answer{warn(q)}:\n\n{q['question']}\n\n({q['goal'][:80]})"
+        opts = q["options"]
+        if 0 < len(opts) <= 3:
+            return (None, "buttons", (text, [(f"answer:{q['task_id']}:{i}", o[:20]) for i, o in enumerate(opts)]))
+        if opts:
+            text += "\nOptions: " + " / ".join(opts)
+        return (None, "text", (text + f"\n\nReply: #{q['task_id']} your answer",))
+    lines = [f"🏮 {len(questions)} tasks need an answer:"]
+    for q in questions:
+        opts = f" ({' / '.join(q['options'])})" if q["options"] else ""
+        lines.append(f"#{q['task_id']} {q['question']}{opts}{warn(q)}")
+    lines.append(f"\nReply like: #{questions[0]['task_id']} your answer")
+    return (None, "text", ("\n".join(lines),))

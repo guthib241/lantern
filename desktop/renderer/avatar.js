@@ -25,7 +25,7 @@
     shown = expression;
     spriteEl.className = 'sprite ' + expression;
     spriteEl.textContent = '';
-    const entry = sheet[expression] || sheet.idle;
+    const entry = sheet[expression] || (expression === 'juggling' ? sheet.thinking : null) || sheet.idle;
     if (entry && !broken) {
       const video = /\.(webm|mp4)$/i.test(entry.file);
       const media = video ? document.createElement('video') : new Image();

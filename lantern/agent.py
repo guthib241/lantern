@@ -132,14 +132,18 @@ class Agent:
         try:
             return self._run(task.id, goal)
         except Exception as e:
-            from .reliability import explain
-            why = explain(e)  # a sentence the user can act on ("no internet", "check MODEL_API_KEY")
-            self.memory.log_step(task.id, "note", f"error: {type(e).__name__}: {e}")
-            self.memory.finish_task(task.id, "failed", why)
-            self.on_event("done", {"id": task.id, "status": "failed", "summary": why,
-                                   "reply": f"I couldn't finish that. {why}",
-                                   "cost_usd": self.memory.task_usage(task.id)["cost_usd"], "steps": 0})
+            self._failed(task.id, e)
             raise
+
+    def _failed(self, task_id: int, e: Exception) -> None:
+        """Mark the task failed with a sentence the user can act on ("no internet", "check MODEL_API_KEY")."""
+        from .reliability import explain
+        why = explain(e)
+        self.memory.log_step(task_id, "note", f"error: {type(e).__name__}: {e}")
+        self.memory.finish_task(task_id, "failed", why)
+        self.on_event("done", {"id": task_id, "status": "failed", "summary": why,
+                               "reply": f"I couldn't finish that. {why}",
+                               "cost_usd": self.memory.task_usage(task_id)["cost_usd"], "steps": 0})
 
     def _run(self, task_id: int, goal: str) -> Result:
         if hasattr(self.toolbox, "begin_task"):
