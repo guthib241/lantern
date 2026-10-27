@@ -127,8 +127,12 @@ def _units(x: float, y: float) -> str:
     return "unclear"
 
 
-def recommend(native: str, function: str) -> str:
-    """The .env line for what the calibration found (names as lantern/config.py reads them)."""
+def recommend(native: str, function: str, model: str = "") -> str:
+    """The .env line for what the calibration found (names as lantern/config.py reads them).
+    Nothing to set when the automatic per-model choice (models.CUA_PROTOCOL) already matches."""
+    auto = models.cua_protocol(model) if model else ""
+    if (auto == "native" and native == "pixel") or (auto == "function" and native != "pixel" and function == "normalized"):
+        return f"nothing (auto already uses the {auto} protocol for {model})"
     if native == "pixel":
         return "LANTERN_CUA_PROTOCOL=native"
     if native == "normalized":
@@ -170,7 +174,7 @@ def check_cua() -> str:
         report.append(f"function: {function_units} {fcs[0].arguments[:120]}")
     else:
         report.append("function: no computer.computer call")
-    return f"{model}: " + " | ".join(report) + f"  →  put in .env: {recommend(native_units, function_units)}"
+    return f"{model}: " + " | ".join(report) + f"  →  put in .env: {recommend(native_units, function_units, model)}"
 
 
 CHECKS = {

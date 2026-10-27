@@ -388,6 +388,18 @@ def test_native_rejected_falls_back_to_function_tools(tmp_path, chromium, site):
     assert r.status == "done" and r.protocol == "function"
 
 
+
+def test_auto_protocol_uses_function_tools_on_wonder_without_a_wasted_call(tmp_path, chromium, site):
+    """Live API, Oct 27: Wonder rejects the native tool, so auto goes straight to the function harness."""
+    fake = FakeClient([([call("computer.stop", "f1", answer="nothing to do")], "")])
+    client = RejectsNativeTool(fake)
+    d = driver(tmp_path, chromium)
+    with d:
+        d.open((site / "simple.html").as_uri())
+        r = ComputerLoop(client, d, model="muse-wonder-1.0", protocol="auto").run("x")
+    assert r.status == "done" and r.protocol == "function" and client.calls == 1
+    assert fake.requests[0]["tools"] != [{"type": "computer"}]
+
 def test_step_cap_and_cancel(tmp_path, chromium, site):
     script = [([computer_call(f"c{i}", {"type": "wait", "ms": 10})], "") for i in range(5)]
     d, client, loop = loop_on(tmp_path, chromium, site, "simple.html", script, max_steps=2)

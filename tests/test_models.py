@@ -142,6 +142,10 @@ def test_cua_calibration_prints_the_env_line_config_reads(monkeypatch):
     assert smoke.recommend("rejected", "normalized") == "LANTERN_CUA_PROTOCOL=function"
     assert smoke.recommend("no click", "pixel") == "LANTERN_CUA_PROTOCOL=function LANTERN_CUA_COORDS=pixel"
     assert "paste" in smoke.recommend("unclear", "unclear")
+    assert smoke.recommend("pixel", "normalized", "muse-spark-1.3").startswith("nothing")
+    assert smoke.recommend("rejected (BadRequestError)", "normalized", "muse-wonder-1.0").startswith("nothing")
+    assert smoke.recommend("rejected", "normalized", "muse-spark-1.3") == "LANTERN_CUA_PROTOCOL=function"
+
     # the printed names are the ones config.load() actually reads
     for line in ("LANTERN_CUA_PROTOCOL=function LANTERN_CUA_COORDS=pixel",):
         for pair in line.split():
@@ -149,3 +153,10 @@ def test_cua_calibration_prints_the_env_line_config_reads(monkeypatch):
             monkeypatch.setenv(k, v)
     cfg = config_mod.load()
     assert (cfg.forms_protocol, cfg.forms_coords) == ("function", "pixel")
+
+
+def test_cua_protocol_per_model():
+    assert models.cua_protocol(models.SPARK) == "native"
+    assert models.cua_protocol(models.WONDER) == "function"
+    from lantern.config import Config
+    assert Config().forms_protocol == "auto"

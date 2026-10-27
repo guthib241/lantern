@@ -37,7 +37,7 @@ class Config:
     audit_path: str = str(HOME / "audit.db")
     # forms (M7): computer use develops on Spark; set forms_model to muse-wonder-1.0 for final runs
     forms_model: str = models.SPARK
-    forms_protocol: str = "native"        # native computer tool | function (cookbook harness)
+    forms_protocol: str = "auto"          # auto (per model, models.CUA_PROTOCOL) | native | function
     forms_coords: str = ""                # "" = protocol default; pixel | normalized
     forms_headless: bool = True           # False on the laptop to watch the browser work
     forms_domains: list[str] = field(default_factory=list)  # sites (besides localhost/demo) Lantern may fill

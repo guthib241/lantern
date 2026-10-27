@@ -15,8 +15,9 @@ Two wire protocols, both on the Responses API:
   function  The cookbook's harness (meta-model-cookbook 03_use_cases/13_macos_cua):
             function tools `computer.computer` (one action, coordinates normalized to
             0..1000) and `computer.stop`; the screenshot goes back inside the
-            function_call_output content list as an input_image. Used as a fallback if
-            the API rejects the native tool.
+            function_call_output content list as an input_image. Muse Wonder needs this
+            one (it rejects the native tool; see models.CUA_PROTOCOL), and it is the
+            fallback whenever the API rejects the native tool.
 
 Action objects are parsed tolerantly (click / left_click, x+y / coordinate, keys /
 text...) because the two harnesses name them differently.
@@ -244,8 +245,10 @@ class ComputerLoop:
                  on_usage: Callable[[str, models.Usage], None] | None = None,
                  cancel: threading.Event | None = None,
                  url_guard: Callable[[str], str | None] | None = None):
+        if protocol == "auto":  # what the live API accepts for this model (models.CUA_PROTOCOL)
+            protocol = models.cua_protocol(model)
         if protocol not in ("native", "function"):
-            raise ValueError("protocol must be 'native' or 'function'")
+            raise ValueError("protocol must be 'auto', 'native' or 'function'")
         self.client = client
         self.driver = driver
         self.model = models.check_model(model)

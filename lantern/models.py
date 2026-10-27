@@ -56,6 +56,19 @@ BADGES = {
 }
 
 
+# Computer-use wire protocol per model, measured against the live API on Oct 27, 2026
+# (scripts/smoke.py cua). The docs describe the native {"type": "computer"} tool for both,
+# but muse-wonder-1.0 answers 400 "Unsupported tool type: 'computer'" on this account,
+# while the cookbook's function harness (computer.computer, 0..1000 coordinates) works.
+# Spark accepts the native tool with pixel coordinates. The loop still falls back to
+# "function" if a native call is ever rejected.
+CUA_PROTOCOL = {SPARK: "native", WONDER: "function"}
+
+
+def cua_protocol(model: str) -> str:
+    return CUA_PROTOCOL.get(model, "native")
+
+
 class ModelPolicyError(ValueError):
     """Raised when code tries to use a model that is not allowed on user data."""
 

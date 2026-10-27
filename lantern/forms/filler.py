@@ -89,7 +89,7 @@ class FormError(Exception):
 class FormSettings:
     model: str = models.SPARK                 # computer use; set muse-wonder-1.0 for final runs
     plan_model: str = models.SPARK
-    protocol: str = "native"                  # native computer tool | function (cookbook harness)
+    protocol: str = "auto"                    # auto (per model) | native computer tool | function (cookbook harness)
     coords: str = ""                          # "" = protocol default (pixel / normalized)
     headless: bool = True
     chromium: str = ""

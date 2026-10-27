@@ -133,10 +133,11 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     fm = v.get("LANTERN_FORMS_MODEL", cfg.forms_model)
     add(Check("forms-model", "Computer-use model", OK if fm == models.WONDER else WARN, fm,
               "" if fm == models.WONDER else f"Fine for testing; set LANTERN_FORMS_MODEL={models.WONDER} for the demo"))
-    proto = v.get("LANTERN_CUA_PROTOCOL", "")
-    add(Check("cua", "Computer use calibrated", OK if proto else WARN,
-              f"protocol {proto}, coordinates {v.get('LANTERN_CUA_COORDS', 'default')}" if proto else "not calibrated yet",
-              "" if proto else "python scripts/smoke.py cua, then put the line it prints (LANTERN_CUA_PROTOCOL=…) in .env"))
+    proto = v.get("LANTERN_CUA_PROTOCOL", "") or "auto"
+    shown = (f"auto: {models.cua_protocol(fm)} for {fm} (measured against the live API)" if proto == "auto"
+             else f"protocol {proto}, coordinates {v.get('LANTERN_CUA_COORDS', 'default')}")
+    add(Check("cua", "Computer-use protocol", OK, shown,
+              "" if proto == "auto" else "Remove LANTERN_CUA_PROTOCOL unless smoke.py cua told you to set it"))
 
     # -- private lane --------------------------------------------------------------------------
     url = v.get("LANTERN_GLIMMER_URL", "")
