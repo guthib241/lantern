@@ -75,3 +75,23 @@ def test_files_lantern_writes_read_back_exactly(tmp_path):
     assert r["verified"] is True
     assert (root / "notes.txt").read_bytes() == content.encode("utf-8")   # no newline translation on any OS
     assert Policy.from_roots([root]).read_text(root / "notes.txt") == content
+
+
+def test_dotenv_saved_by_powershell_or_notepad_still_loads(tmp_path, monkeypatch):
+    import os
+    from lantern.config import load_env, read_env_file
+    line = "MODEL_API_KEY=test-key-not-real\nLANTERN_PERSONA=helpful\n"
+    for name, data in {"utf16": line.encode("utf-16"),            # Windows PowerShell 5.1: echo ... > .env
+                       "utf8bom": b"\xef\xbb\xbf" + line.encode(),  # Notepad's "UTF-8 with BOM"
+                       "utf8": line.encode()}.items():
+        f = tmp_path / f"{name}.env"
+        f.write_bytes(data)
+        assert read_env_file(f) == line, name
+        monkeypatch.delenv("MODEL_API_KEY", raising=False)
+        monkeypatch.delenv("LANTERN_PERSONA", raising=False)
+        assert load_env(f) is True
+        assert os.environ["MODEL_API_KEY"] == "test-key-not-real" and os.environ["LANTERN_PERSONA"] == "helpful", name
+    monkeypatch.setenv("MODEL_API_KEY", "already-set")
+    load_env(tmp_path / "utf8.env")
+    assert os.environ["MODEL_API_KEY"] == "already-set"             # the real environment wins
+    assert load_env(tmp_path / "missing.env") is False

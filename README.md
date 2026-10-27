@@ -16,6 +16,18 @@ echo "MODEL_API_KEY=your-key-from-dev.meta.ai" > .env && python scripts/smoke.py
 lantern --serve                                    # then, in a 2nd terminal: cd desktop && npm install && npm start
 ```
 
+On Windows (PowerShell 5.1 has no `&&`; `py -m lantern` works even when pip's Scripts folder isn't on PATH):
+
+```powershell
+git clone https://github.com/guthib241/lantern; cd lantern
+py -m pip install -e .; py -m playwright install chromium
+py -m lantern --demo-run
+Set-Content .env "MODEL_API_KEY=your-key-from-dev.meta.ai"; py scripts\smoke.py
+py -m lantern --serve                              # 2nd window: cd desktop; npm install; npm start
+```
+
+A `.env` saved by `echo … > .env` (UTF-16 in PowerShell 5.1) or by Notepad with a BOM loads fine too.
+
 `--demo-run` is a rehearsal. A scripted stand-in plays Muse Spark and Muse Wonder (zero tokens). Everything else runs for real on a fresh copy of [`demo/home/`](demo/home):
 - the privacy zones, scrubber and audit log
 - approvals tapped on a simulated phone

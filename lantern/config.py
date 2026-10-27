@@ -14,6 +14,8 @@ file), never from config.json, so it can't end up in git by accident.
 """
 from __future__ import annotations
 
+import codecs
+import io
 import json
 import os
 from dataclasses import dataclass, field
@@ -76,12 +78,34 @@ def _flag(value: str) -> bool:
     return value.strip().lower() in ("1", "true", "yes", "on")
 
 
-def load() -> Config:
+_BOMS = ((codecs.BOM_UTF8, "utf-8-sig"), (codecs.BOM_UTF16_LE, "utf-16"), (codecs.BOM_UTF16_BE, "utf-16"))
+
+
+def read_env_file(path: str | Path) -> str:
+    """A .env file as text, whatever saved it. Windows PowerShell 5.1's `echo KEY=... > .env` writes UTF-16
+    with a byte-order mark, which a plain UTF-8 read turns into a crash or a missing key."""
+    raw = Path(path).read_bytes()
+    for bom, encoding in _BOMS:
+        if raw.startswith(bom):
+            return raw.decode(encoding, errors="replace")
+    return raw.decode("utf-8", errors="replace")
+
+
+def load_env(path: str | Path | None = None) -> bool:
+    """Load the repo's .env into the environment (variables already set win). True if a file was read."""
     try:
-        from dotenv import load_dotenv
-        load_dotenv()
+        from dotenv import find_dotenv, load_dotenv
     except ImportError:
-        pass
+        return False
+    found = path or find_dotenv()   # searched upward from this package, as before, not from the current folder
+    if not found or not Path(found).is_file():
+        return False
+    load_dotenv(stream=io.StringIO(read_env_file(found)))
+    return True
+
+
+def load() -> Config:
+    load_env()
     cfg = Config()
     path = HOME / "config.json"
     if path.exists():

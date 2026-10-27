@@ -228,3 +228,7 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **AppUserModelID:** set on win32. Unpackaged, Electron's path is the ID; packaged, `app.lantern.desktop`. Without it Windows may drop the approval and reminder notifications.
   - **One instance:** a single-instance lock, so a second launch hands over to the running app (shows the panel) and exits instead of adding a second tray icon and losing the global shortcuts. The lock follows `LANTERN_USER_DATA`, so tests and rehearsals stay isolated.
   - **Checks:** the e2e now launches a second copy and checks it exits; a static test checks the setup order. 394 passing.
+- Windows bring-up:
+  - **`.env` encodings:** Windows PowerShell 5.1's `echo MODEL_API_KEY=... > .env` saves UTF-16 with a BOM, and python-dotenv reads UTF-8, so Lantern would have crashed at startup or lost the key. `config.load_env()` now detects UTF-16 / UTF-8-BOM / UTF-8 and is used by the CLI, the server and `scripts/smoke.py`.
+  - **README:** a PowerShell quick start (PowerShell 5.1 has no `&&`; `py -m lantern` works without pip's Scripts folder on PATH).
+  - 1 new test; 395 passing.

@@ -185,11 +185,8 @@ CHECKS = {
 
 
 def main(argv: list[str]) -> int:
-    try:
-        from dotenv import load_dotenv
-        load_dotenv()
-    except ImportError:
-        pass
+    from lantern.config import load_env
+    load_env()   # the repo's .env, whether an editor or PowerShell (UTF-16) saved it
     names = argv or list(CHECKS)
     failed = 0
     for name in names:
