@@ -108,3 +108,16 @@
   - **Batching.** Questions that arrive within one second go out as one message. A single question with up to 3 options gets buttons; otherwise reply "#12 answer".
 - Oct 27 (S1, found by the portal run): with Back and Next both submit buttons on a page (every portal page after the first), the form filler clicked Back. `findSubmit` now skips buttons that say back/previous/cancel or carry `formnovalidate`.
 - Oct 27 (S1, known limit): `FormService` opens a fresh browser for every `fill_form` call. A portal's session cookie dies between calls, so in production a multi-page portal can't be filled across several calls yet. The portal e2e keeps one browser open for the whole application through the test-only `driver_factory`. A browser session per task is left to S4/S5 (routines and the portal).
+- Oct 27 (S2 resilience): **recovery is code around the loop, not a prompt.** `lantern/recovery.py` sees every tool call before and after it runs (one `Recovery` per task). It sorts each failure into the spec's six classes and acts in code.
+  - **tool_error:** the same failing call twice in a row is refused.
+  - **model_confused:** the same call a third time is refused and escalated.
+  - **approach_failed:** the model gets the step's next approach (`APPROACHES`).
+  - **impossible:** a step that failed `max_attempts` (3) times on the same target stops the task. The summary is the report of everything tried.
+  - **Every decision is an `attempt` step.** The receipt shows each one ("↻ Attempt 2: fill_form approach failed → next approach").
+- Oct 27 (S2): **"never repeat a send, submit or move" is keyed on the effect, not the arguments.**
+  - **Effect keys:** the form's URL, the email's recipients plus subject, the move's source.
+  - **Once a call (maybe) happened, the same effect is refused for the rest of the task.** Re-wording the body or the goal doesn't get around it. "Maybe" includes a call cut off by a restart.
+  - **The only way back in is proof on disk.** A move whose source files are all still in place didn't happen. For sends and submits there is no such check, so the model is told to ask the user.
+  - **The guard survives a pause.** It is rebuilt from the task's own steps when the task resumes after a question or a restart.
+- Oct 27 (S2): **transient failures:** first `RetryingClient`'s quick retries (now parked as backoff, S1), then up to 2 longer waits (20 s, 40 s, jittered, also parked). After that, or on a spending limit, the task fails with the report. A "user declined" is not a failure to work around: the agent rules already say to stop there.
+- Oct 27 (S2, limit): a multi-page portal's intermediate pages come back `verified: false` from the form filler: it moved on, but there was no confirmation. Recovery counts them as approach_failed (each page has its own URL, so this never reaches the 3-try stop). A page-progress check belongs with S4/S5's portal routines.

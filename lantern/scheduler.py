@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .approvals import PENDING, ApprovalBus, Gate
+from .recovery import Recovery
 from .taskrun import Parked, ResumableAgent
 
 DEFAULT_WORKERS = 3
@@ -165,6 +166,7 @@ class Scheduler:
         self.slots = Slots(workers)
         self.approval_timeout = approval_timeout
         self.retry = dict(retry or {})        # RetryingClient options (tests make backoff fast)
+        self.recovery_limits = None           # recovery.Limits (tests make waits short)
         self.runs: dict[int, Run] = {}
         self.closing = threading.Event()
         self._lock = threading.RLock()
@@ -297,9 +299,12 @@ class Scheduler:
         toolbox.client = client
         toolbox.command_runner = getattr(core.toolbox, "command_runner", None)
         toolbox.on_event = events
-        return ResumableAgent(client, core.memory, toolbox, model=core.agent.model, persona=core.agent.persona,
-                              max_steps=core.agent.max_steps, on_event=events, checkpoint=self._checkpoint(run),
-                              on_turn=self._on_turn)
+        agent = ResumableAgent(client, core.memory, toolbox, model=core.agent.model, persona=core.agent.persona,
+                               max_steps=core.agent.max_steps, on_event=events, checkpoint=self._checkpoint(run),
+                               on_turn=self._on_turn)
+        agent.recovery = Recovery(core.memory, run.id, emit=core.emit, policy=core.policy,
+                                  limits=self.recovery_limits, sleep=lambda s: self._backoff(run, s))
+        return agent
 
     def _events(self, task_id: int) -> Callable[[str, dict], None]:
         from .core import _short

@@ -64,7 +64,7 @@ def _json(text: str) -> dict:
 def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
     """The receipt for one task. KeyError if there's no such task."""
     t = memory.get_task(task_id)
-    actions, looked, approvals = [], 0, {}
+    actions, looked, approvals, attempts = [], 0, {}, []
     for step in memory.steps(task_id):
         if step["kind"] == "tool_result":
             data = _json(step["content"])
@@ -76,6 +76,8 @@ def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
                                 "note": str(r.get("error") or r.get("reason") or "")[:160], "at": step["created_at"]})
             else:
                 looked += 1   # reads and lookups: counted, not itemised
+        elif step["kind"] == "attempt":   # the recovery story (recovery.py): what failed and what came next
+            attempts.append(_json(step["content"]))
         elif step["kind"] == "approval":
             a = _json(step["content"])
             if not a.get("id"):
@@ -110,6 +112,7 @@ def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
         "actions": actions, "looked": looked,
         "checked": sum(a["verified"] for a in actions), "unchecked": sum(not a["verified"] for a in actions),
         "approvals": list(approvals.values()),
+        "recovery": attempts,
         "models": usage, "cost_usd": round(sum(u["cost_usd"] or 0 for u in usage), 6),
         "sent": rows,
         "left_bytes": sum(r["bytes"] for r in left),
@@ -131,6 +134,10 @@ def as_text(r: dict) -> str:
         lines.append(f"• {a['what']}: {mark}")
     if r["looked"]:
         lines.append(f"• Looked things up {r['looked']} time{'s' if r['looked'] != 1 else ''}")
+    for a in r.get("recovery", []):
+        rung = f", rung {a['rung']}" if a.get("rung") is not None else ""
+        lines.append(f"• ↻ Attempt {a.get('attempt')}: {a.get('tool') or 'model'} {str(a.get('class', '')).replace('_', ' ')}"
+                     f" → {str(a.get('strategy', '')).replace('_', ' ')}{rung}")
     for a in r["approvals"]:
         who = "You" if a["by"] not in ("timeout", "stopped") else "It was"
         how = f"{a['status']} {a['where']}".strip() + (", used once" if a["used"] else "")

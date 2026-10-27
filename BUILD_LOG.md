@@ -292,3 +292,19 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - That run found a form-filler bug: on pages with Back and Next, it clicked Back. Fixed.
 - Tests: 16 scheduler tests + 2 portal tests (scripted FakeClient models; nothing calls the real API) + 3 desktop tests.
 - Real-API check: not run in this session. This container has no MODEL_API_KEY and its network policy refuses api.meta.ai. `scripts/phase2_live.py` (wrap-up) does it where the key works.
+
+## Oct 27 (Phase 2, S2: resilience engine)
+- `lantern/recovery.py`: every tool call passes through `Recovery.before_call` / `after_call`, one `Recovery` per task, rebuilt from the task's steps after a pause or restart. The six failure classes and what each does:
+  - **transient:** parked backoff, then 2 longer parked waits.
+  - **tool_error:** the error is fed back; the same failing call twice in a row is refused.
+  - **approach_failed:** the next approach for that step.
+  - **model_confused:** bad arguments twice, the same call 3 times, or no progress in 6 turns. Escalates via the ladder (S3).
+  - **needs_human:** steered to `ask_user`, which parks the task.
+  - **impossible:** a step failed 3 times, every rung was tried, or a spending limit was hit. The task stops with a report.
+- Every decision is logged as an `attempt` step (class, strategy, rung, cost, result) and shown on the receipt and as a `recovery` event.
+- Never twice: a send, submit or move that happened, or may have happened, is refused for the rest of the task. It is keyed on its effect (form URL, recipients + subject, source path), unless files on disk prove a move didn't happen.
+- Tests: 14 in `tests/test_recovery.py`:
+  - each failure class, scripted;
+  - the same email never sent twice, including across an `ask_user` pause and across a restart that cut a send off (the new process sends nothing);
+  - a move that provably didn't happen may be retried.
+- Real-API check: not possible in this container (no key, api.meta.ai blocked); see `scripts/phase2_live.py`.

@@ -16,6 +16,7 @@ The checkpoint holds the task's own data (results, the question, the answer), so
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Callable
 
 from .agent import Agent, Result
@@ -59,6 +60,25 @@ class ResumableAgent(Agent):
         self.checkpoint = checkpoint or (lambda task_id, state, phase, reason: None)
         self.on_turn = on_turn or (lambda task_id: None)   # scheduler: share the worker, stop on shutdown
         self.recovery = recovery                           # recovery.Recovery (S2), optional
+
+    def _create(self, task_id: int, **kw):
+        """A model call; when it still fails after the client's retries, recovery may wait (parked) and try again."""
+        round_ = 0
+        while True:
+            try:
+                return super()._create(task_id, **kw)
+            except Exception as e:
+                round_ += 1
+                wait = self.recovery.model_error(e, round_) if self.recovery is not None else None
+                if wait is None:
+                    raise
+                (self.recovery.sleep or time.sleep)(wait)
+
+    def _failed(self, task_id: int, e: Exception, why: str | None = None) -> None:
+        from .reliability import explain
+        if self.recovery is not None:
+            why = self.recovery.failed_summary(why or explain(e))
+        super()._failed(task_id, e, why)
 
     # ---- state ---------------------------------------------------------------------
     def _save(self, task_id: int, state: dict, phase: str = "running", reason: str = "") -> None:
@@ -147,6 +167,10 @@ class ResumableAgent(Agent):
                 outputs, finished = self._calls(task_id, state, calls_made)
             except _Cancelled:
                 return self._stop(task_id, "cancelled", "stopped by the user", step, calls_made)
+            if self.recovery is not None and not finished:
+                self.recovery.end_turn()
+                if self.recovery.give_up:   # impossible: stop with the report of everything tried
+                    return self._stop(task_id, "failed", self.recovery.give_up, step, calls_made)
             if finished:
                 status, summary = finished
                 response = self._turn(task_id, state, outputs)   # the in-character closing line
@@ -158,7 +182,8 @@ class ResumableAgent(Agent):
             self._save(task_id, state)
             self.on_turn(task_id)
             response = self._turn(task_id, state, outputs)
-        return self._stop(task_id, "failed", f"stopped after {self.max_steps} steps without finishing",
+        why = f"stopped after {self.max_steps} steps without finishing"
+        return self._stop(task_id, "failed", self.recovery.failed_summary(why) if self.recovery else why,
                           self.max_steps, calls_made)
 
     def _turn(self, task_id: int, state: dict, outputs: list[dict]) -> Any:
@@ -206,6 +231,8 @@ class ResumableAgent(Agent):
                 raise _Cancelled()
             if parse_error is not None:
                 result = parse_error
+                if self.recovery is not None:
+                    self.recovery.bad_arguments(name, parse_error["error"])
             elif name == "finish":
                 result = {"ok": True}
             elif cid == state.get("in_flight"):
@@ -255,7 +282,10 @@ class ResumableAgent(Agent):
         from . import recovery
         if recovery.is_idempotent(name):
             return self._tool(task_id, state, state["in_flight"], name, args)
-        return recovery.uncertain_result(name)
+        result = recovery.uncertain_result(name)
+        if self.recovery is not None:   # remembered as "may have happened": never repeated blindly
+            result = self.recovery.after_call(task_id, name, args, result)
+        return result
 
     def _record(self, task_id: int, state: dict, cid: str, name: str, args: dict, result: Any,
                 calls_made: list) -> None:

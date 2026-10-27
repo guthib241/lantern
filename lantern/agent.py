@@ -135,10 +135,10 @@ class Agent:
             self._failed(task.id, e)
             raise
 
-    def _failed(self, task_id: int, e: Exception) -> None:
+    def _failed(self, task_id: int, e: Exception, why: str | None = None) -> None:
         """Mark the task failed with a sentence the user can act on ("no internet", "check MODEL_API_KEY")."""
         from .reliability import explain
-        why = explain(e)
+        why = why or explain(e)
         self.memory.log_step(task_id, "note", f"error: {type(e).__name__}: {e}")
         self.memory.finish_task(task_id, "failed", why)
         self.on_event("done", {"id": task_id, "status": "failed", "summary": why,
