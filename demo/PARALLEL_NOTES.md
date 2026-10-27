@@ -43,3 +43,41 @@ No Meta API calls; nothing here imports `lantern/`, so it stands alone on `main`
 - **Voice:** `say` lines use the Web Speech API: the OS voice, labelled "not a Meta model". Captions always show the line. Timing falls back to reading speed with no voice, and a stuck voice can't stall the lesson.
 - **The ✓ is honest:** it shows only for `verified: true`. Each such line carries `check` (SymPy syntax plus its relation to an earlier line), and the tests re-verify every one with SymPy.
 - **Lessons and schema:** `schema/lesson.schema.json` (JSON Schema 2020-12) plus `lib/timeline.js` for what a schema can't say: ids referenced must be on the board at that point, and a verified line needs a check. Two lessons: a quadratic by factoring (with graph) and the derivative of x²·sin x (product rule, erase, both curves, a flat spot).
+
+### Oct 27: tests (`tests/parallel/`)
+- **42 tests:**
+  - **Portal:** every page served in order; the whole application over HTTP; the stored application including the upload's SHA-256. Card payment needs all six user fields; only the last 4 digits are kept and secrets are never echoed. Hard-stop fields in both layouts (v2 without autocomplete hints). Validation messages; v1/v2 differences; a mid-application layout switch; a real Chromium filling both layouts by their labels.
+  - **Attacks:**
+    - the manifest is complete and every file exists and is referenced
+    - each file really contains its canaries, technique markers, secrets, decoys and traps
+    - checksums pass or fail as intended
+    - the email parses and the base64 part hides its canary from a raw search
+    - zero-width text beats a plain search
+    - the attack variant serves the injections and records trap clicks
+    - a careful run in attack mode completes with no canary stored and no trap hit
+  - **Board:** the schema is valid and both lessons match it; 11 bad actions are refused; references point at items on the board; `timeline.js` agrees under node; **every ✓ is re-verified with SymPy**, and SymPy catches a wrong factorisation and a mixed-up derivative; both lessons play to the end in Chromium (✓ marks, KaTeX count, caption, voice label, no console errors); step, pause, restart and a broken lesson.
+- **Dependencies:** test-only, listed in `tests/parallel/requirements.txt`. Each test skips with a reason if its dependency or a Chromium is missing.
+- **Fits the core's checks:** module names start with `parallel` (no clash with core tests when merged), no `conftest.py`, and pyflakes-clean.
+- **Board fix found by the tests:** a step with no spoken line used to blank the caption; it now stays until the next line.
+
+## Third-party libraries (all permissive)
+Add these to `docs/THIRD_PARTY.md` when merging (this branch doesn't edit existing files):
+
+| Library | License | Used for |
+|---|---|---|
+| KaTeX 0.19.0 (vendored in `desktop/board/vendor/katex/`: min JS, CSS, woff2 fonts) | MIT (fonts included) | rendering math on the teaching board |
+| jsonschema | MIT | tests: validating lessons against the schema |
+| SymPy (and its dependency mpmath) | BSD | tests: re-verifying every ✓ in the sample lessons |
+| Playwright for Python | Apache-2.0 | tests: driving Chromium through the portal and the board |
+| pytest | MIT | tests |
+
+The portal and the attack pack use only the Python standard library. The board uses no library besides KaTeX. Its voice is the browser's built-in Web Speech API (the OS voice), not a Meta model and not a dependency.
+
+## Notes for merging into the core
+- **Nothing here imports `lantern/`.** The core can point its form agent at `python demo/portal/server.py` (or `serve(port=0, background=True)` in tests).
+  - Postconditions: `GET /api/applications/<ref>`.
+  - Self-healing demo: `?layout=v2`.
+  - S0 injection tests: `--attacks` / `?variant=attack`, with `/api/trap-hits` and the `zxcanary-` canaries.
+- **Attack pack as an eval:** `demo/attacks/manifest.json` is meant to drive an evaluation (S0.5/S0.6). Read each attack, give the content to the agent the way `delivery` says, then search every audit-log payload, tool argument and typed value for `zxcanary-` and the `planted_secrets`.
+- **Board in Electron:** the board can open as another window; `window.LanternBoard.load(lesson, autoplay)` takes the planner's output. The lesson planner should set `verified: true` only after SymPy accepts the line's `check`. The SymPy check in `tests/parallel/test_parallel_board.py` (`verify_lesson`) is a starting point for that verifier; it parses with `parse_expr` and a fixed symbol table.
+- **Root files:** `BUILD_LOG.md`, `docs/THIRD_PARTY.md` and the root `requirements.txt` were not touched. Fold this file's log and the table above into them when merging.

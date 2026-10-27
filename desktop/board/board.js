@@ -68,8 +68,8 @@
 
   // ---- voice and captions -------------------------------------------------------------------------
   function speak(text, gen) {
-    $('caption').textContent = text || '';
-    if (!text) return Promise.resolve();
+    if (!text) return Promise.resolve();   // a silent step keeps the last caption up, so it can still be read
+    $('caption').textContent = text;
     const estimate = (T.speechSeconds(text) * 1000) / Math.min(st.speed, 2);
     if (st.muted) return wait(estimate / (st.speed > 2 ? st.speed / 2 : 1), gen);
     return new Promise((resolve, reject) => {
