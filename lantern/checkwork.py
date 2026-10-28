@@ -1,15 +1,15 @@
 """Check my work (S16): a photo of handwritten working; Lantern finds the first line that doesn't follow and circles it.
 
-  1. Read: Muse Spark looks at the photo (Responses API with input_image, no tools, as for a scanned paper) and
-     writes down each line, top to bottom: LaTeX, the same line in SymPy syntax, where it is on the photo (a box,
+  1. Read: Muse Spark looks at the photo (Responses API with input_image, no tools, held to a JSON schema by
+     `text.format`, as for a scanned paper) and writes down each line, top to bottom: LaTeX, the same line in SymPy syntax, where it is on the photo (a box,
      0 to 1000 of the width and height), and whether it could read it. The photo is untrusted data; the answer is
      held to its shape in code.
   2. Check, in code: SymPy compares each line with the one before it (mathcheck.py). An equation must have the same
      solutions as the equation before; an expression must be equal to the one before; a line the learner marked as
      a derivative must be the derivative. The first line is the problem as written.
-  3. Find it on the photo: Muse Spark's box is moved onto the ink near it (on this computer, no model). Then SAM
-     3.1 looks for the handwritten lines (a text prompt); a box centred inside that line and overlapping it by 40%
-     or more gives the circle. Otherwise the ink box is used.
+  3. Find it on the photo: Muse Spark's box is moved onto the ink near it (on this computer, no model), then goes to
+     SAM 3.1 as a box prompt and SAM segments that line. SAM's box gives the circle when it is centred inside the
+     line and overlaps it by 40% or more; otherwise the ink box (or Muse Spark's, with no ink near it) is used.
   4. Mark it: Pillow draws a red circle around that line on a copy in Lantern's media folder, and the reply says in
      one sentence what's wrong.
 When a line can't be read, or SymPy can't read what Muse Spark wrote for it, Lantern says so and stops there: it
@@ -40,8 +40,19 @@ wrote, mistakes included: never correct it. box: the line's position, in thousan
 height. Leave out crossed-out lines and anything that isn't math."""
 SIDE = 1600
 MAX_LINES = 20
-SAM_CONCEPT = "handwritten line"
 MIN_IOU = 0.4   # SAM refines Muse Spark's box only when it clearly finds the same line
+READ_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "lines": {"type": "array", "items": {"type": "object", "properties": {
+            "latex": {"type": "string"}, "sympy": {"type": "string"},
+            "box": {"type": "array", "items": {"type": "number"}},
+            "clear": {"type": "boolean"}, "derivative": {"type": "boolean"}},
+            "required": ["latex", "sympy", "box", "clear", "derivative"], "additionalProperties": False}},
+        "variable": {"type": "string"}, "instructions": {"type": "boolean"},
+    },
+    "required": ["lines", "variable", "instructions"], "additionalProperties": False,
+}
 
 
 class CheckError(ValueError):
@@ -91,10 +102,12 @@ def shape(data: Any) -> dict:
 
 
 def read(client: Any, img, *, memory=None, task_id: int | None = None, model: str = models.SPARK) -> dict:
-    r = client.responses.create(model=models.check_model(model), instructions=READ_RULES, reasoning={"effort": "low"},
-                                input=[{"role": "user", "content": [
-                                    {"type": "input_text", "text": "Read this working, line by line."},
-                                    {"type": "input_image", "image_url": _jpeg_url(img)}]}])
+    from .handoff import structured
+    r = structured(client, {"model": models.check_model(model), "instructions": READ_RULES,
+                            "reasoning": {"effort": "low"}, "max_output_tokens": 8000,
+                            "input": [{"role": "user", "content": [
+                                {"type": "input_text", "text": "Read this working, line by line."},
+                                {"type": "input_image", "image_url": _jpeg_url(img)}]}]}, "working", READ_SCHEMA)
     u = models.Usage.from_response(getattr(r, "usage", None))
     if memory is not None:
         memory.log_usage(task_id, model, u.input_tokens, u.cached_tokens, u.output_tokens, models.token_cost(model, u))
@@ -238,7 +251,7 @@ def locate(client: Any, img, box: list[float], *, memory=None, task_id: int | No
     small.thumbnail((SIDE, SIDE))
     k = w / small.size[0]           # SAM's boxes are in the pixels of the copy it was sent
     try:
-        found = segment(client, _jpeg_url(img), SAM_CONCEPT)
+        found = segment(client, _jpeg_url(img), box_prompt(spark, k, small.size))
     except Exception:   # SAM improves the circle here; it's never required
         return spark, by
     if memory is not None:
@@ -253,6 +266,17 @@ def locate(client: Any, img, box: list[float], *, memory=None, task_id: int | No
         if s > score:
             best, score = b, s
     return (best, "sam") if best else (spark, by)
+
+
+def box_prompt(box: list[float], k: float, size: tuple[int, int]) -> str:
+    """Muse Spark's box as a SAM 3.1 box prompt (dev.meta.ai/docs/sam/segmenting#object-prompts), in the pixels of
+    the copy SAM is sent: SAM segments that one line instead of every line it can find."""
+    from meta_sam_parser import FramePrompt, PromptBox, PromptObject, build_object_prompt
+    w, h = size
+    x1, y1 = min(w - 1, max(0, int(box[0] / k))), min(h - 1, max(0, int(box[1] / k)))
+    x2, y2 = min(w, max(x1 + 1, round(box[2] / k))), min(h, max(y1 + 1, round(box[3] / k)))
+    return build_object_prompt(size=size, objects=[PromptObject(id=1, prompts=[
+        FramePrompt(frame=0, box=PromptBox(left=x1, top=y1, right=x2, bottom=y2))])])
 
 
 def _iou(a: list[float], b: list[float]) -> float:

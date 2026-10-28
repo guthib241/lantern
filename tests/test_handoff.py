@@ -162,6 +162,35 @@ def test_the_reading_is_held_to_its_shape():
     assert upload_param(NS(contract={"params": [], "steps": []})) is None
 
 
+def test_the_reading_is_held_to_a_schema_and_falls_back_when_the_api_refuses_it():
+    from lantern import checkwork, handoff
+    png = photo()
+
+    class Api:
+        def __init__(self, refuse):
+            self.refuse, self.requests, self.responses = refuse, [], self
+
+        def create(self, **kw):
+            self.requests.append(kw)
+            if self.refuse and "text" in kw:
+                raise type("BadRequest", (Exception,), {"status_code": 400})("text.format")
+            return NS(output_text="```json\n" + json.dumps(PAPER) + "\n```", usage=None)
+    api = Api(refuse=False)
+    assert handoff.read(api, png)["kind"] == "city permit application"
+    [req] = api.requests
+    assert req["text"]["format"] == {"type": "json_schema", "name": "paper", "schema": handoff.READ_SCHEMA}
+    assert "tools" not in req and req["max_output_tokens"] >= 1000
+    api = Api(refuse=True)
+    assert handoff.read(api, png)["kind"] == "city permit application" and len(api.requests) == 2
+    assert "text" not in api.requests[1]
+    boom = Api(refuse=False)
+    boom.create = lambda **kw: (_ for _ in ()).throw(RuntimeError("down"))
+    with pytest.raises(RuntimeError):                                       # only a refusal of the format falls back
+        handoff.structured(boom, {}, "paper", handoff.READ_SCHEMA)
+    assert checkwork.READ_SCHEMA["properties"]["lines"]["items"]["required"] == [
+        "latex", "sympy", "box", "clear", "derivative"]
+
+
 def test_whatsapp_and_telegram_photos_arrive_with_their_captions():
     wa = WhatsAppChannel.__new__(WhatsAppChannel)
     wa.name = "whatsapp"

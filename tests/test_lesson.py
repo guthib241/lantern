@@ -287,8 +287,12 @@ def test_sam_refines_the_circle_when_it_finds_the_line(tmp_path):
     # main thread, and SAM's stream parser starts its own.
     with concurrent.futures.ThreadPoolExecutor(1) as pool:
         out = pool.submit(checkwork.run, eyes, working(), folder=tmp_path).result()
-    assert out["located_by"] == "sam" and eyes.sam[0]["input"][0]["content"][0]["text"] == "handwritten line"
-    assert out["wrong"] == 3
+    top, bottom = ROWS[2]
+    prompt = eyes.sam[0]["input"][0]["content"][0]["text"]            # line 3's box (moved onto its ink), as a box prompt
+    import re as _re
+    x1, y1, x2, y2 = (int(v) for v in _re.search(r"x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+)", prompt).groups())
+    assert prompt.endswith(f";w={W};h={H}|>") and top <= y1 < y2 <= bottom and 110 <= x1 < x2 <= 650, prompt
+    assert out["located_by"] == "sam" and out["wrong"] == 3
 
 
 def test_sam_is_ignored_when_it_finds_something_else(tmp_path):

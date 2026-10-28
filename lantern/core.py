@@ -480,12 +480,11 @@ class Core:
             agent.client.set_task(job_id)
         agent.on_event("task", {"id": job_id, "goal": goal})
         try:
-            shots = reel_mod.frames(video)
             transcript, ms = reel_mod.transcript_of(video, transcriber or self._transcriber(), to_wav16k)
             if ms:
                 self.memory.log_usage(job_id, models.VOICE, cost_usd=models.audio_cost(ms))
-            plan = reel_mod.review(reel_mod.steps_from(agent.client, shots, transcript, memory=self.memory,
-                                                       task_id=job_id), self.policy)
+            plan = reel_mod.review(reel_mod.steps(agent.client, video, transcript, memory=self.memory,
+                                                  task_id=job_id), self.policy)
         except (reel_mod.ReelError, ValueError) as e:
             return self._photo_done(agent, job_id, "failed", f"Couldn't follow that video: {e}.")
         except Exception as e:
