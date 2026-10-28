@@ -30,6 +30,16 @@
       return data;
     }
 
+    /** An image from the server as a data URL (the panel's CSP allows data: images, not blob:). */
+    async dataURL(path) {
+      const r = await this.fetch(this.base + path, { headers: { 'X-Lantern-Token': this.token } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return `data:${r.headers.get('content-type') || 'image/png'};base64,${btoa(bin)}`;
+    }
+
     get(path) { return this.request('GET', path); }
     post(path, body) { return this.request('POST', path, body === undefined ? {} : body); }
 

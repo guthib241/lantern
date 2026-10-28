@@ -29,6 +29,10 @@ in the browser can't drive Lantern through localhost.
   GET  /settings, POST /settings {persona}   preferences from the desktop (M27; saved next to memory.db)
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
+  POST /lesson {request, notes?}    S16: plan a board lesson (SymPy checks every step) -> {task_id}
+  GET  /lessons, GET /lessons/{name}   saved lessons; one lesson as the board plays it
+  POST /checkwork {image: data URL} S16: find the first wrong line in handwritten working -> {task_id}
+  GET  /checkwork/image/{name}      the photo with that line circled
   WS   /events?token=...            live events; every step carries a model badge
 """
 from __future__ import annotations
@@ -139,6 +143,15 @@ class NetAskIn(BaseModel):
 class ReelIn(BaseModel):
     path: str
     words: str = ""
+
+
+class LessonIn(BaseModel):
+    request: str
+    notes: str = ""
+
+
+class CheckWorkIn(BaseModel):
+    image: str
 
 
 class TeachIn(BaseModel):
@@ -298,6 +311,49 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             return {"task_id": core.reel(path=body.path, words=body.words)}
         except (ValueError, PolicyError) as e:
             raise HTTPException(409, str(e))
+
+    # ---- Teaching Mode (S16) --------------------------------------------------------------------------------
+    @app.post("/lesson", dependencies=[Depends(auth)])
+    def lesson(body: LessonIn):
+        from .lesson import LessonError
+        try:
+            return {"task_id": core.lesson(body.request, body.notes)}
+        except (LessonError, ValueError, PolicyError) as e:
+            raise HTTPException(409, str(e))
+
+    @app.get("/lessons", dependencies=[Depends(auth)])
+    def lessons():
+        from .lesson import listing
+        return listing(core.lessons_folder())
+
+    @app.get("/lessons/{name}", dependencies=[Depends(auth)])
+    def lesson_get(name: str):
+        from .lesson import load
+        try:
+            return load(core.lessons_folder(), name)
+        except KeyError:
+            raise HTTPException(404, "no such lesson")
+
+    @app.post("/checkwork", dependencies=[Depends(auth)])
+    def checkwork(body: CheckWorkIn):
+        import base64
+        import re as _re
+        m = _re.fullmatch(r"data:image/(?:jpeg|png|webp);base64,([A-Za-z0-9+/=]+)", body.image or "")
+        if not m or len(body.image) > 20_000_000:
+            raise HTTPException(400, "send one JPEG, PNG or WebP photo as a data URL")
+        try:
+            return {"task_id": core.check_work(base64.b64decode(m.group(1)))}
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.get("/checkwork/image/{name}", dependencies=[Depends(auth)])
+    def checkwork_image(name: str):
+        import re as _re
+        from fastapi.responses import FileResponse
+        path = Path(core.cfg.media_dir).expanduser() / name
+        if not _re.fullmatch(r"checked-[0-9-]+\.png", name) or not path.is_file():
+            raise HTTPException(404, "no such image")
+        return FileResponse(path, media_type="image/png")
 
     @app.post("/sleep", dependencies=[Depends(auth)])
     def sleep_now():

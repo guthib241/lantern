@@ -125,6 +125,18 @@
         <label class="row"><span>The task</span><input id="teach-goal" type="text" placeholder="apply for a city permit" autocomplete="off"></label>
         <div class="row"><span class="sub">Lantern opens its browser and watches you do it once, then learns it.</span><button class="tinted" type="submit">Start</button></div>
       </form>
+      <h2 class="section">Lessons on the board</h2>
+      <form class="group teach-form" id="lesson-form">
+        <label class="row"><span>Teach me</span><input id="lesson-request" type="text" placeholder="solve x² − 5x + 6 = 0 by factoring" autocomplete="off"></label>
+        <label class="row"><span>My notes</span><input id="lesson-notes" type="text" placeholder="a notes file (optional, not private)" autocomplete="off"></label>
+        <div class="row"><span class="sub">Muse Spark plans it; SymPy checks every step before it gets a ✓.</span><button class="tinted" type="submit">Make lesson</button></div>
+      </form>
+      <div class="group" id="lessons" aria-live="polite"></div>
+      <form class="group teach-form" id="checkwork-form">
+        <label class="row"><span>Check my work</span><input id="checkwork-file" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        <div class="row"><span class="sub">A photo of your working: Lantern circles the first line that doesn't follow.</span><button class="tinted" type="submit">Check</button></div>
+      </form>
+      <div class="group" id="checkwork-result" aria-live="polite" hidden></div>
     </section>
 
     <section data-panel="widgets" aria-label="Widgets">
@@ -211,6 +223,7 @@
   <script src="lib/receipt.js"></script>
   <script src="lib/routines.js"></script>
   <script src="lib/teach.js"></script>
+  <script src="lib/lessons.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

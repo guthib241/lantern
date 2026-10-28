@@ -1,6 +1,6 @@
 # Lantern teaching board (S16)
 
-A standalone web page that plays a lesson: a JSON timeline of board actions on a chalkboard, each with a line that is spoken aloud and shown as a caption. It has no build step and no network use. It can be dropped into the Electron app later as another window.
+A web page that plays a lesson: a JSON timeline of board actions on a chalkboard, each with a line that is spoken aloud and shown as a caption. It has no build step and no network use. It runs standalone, and as the desktop app's board window: the panel hands it a lesson Lantern planned and checked (`window.lanternBoardHost.onLesson`, from `desktop/board-preload.js`).
 
 ## Try it
 
@@ -30,7 +30,7 @@ A lesson is JSON; [`schema/lesson.schema.json`](schema/lesson.schema.json) is th
 
 ### The ✓
 
-The board never does math. A ✓ shows only when a line says `"verified": true`. The lesson planner sets that after SymPy accepts the step (PHASE2 S16). The line's `check` keeps the step in SymPy syntax with its relation to an earlier line (`given`, `same_solutions`, `equal`, `derivative_of`, `derivatives`), so anyone can re-verify it. `tests/parallel/test_parallel_board.py` re-verifies every ✓ in the sample lessons with SymPy. `lib/timeline.js` also refuses a lesson whose `verified` line has no `check`.
+The board never does math. A ✓ shows only when a line says `"verified": true`. The lesson planner (`lantern/lesson.py`) sets that after SymPy accepts the step (`lantern/mathcheck.py`); the model that wrote the lesson can't. The line's `check` keeps the step in SymPy syntax with its relation to an earlier line (`given`, `same_solutions`, `equal`, `derivative_of`, `derivatives`), so anyone can re-verify it. `tests/parallel/test_parallel_board.py` re-verifies every ✓ in the sample lessons with SymPy. `lib/timeline.js` also refuses a lesson whose `verified` line has no `check`.
 
 ## Sample lessons
 

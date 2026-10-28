@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('lantern', {
   allowCameraOnce: () => ipcRenderer.invoke('camera:allow-once'),   // one check-in snapshot, after a click
   hideQuick: () => ipcRenderer.send('quick:hide'),
   onQuickShown: (fn) => ipcRenderer.on('quick:shown', () => fn()),
+  openBoard: (lesson) => ipcRenderer.invoke('board:open', lesson),   // S16: play a lesson on the board window
 });

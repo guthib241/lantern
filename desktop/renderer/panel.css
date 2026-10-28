@@ -353,3 +353,9 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; borde
 .teach-form .sub { flex: 1; }
 .approval.teach .row-btns input { flex: 1; min-width: 0; border: 1px solid var(--separator); border-radius: 8px;
   padding: 6px 10px; background: transparent; color: var(--label); font-size: 13.5px; }
+/* S16: Check my work */
+.teach-form input[type="file"] { font-size: 13px; color: var(--label-2); }
+.checkwork.wrong span { color: var(--red-text); }
+.checkwork.unclear span { color: var(--orange-text); }
+.checkwork.ok span { color: var(--green-text); }
+.checkwork-photo { display: block; width: 100%; height: auto; border-top: 1px solid var(--separator); }

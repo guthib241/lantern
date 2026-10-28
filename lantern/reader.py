@@ -111,11 +111,13 @@ def coerce(kind: str, value: Any, options: list[str] | None = None) -> Any:
 
 
 def ask_json(client, *, memory, task_id: int | None, rung, system: str, user: str, schema: dict, name: str,
-             kind: str, emit: Callable[[dict], None] | None = None) -> tuple[dict | None, float, str]:
-    """One structured Chat Completions call on a rung (no tools). Usage and cost go to the task.
-    Returns (data or None, cost, error)."""
+             kind: str, emit: Callable[[dict], None] | None = None,
+             history: list[dict] | None = None) -> tuple[dict | None, float, str]:
+    """One structured Chat Completions call on a rung (no tools). Usage and cost go to the task. `history`: earlier
+    user/assistant turns, for a "fix this" round. Returns (data or None, cost, error)."""
     kw: dict = {"model": models.check_model(rung.model),
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "messages": [{"role": "system", "content": system}, *(history or []),
+                             {"role": "user", "content": user}],
                 "response_format": {"type": "json_schema", "json_schema": {"name": name, "schema": schema}}}
     if rung.effort:
         kw["reasoning_effort"] = rung.effort
@@ -127,7 +129,8 @@ def ask_json(client, *, memory, task_id: int | None, rung, system: str, user: st
         return None, 0.0, explain(e)
     u = models.chat_usage(getattr(r, "usage", None))
     cost = models.token_cost(rung.model, u)
-    memory.log_usage(task_id, rung.model, u.input_tokens, u.cached_tokens, u.output_tokens, cost)
+    if memory is not None:
+        memory.log_usage(task_id, rung.model, u.input_tokens, u.cached_tokens, u.output_tokens, cost)
     if emit is not None:
         emit({"type": "usage", "task_id": task_id, "model": rung.model, "badge": models.badge(rung.model),
               "rung": rung.n, "rung_badge": rung.badge, "kind": kind, "input_tokens": u.input_tokens,

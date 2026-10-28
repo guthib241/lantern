@@ -1,6 +1,6 @@
 // Lantern desktop (Electron main process).
-// Two windows: a transparent, always-on-top avatar that lets clicks pass through except over
-// the sprite, and a panel (chat, approvals, privacy, phone, costs, widgets). Renderers are
+// Windows: a transparent, always-on-top avatar that lets clicks pass through except over
+// the sprite, a panel (chat, approvals, privacy, phone, costs, widgets), Quick Ask, and the teaching board. Renderers are
 // sandboxed with context isolation; they talk to the local Lantern server on 127.0.0.1 with
 // the per-install token from ~/.lantern/token. Ctrl/Cmd+Shift+X is the global STOP.
 const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
@@ -21,6 +21,7 @@ let config = { apiBase: process.env.LANTERN_API || 'http://127.0.0.1:8765', toke
 let avatar = null;
 let panel = null;
 let quick = null;
+let board = null;   // the teaching board (S16), opened from the panel with a lesson
 let tray = null;
 // What the menu bar icon, badge and notifications last showed (also read by the end-to-end test).
 const nativeStatus = { line: 'Starting…', badge: 0, notified: [] };
@@ -117,6 +118,26 @@ function createQuick() {
   quick.on('blur', () => quick.hide());   // like Spotlight: clicking elsewhere closes it
 }
 
+// The teaching board (S16): a full window that plays a lesson the panel fetched from the server. The board page
+// checks the lesson itself (lib/timeline.js) and shows a ✓ only on lines Lantern verified with SymPy.
+function openBoard(lesson) {
+  const send = () => board.webContents.send('board:lesson', lesson);
+  if (board && !board.isDestroyed()) {
+    if (board.webContents.isLoading()) board.webContents.once('did-finish-load', send);
+    else send();
+    board.show();
+    board.focus();
+    return;
+  }
+  board = new BrowserWindow({
+    width: 1280, height: 800, title: 'Lantern board', backgroundColor: '#1e2c26', autoHideMenuBar: true,
+    webPreferences: secure('board-preload.js'),
+  });
+  board.webContents.once('did-finish-load', send);
+  board.on('closed', () => { board = null; });
+  board.loadFile(path.join(__dirname, 'board', 'index.html'));
+}
+
 function toggleQuick(show) {
   if (!quick) return;
   const want = show === undefined ? !quick.isVisible() : show;
@@ -175,6 +196,13 @@ ipcMain.handle('stop', () => stopEverything());
 ipcMain.handle('camera:allow-once', () => { cameraUntil = Date.now() + 5000; return true; });
 ipcMain.on('avatar:hover', (_e, over) => {
   if (avatar) avatar.setIgnoreMouseEvents(!over, { forward: true });
+});
+ipcMain.handle('board:open', (e, lesson) => {
+  // Only the panel may open the board, and only with something shaped like a lesson.
+  if (!panel || e.sender !== panel.webContents) return false;
+  if (!lesson || typeof lesson !== 'object' || !Array.isArray(lesson.actions) || lesson.actions.length > 200) return false;
+  openBoard(lesson);
+  return true;
 });
 ipcMain.on('panel:toggle', () => togglePanel());
 ipcMain.on('panel:show', () => togglePanel(true));

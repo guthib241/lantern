@@ -48,13 +48,16 @@ RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
 ANSWER = re.compile(r"^\s*#(\d+)[\s:,.-]+(.+)$", re.S)   # "#12 residential": an answer to task 12's question
 LEARN = re.compile(r"^\W*/?learn(?:\s+(?:it|this|that|task))?(?:\s+#?(\d+))?\W*$", re.I)
+# S16: a photo of handwritten working with these words goes to Check my work, not to the scanner
+CHECK_WORK = re.compile(r"\bcheck\s+(?:my|this|the)?\s*(?:work|working|homework|answer|solution|steps|math|maths)\b", re.I)
 QUESTION_DELAY = 1.0   # seconds: questions that arrive together go out as one message
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
          "resume, undo (puts back the files the last task moved), receipt (proof of what the last task did), or "
          "learn (turn the last task into a routine that runs with no model calls). Send a photo of a paper (from "
          "your phone or glasses) and say what it's for: I scan it and run the routine with the scan attached. Send a "
-         "how-to video and I'll send back its steps to check before I do them. "
+         "how-to video and I'll send back its steps to check before I do them. Send a photo of your math working with "
+         "\"check my work\" and I'll find the first line that doesn't follow. "
          "Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
@@ -266,6 +269,13 @@ class ChannelHub:
         self._start_photo(ch, item[0], "")
 
     def _start_photo(self, ch: Channel, image: bytes, words: str) -> None:
+        if CHECK_WORK.search(words or ""):
+            try:
+                task_id = self.core.check_work(image)
+            except ValueError as e:
+                return self.say(ch.name, f"I can't check work right now: {e}.")
+            self.origin[task_id] = ch.name
+            return self.say(ch.name, f"✏️ Checking it line by line (task #{task_id}).")
         try:
             task_id = self.core.photo(image, words)
         except ValueError as e:

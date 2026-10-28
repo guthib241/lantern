@@ -460,6 +460,9 @@
       else if (e.key === 'm' || e.key === 'M') setMuted(!st.muted);
     });
     const autoplay = params.get('autoplay') === '1';
+    // In the desktop app, the panel hands the board a lesson Lantern planned and checked (S16).
+    let hosted = false;
+    if (window.lanternBoardHost) window.lanternBoardHost.onLesson((lesson) => { hosted = true; load(lesson, true); });
     try {
       const index = await fetchJSON('lessons/index.json');
       const pick = $('lesson-pick');
@@ -468,8 +471,9 @@
       const first = index.lessons.find((l) => wanted && l.file === `${wanted}.json`) || index.lessons[0];
       pick.value = first.file;
       pick.addEventListener('change', async () => load(await fetchJSON(`lessons/${pick.value}`), false));
-      load(await fetchJSON(`lessons/${first.file}`), autoplay);
+      if (!hosted) load(await fetchJSON(`lessons/${first.file}`), autoplay);
     } catch (e) {
+      if (hosted) return;
       // Opened straight from disk (file://): lessons can't be fetched, so offer the file picker instead.
       $('lesson-title').textContent = 'Open a lesson file to begin';
       document.body.dataset.state = 'idle';

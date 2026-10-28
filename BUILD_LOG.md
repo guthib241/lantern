@@ -414,3 +414,18 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - **Rules:** the owner's words become a Cedar policy via Muse Spark, with examples decided by cedarpy; every allowed request still needs the owner's approval.
   - **Receipts** on both sides; `GET /network`, `POST /network/contacts`, `/network/rules`, `/network/ask`. cedarpy is an optional extra (`network`).
 - Tests: `tests/test_network.py` (6). Two Lanterns in one process: a bill shared with the owner's approval, scrubbed; a private file never found; a folder outside the rules refused with no card; a routine refused by the rules, then imported but not trusted until it has its own folder. Every bad message is refused (forged, stranger, replayed, stale, misaddressed, bad fingerprint). Rules compile with the engine's own decisions. The hub routes network messages and still ignores strangers.
+
+## Oct 28 (Phase 2, S16: Teaching Mode)
+- `lantern/mathcheck.py`: SymPy step checks behind a whitelist and a time limit (`given`, `equal`, `same_solutions`, `derivative_of`, `derivatives`).
+- `lantern/lesson.py` + `Core.lesson`: Muse Spark plans a board lesson (structured output). Code holds it to the board's schema. SymPy checks every step; failures go back with the reason (up to 2 rounds, one rung up); what still fails is removed with its dependents. ✓ only where SymPy agreed; plots computed by SymPy. Lessons are saved in Lantern's own `lessons/` folder: `POST /lesson`, `GET /lessons`, `GET /lessons/{name}`.
+- `lantern/checkwork.py` + `Core.check_work`: a photo of handwritten working (desktop `POST /checkwork`, or a phone photo captioned "check my work"). Muse Spark transcribes the lines; SymPy finds the first that doesn't follow; SAM 3.1 refines the location; Pillow circles it. The reply says why (with both solution sets when they differ) and is honest when a line can't be read.
+- Desktop: a board window opened from the panel (`board:open` IPC, `board-preload.js`; `board.js` plays a lesson handed over by the app). The panel has a "Lessons on the board" form and list, and Check my work with the circled photo.
+- SymPy is an optional extra (`teach`); KaTeX is now listed in THIRD_PARTY.md; CI installs the `network` and `teach` extras.
+- Tests: `tests/test_lesson.py` (22).
+  - The checker refuses non-math input; SymPy catches a wrong factorisation and the product-rule mix-up.
+  - A wrong step goes back with the reason and returns fixed (a rung up). A step that never checks out is removed with what points at it, and the model's own "verified" is ignored.
+  - Formulas show without a ✓; geometry has none and says so.
+  - A generated lesson matches the board's JSON schema and plays in Chromium with `.check.on` exactly on the checked visible lines.
+  - Notes go through the policy (private refused) and are wrapped untrusted; the API serves lessons.
+  - Check my work: the first wrong line is found, explained and circled; SAM refines the circle (real wire format); unreadable lines are reported; a phone photo with "check my work" gets the reply.
+- `desktop/test/lessons.test.js` (3).

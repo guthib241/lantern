@@ -215,6 +215,76 @@
     try { await api.post('/teach/note', { task_id: teaching ? teaching.taskId : null, text }); } catch (e) { toast(e.message); }
   }
 
+  // ---- lessons on the board and Check my work (S16) ---------------------------------------------------------
+  async function loadLessons() {
+    let list;
+    try { list = await api.get('/lessons'); } catch (e) { return; }
+    const box = $('lessons');
+    box.textContent = '';
+    const rows = LanternLessons.rows(list);
+    if (!rows.length) box.append(h('div', { class: 'row' }, h('span', { class: 'sub' }, 'No lessons yet.')));
+    for (const r of rows) {
+      box.append(h('div', { class: 'row' }, h('div', {}, h('div', {}, r.title), h('div', { class: 'sub' }, r.line)),
+        h('button', { class: 'tinted', onclick: () => openLesson(r.name) }, 'Open board')));
+    }
+  }
+
+  async function openLesson(name) {
+    try {
+      const data = await api.get(`/lessons/${encodeURIComponent(name)}`);
+      if (!(await window.lantern.openBoard(data.lesson))) toast("The board couldn't open that lesson.");
+    } catch (e) {
+      toast(`Couldn't open the board: ${e.message}`);
+    }
+  }
+
+  async function lessonStart(ev) {
+    ev.preventDefault();
+    const request = $('lesson-request').value.trim(), notes = $('lesson-notes').value.trim();
+    const problem = LanternLessons.check(request);
+    if (problem) return toast(problem);
+    try {
+      const r = await api.post('/lesson', { request, notes });
+      toast(`Planning the lesson (task #${r.task_id}); the board opens when every step is checked.`);
+    } catch (e) {
+      toast(`Couldn't start: ${e.message}`);
+    }
+  }
+
+  async function checkworkStart(ev) {
+    ev.preventDefault();
+    const file = $('checkwork-file').files[0];
+    const problem = LanternLessons.photoCheck(file);
+    if (problem) return toast(problem);
+    const image = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(file);
+    });
+    try {
+      const r = await api.post('/checkwork', { image });
+      toast(`Checking it line by line (task #${r.task_id}).`);
+    } catch (e) {
+      toast(`Couldn't check it: ${e.message}`);
+    }
+  }
+
+  async function showCheckwork(e) {
+    const r = LanternLessons.result(e);
+    if (!r) return;
+    const box = $('checkwork-result');
+    box.textContent = '';
+    box.hidden = false;
+    box.append(h('div', { class: `row checkwork ${r.tone}` }, h('span', {}, r.text)));
+    if (r.image) {
+      try {
+        box.append(h('img', { class: 'checkwork-photo', alt: 'Your working, with the first wrong line circled',
+                              src: await api.dataURL(`/checkwork/image/${encodeURIComponent(r.image)}`) }));
+      } catch (err) { /* the reply already says which line */ }
+    }
+  }
+
   function routineChart(r) {   // SVG through DOM calls only
     const NS = 'http://www.w3.org/2000/svg';
     const d = LanternRoutines.chartData(r);
@@ -608,6 +678,8 @@
   }
 
   $('teach-form').addEventListener('submit', teachStart);
+  $('lesson-form').addEventListener('submit', lessonStart);
+  $('checkwork-form').addEventListener('submit', checkworkStart);
 
   $('phone-form').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -695,6 +767,12 @@
       renderTeach();
       if (e.phase === 'recording') window.lantern.showPanel();
     }
+    if (e.type === 'lesson') {   // S16: planned and checked; play it
+      toast(`Lesson ready: ${e.title} (${e.note}).`);
+      loadLessons();
+      openLesson(e.name);
+    }
+    if (e.type === 'checkwork') showCheckwork(e);
     if (e.type === 'routine_learned' || e.type === 'routine_healed' || e.type === 'routines' ||
         (e.type === 'done' && tab === 'costs')) loadRoutines();
     if (e.type === 'routine_healed') toast(`The page had changed: healed ${(e.steps || []).length} step(s), now v${e.version}.`);
@@ -706,6 +784,7 @@
       if (health.demo) $('conn').textContent = 'Rehearsal · scripted model, nothing sent';
       loadReminders();
       loadCosts();
+      loadLessons();
     }
   });
 

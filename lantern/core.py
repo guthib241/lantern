@@ -518,6 +518,92 @@ class Core:
         from .voice import transcribe
         return lambda wav: transcribe(wav)
 
+    # ---- Teaching Mode (S16, lesson.py and checkwork.py) -----------------------------------------------------
+    def lessons_folder(self) -> Path:
+        return Path(self.cfg.db_path).expanduser().parent / "lessons"   # Lantern's own folder
+
+    def lesson(self, request: str, notes: str = "") -> int:
+        """A lesson for the board from the user's words (and, optionally, a notes file in a visible zone). Every math
+        step is checked by SymPy before it may carry a ✓; the desktop opens the board on the "lesson" event."""
+        from . import untrusted
+        from .lesson import MAX_NOTES, LessonError
+        if self.compiler is None:
+            raise ValueError("lessons need Lantern's scheduler (lantern --serve)")
+        request = " ".join(str(request or "").split())[:500]
+        if not request:
+            raise LessonError("say what the lesson should teach")
+        wrapped = None
+        if notes:
+            p, zone = self.policy.check_visible(notes)
+            if zone == "private":   # the planner is Muse Spark, in the cloud: private files never go there
+                raise PolicyError("those notes are in a private folder, and lessons are planned by Muse Spark in the "
+                                  "cloud; pick notes outside the private zone")
+            wrapped = untrusted.wrap(self.policy.read_text(p, limit=MAX_NOTES), str(p), "file")
+        goal = f"Teach: {request}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "notes": bool(wrapped)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._lesson_job(agent, job.id, goal, request, wrapped))
+        return job.id
+
+    def _lesson_job(self, agent, job_id: int, goal: str, request: str, notes: dict | None) -> None:
+        from . import lesson as lesson_mod
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        if notes is not None:
+            agent.toolbox.tainted = True   # the notes are untrusted content
+        try:
+            result = lesson_mod.plan(agent.client, request, notes=notes, memory=self.memory, task_id=job_id,
+                                     emit=self.emit)
+            name = lesson_mod.save(self.lessons_folder(), result)
+        except lesson_mod.LessonError as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't make that lesson: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't make that lesson: {explain(e)}")
+        if notes is not None:
+            self.memory.mark_quoted(job_id)   # words from the notes stay out of later briefings
+        self.memory.log_step(job_id, "tool_result", {"name": "lesson", "result": {
+            "name": name, "verified": result["verified"], "removed": result["removed"], "rounds": result["rounds"]}})
+        self.emit({"type": "lesson", "task_id": job_id, "name": name, "title": result["lesson"]["title"],
+                   "note": result["note"]})
+        self._photo_done(agent, job_id, "done", f"Lesson ready: “{result['lesson']['title']}” ({result['note']}).")
+
+    def check_work(self, image: bytes) -> int:
+        """A photo of handwritten working: find the first line that doesn't follow, circle it, say why."""
+        if self.compiler is None:
+            raise ValueError("checking work needs Lantern's scheduler (lantern --serve)")
+        if not image:
+            raise ValueError("send a photo of the working")
+        goal = "Check my work"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "photo_bytes": len(image)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._check_work_job(agent, job.id, goal, image))
+        return job.id
+
+    def _check_work_job(self, agent, job_id: int, goal: str, image: bytes) -> None:
+        from . import checkwork
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            out = checkwork.run(agent.client, image, folder=Path(self.cfg.media_dir).expanduser(), memory=self.memory,
+                                task_id=job_id, use_sam=os.environ.get("LANTERN_CHECKWORK_SAM", "on") != "off")
+        except checkwork.CheckError as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't check that: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't check that: {explain(e)}")
+        self.memory.log_step(job_id, "tool_result", {"name": "check_work", "result": out})
+        self.memory.mark_quoted(job_id)   # what the photo says stays out of later briefings
+        self.emit({"type": "checkwork", "task_id": job_id, "wrong": out["wrong"], "unreadable": out["unreadable"],
+                   "image": out["image"], "reply": out["reply"]})
+        self._photo_done(agent, job_id, "done", out["reply"])
+
     # ---- Lantern Network (S6, network.py) --------------------------------------------------------------------
     def net(self):
         if self._net is None:

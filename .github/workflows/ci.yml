@@ -24,7 +24,7 @@ jobs:
       - name: System tools (ffmpeg for voice notes)
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install Lantern
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,network,teach]"
       - name: Browser for the form tests
         run: python -m playwright install --with-deps chromium
       - name: Lint (pyflakes)
