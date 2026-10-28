@@ -54,6 +54,9 @@ INTERRUPTED = "cut short when Lantern stopped; say 'resume' to continue"
 RESUME_NOTE = "\n\n[Resuming task #"
 
 
+LENT_PREFIX = "[lent] "   # S13: a borrowed task's goal starts with this
+
+
 def recover_interrupted(memory: Memory, keep: set[int] | frozenset = frozenset()) -> list:
     """Tasks still 'active' from a previous run were cut short (crash, restart, power): mark them.
     `keep`: tasks the scheduler picks up again from their checkpoint (scheduler.py)."""
@@ -853,6 +856,79 @@ class Core:
         agent.on_event("done", {"id": job_id, "status": status, "summary": text, "reply": text,
                                 "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": len(report["checked"])})
 
+    # ---- Lend your Lantern (S13, lend.py) ----------------------------------------------------------------
+    def lending(self):
+        from .lend import Grants
+        return Grants(Path(self.cfg.db_path).expanduser().parent / "network")   # Lantern's own folder
+
+    def lend(self, name: str, channel: str, address: str, text: str, *, save: bool = False, cedar: str = "",
+             hours: float = 0) -> dict:
+        """Preview what the owner's words become (a Cedar policy, a time limit, examples the engine decides), or
+        save the grant the owner has seen. Saving tells the borrower (event "grant")."""
+        from .lend import LendError, compile_grant, hours_of
+        name, address = " ".join(str(name).split())[:40], str(address).strip()
+        if not name or not address or not channel:
+            raise LendError("say who it's for, and their WhatsApp or Telegram")
+        if not save:
+            return compile_grant(self.client, name, text, memory=self.memory)
+        if not cedar.strip():
+            raise LendError("save the grant you previewed")
+        g = self.lending().add(name, channel, address, " ".join(str(text).split())[:1000], cedar, hours_of(hours))
+        self.emit({"type": "grant", "event": "lent", "id": g["id"], "name": g["name"], "channel": g["channel"],
+                   "address": g["address"], "expires_at": g["expires_at"], "text": g["text"]})
+        return g
+
+    def revoke(self, grant_id: str) -> dict:
+        """End a loan now: its running tasks stop and the borrower is told."""
+        g = self.lending().update(grant_id, status="revoked")
+        self._end_grant(g, "revoked")
+        return g
+
+    def expire_grants(self, now: float | None = None) -> list[str]:
+        ended = []
+        for g in self.lending().due(now):
+            g = self.lending().update(g["id"], status="expired")
+            self._end_grant(g, "expired")
+            ended.append(g["id"])
+        return ended
+
+    def _end_grant(self, g: dict, why: str) -> None:
+        for task_id in g.get("tasks") or []:
+            if self.scheduler is not None and self.scheduler.active(task_id):
+                self.scheduler.stop_task(task_id)
+        self.bus.cancel_where(lambda a: (a.payload or {}).get("grant") == g["id"], f"the loan {why}")
+        self.emit({"type": "grant", "event": why, "id": g["id"], "name": g["name"], "channel": g["channel"],
+                   "address": g["address"]})
+
+    def borrow(self, grant_id: str, text: str) -> int:
+        """A request from someone this Lantern is lent to: a task where every tool call is checked against the grant
+        and approved by the owner (lend.Guard)."""
+        from .lend import Guard, LendError, active
+        g = self.lending().get(grant_id)
+        if g is None or not active(g):
+            raise LendError("this Lantern isn't lent to you right now")
+        if self.compiler is None:
+            raise LendError("lending needs Lantern's scheduler (lantern --serve)")
+        text = " ".join(str(text).split())[:500]
+        if not text:
+            raise LendError("say what you'd like Lantern to do")
+        goal = f"{LENT_PREFIX}{g['name']}, who has borrowed this Lantern, asks: {text}"
+        job = self.memory.start_task(goal)
+        self.lending().add_task(grant_id, job.id)
+        self.memory.mark_quoted(job.id)   # the borrower's words stay out of the owner's later briefings
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        guard = Guard(self.lending(), grant_id, self.policy)
+
+        def run(agent):
+            agent.toolbox.lent = guard
+            try:
+                agent.run(goal, task_id=job.id)
+            finally:
+                agent.toolbox.lent = None
+                self.memory.log_step(job.id, "lend", {"grant": grant_id, "calls": guard.calls})
+        self.scheduler.submit_job(job.id, goal, run)
+        return job.id
+
     def routines(self) -> list[dict]:
         return self.compiler.list() if self.compiler is not None else []
 
@@ -909,6 +985,8 @@ class Core:
         t = self.memory.get_task(task_id)
         if t.status in ("active",):
             raise ValueError("that task is still running")
+        if t.goal.startswith(LENT_PREFIX):   # S13: only its borrower, under their grant, may ask for it again
+            raise ValueError("a borrowed task runs only when its borrower asks, under their grant")
         if t.status == "interrupted":
             return self.resume([task_id])[0]
         if (of := self._undo_of(task_id)) is not None:   # an undo runs again as an undo, never through the model
@@ -922,6 +1000,9 @@ class Core:
         new_ids = []
         for t in tasks:
             if t.status != "interrupted":
+                continue
+            if t.goal.startswith(LENT_PREFIX):   # S13: never resumed outside its grant
+                self.memory.finish_task(t.id, "cancelled", "a borrowed task isn't resumed; they can ask again")
                 continue
             of = self._undo_of(t.id)
             try:
@@ -1059,6 +1140,10 @@ class Core:
             try:
                 self.check_reminders()
             except Exception:  # a bad row must never stop the timer
+                pass
+            try:   # S13: loans end on time, and their running tasks stop
+                self.expire_grants()
+            except Exception:
                 pass
             try:   # S11: the nightly check, once a night (LANTERN_SLEEP_AT; `lantern --serve` sets 03:30)
                 if self.compiler is not None and sleep_mod.due(self.memory):

@@ -74,6 +74,7 @@ class ChannelHub:
         self.converter = converter or to_wav16k
         self.media_dir = Path(media_dir or core.cfg.media_dir).expanduser()
         self.origin: dict[int, str] = {}          # task id -> channel that asked for it
+        self.borrowed: dict[int, tuple[str, str, str]] = {}   # S13: task id -> (channel, borrower address, name)
         self.ignored = 0                          # messages from anyone but the owner
         self.errors: deque = deque(maxlen=50)
         self._seen: deque = deque(maxlen=500)     # message ids already handled (webhooks retry)
@@ -179,16 +180,23 @@ class ChannelHub:
         text = SCRUBBER.scrub(args[0]).text
         if kind == "text":
             ch.send_text(text)
+        elif kind == "to":   # S13: to someone this Lantern is lent to, not the owner's chat
+            ch.send_to(args[1], text)
         else:
             ch.send_buttons(text, args[1])
         destination = getattr(ch, "destination", None)
         if destination:  # what left the laptop through this channel
-            body = json.dumps({"text": text, "buttons": args[1] if kind == "buttons" else []}).encode()
+            body = json.dumps({"text": text, "buttons": args[1] if kind == "buttons" else [],
+                               "to": args[1] if kind == "to" else ""}).encode()
             self.core.audit.record(lane="cloud", destination=destination, endpoint=f"{ch.name}.send",
                                    model=ch.name, payload=body, preview=text)
 
     def say(self, channel: str | None, text: str) -> None:
         self._outbox.put((channel, "text", (text,)))
+
+    def tell(self, channel: str, address: str, text: str) -> None:
+        """S13: a message to a borrower's own chat."""
+        self._outbox.put((channel, "to", (text, address)))
 
     # ---- incoming ----------------------------------------------------------------------
     def handle(self, inc: Incoming) -> None:
@@ -200,6 +208,8 @@ class ChannelHub:
             except Exception as e:
                 self._error("network", e)
             return
+        if ch is not None and not ch.is_owner(inc.sender) and (grant := self._grant(ch, inc.sender)) is not None:
+            return self._borrower(ch, inc, grant)   # S13: someone this Lantern is lent to, right now
         if ch is None or not ch.is_owner(inc.sender):
             self.ignored += 1
             return
@@ -254,6 +264,38 @@ class ChannelHub:
             return self.say(ch.name, f"I couldn't get that video ({type(e).__name__}). Try sending it again.")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🎬 Watching it (task #{task_id}). I'll send you the steps to check before I do anything.")
+
+    # ---- lend your Lantern (S13): a borrower's own chat ---------------------------------------------
+    def _grant(self, ch: Channel, sender: str) -> dict | None:
+        try:
+            return self.core.lending().find(ch.name, sender)
+        except Exception:   # no lending here (or its file can't be read): a stranger, as before
+            return None
+
+    def _borrower(self, ch: Channel, inc: Incoming, grant: dict) -> None:
+        if inc.msg_id:
+            key = (inc.channel, inc.msg_id)
+            if key in self._seen:
+                return
+            self._seen.append(key)
+        answer = lambda text: self.tell(ch.name, grant["address"], text)   # noqa: E731  (the address the owner gave)
+        if inc.kind == "voice":
+            text = self._voice(ch, inc, reply=answer)
+            if text is None:
+                return
+        elif inc.kind == "text":
+            text = inc.text
+        else:
+            return answer("Send what you'd like Lantern to do as a message or a voice note.")
+        if not (text or "").strip():
+            return
+        try:
+            task_id = self.core.borrow(grant["id"], text)
+        except ValueError as e:
+            return answer(f"Lantern can't do that right now: {e}.")
+        self.borrowed[task_id] = (ch.name, grant["address"], grant["name"])
+        answer(f"🔑 On it (task #{task_id}). The owner approves each step on their phone.")
+        self.say(None, f"🔑 {grant['name']} asked your Lantern: “{text[:300]}” (task #{task_id}). Each step needs your OK.")
 
     def _take_photo(self, channel: str) -> bytes | None:
         with self._photo_lock:
@@ -450,7 +492,8 @@ class ChannelHub:
         return (f"🔎 {a.action} (#{a.id})\n{a.summary}\n\nExactly this will run (hashes, not contents):\n"
                 f"{payload[:2500]}\n\npayload sha256 {a.payload_hash[:16]}…")
 
-    def _voice(self, ch: Channel, inc: Incoming) -> str | None:
+    def _voice(self, ch: Channel, inc: Incoming, reply: Callable[[str], None] | None = None) -> str | None:
+        reply = reply or (lambda text: self.say(ch.name, text))
         try:
             data, ext = inc.fetch_audio()
             self.media_dir.mkdir(parents=True, exist_ok=True)
@@ -464,7 +507,7 @@ class ChannelHub:
             result = self.transcriber(wav, keywords=self.keywords())
         except Exception as e:  # download, ffmpeg (CalledProcessError), transcription: all end the same way
             self._error(f"{ch.name} voice", e)
-            self.say(ch.name, f"I couldn't hear that voice note ({type(e).__name__}). Try again or type it.")
+            reply(f"I couldn't hear that voice note ({type(e).__name__}). Try again or type it.")
             return None
         text = str(result.get("transcript", "")).strip()
         ms = int(result.get("audioDurationMs") or 0)
@@ -473,9 +516,9 @@ class ChannelHub:
         self.core.emit({"type": "usage", "model": models.VOICE, "badge": models.badge(models.VOICE),
                         "audio_ms": ms, "cost_usd": cost})
         if not text:
-            self.say(ch.name, "I got the voice note but couldn't make out any words.")
+            reply("I got the voice note but couldn't make out any words.")
             return None
-        self.say(ch.name, f"🎙️ “{text}”")
+        reply(f"🎙️ “{text}”")
         return text
 
     def keywords(self) -> list[str]:
@@ -533,6 +576,24 @@ class ChannelHub:
         elif kind == "reminder":
             note = " (it was due while Lantern was off)" if event.get("late") else ""
             self._outbox.put((None, "text", (f"⏰ Reminder: {event.get('text', '')}{note}",)))
+        elif kind == "grant":   # S13: a loan starts or ends; the borrower and the owner hear about it
+            ch, who = event.get("channel", ""), event.get("address", "")
+            if ch not in self.channels:
+                return
+            if event.get("event") == "lent":
+                until = time.strftime("%H:%M", time.localtime(float(event.get("expires_at") or 0)))
+                self.tell(ch, who, f"🏮 This Lantern is lent to you until {until}: {event.get('text', '')}. Write or "
+                                   "send a voice note here; the owner approves each step.")
+            else:
+                ended = "was revoked" if event.get("event") == "revoked" else "has ended"
+                self.tell(ch, who, f"🔑 The loan of this Lantern {ended}. Thank you!")
+                self.say(None, f"🔑 {event.get('name')}'s loan {ended}.")
+        elif kind == "done" and event.get("id") in self.borrowed:   # S13: reply to the borrower, receipt to the owner
+            ch, who, name = self.borrowed.pop(event["id"])
+            reply = (event.get("reply_public") or event.get("reply") or event.get("summary") or "").strip()
+            self.tell(ch, who, reply or "That didn't work.")
+            self.say(None, f"🔑 {name}'s task #{event['id']} finished ({event.get('status')}).\n"
+                           + self._receipt(event["id"]))
         elif kind == "done":
             name = self.origin.pop(event.get("id"), None)
             if name:

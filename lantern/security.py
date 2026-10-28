@@ -44,7 +44,7 @@ TIERS: dict[str, str] = {
     "send_email": RED, "fill_form": RED, "run_in_project": RED, "mcp_call": RED,
     # approval actions that aren't tool names
     "save_widget": YELLOW, "submit_form": RED, "run_routine": RED, "cua_safety_check": RED,
-    "open_untrusted_url": RED, "reel_steps": RED, "network_send": RED, "network_import": YELLOW,
+    "open_untrusted_url": RED, "reel_steps": RED, "network_send": RED, "network_import": YELLOW, "lent_action": RED,
 }
 # Arguments that choose which action runs or who receives data: they may not come from untrusted content
 # without the user approving that exact value.

@@ -34,6 +34,8 @@ in the browser can't drive Lantern through localhost.
   POST /checkwork {image: data URL} S16: find the first wrong line in handwritten working -> {task_id}
   GET  /checkwork/image/{name}      the photo with that line circled
   GET  /decoy/image/{name}          S7: what you saw / what the cloud model was sent (stand-in values), side by side
+  GET  /lend, POST /lend {name, channel, address, text, cedar?, hours?}   S13: loans (preview, then save)
+  POST /lend/{id}/revoke            S13: end a loan now
   WS   /events?token=...            live events; every step carries a model badge
 """
 from __future__ import annotations
@@ -144,6 +146,15 @@ class NetAskIn(BaseModel):
 class ReelIn(BaseModel):
     path: str
     words: str = ""
+
+
+class LendIn(BaseModel):
+    name: str
+    channel: str
+    address: str
+    text: str
+    cedar: str = ""      # set: save this previewed policy
+    hours: float = 0
 
 
 class LessonIn(BaseModel):
@@ -312,6 +323,33 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             return {"task_id": core.reel(path=body.path, words=body.words)}
         except (ValueError, PolicyError) as e:
             raise HTTPException(409, str(e))
+
+    # ---- Lend your Lantern (S13) ------------------------------------------------------------------------------
+    @app.get("/lend", dependencies=[Depends(auth)])
+    def lend_list():
+        from .lend import active
+        return [{**{k: g[k] for k in ("id", "name", "channel", "address", "text", "expires_at", "status", "tasks")},
+                 "active": active(g)} for g in core.lending().all().values()]
+
+    @app.post("/lend", dependencies=[Depends(auth)])
+    def lend(body: LendIn):
+        """Preview what the words become (policy, hours, the engine's decisions); with `cedar`, save that grant."""
+        from .lend import LendError
+        from .network import NetError
+        try:
+            return core.lend(body.name, body.channel, body.address, body.text, save=bool(body.cedar),
+                             cedar=body.cedar, hours=body.hours)
+        except (LendError, NetError) as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/lend/{grant_id}/revoke", dependencies=[Depends(auth)])
+    def lend_revoke(grant_id: str):
+        from .lend import LendError
+        try:
+            g = core.revoke(grant_id)
+        except LendError:
+            raise HTTPException(404, "no such loan")
+        return {"id": g["id"], "status": g["status"]}
 
     # ---- Teaching Mode (S16) --------------------------------------------------------------------------------
     @app.post("/lesson", dependencies=[Depends(auth)])

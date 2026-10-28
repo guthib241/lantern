@@ -440,3 +440,14 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - the model types a stand-in and the real value lands, with no real value in any request; typing a real value or another value into a guarded field is refused;
   - fill_form in decoy mode keeps the pairs and reports them.
 - The eval dry run now covers decoy mode.
+
+## Oct 28 (Phase 2, S13: Lend your Lantern)
+- `lantern/lend.py`: grants (`network/grants.json`, owner-only), `compile_grant` (Muse Spark → Cedar policy + hours; examples decided by cedarpy), `check` (in code first: active, lendable tool, no private/hidden zone; then Cedar on every file and site a call touches), and `Guard` (installed on a borrowed task's toolbox: check, then the owner's red card bound to the call's hash).
+- Core: `lend` (preview/save), `revoke`, `expire_grants` (timer sweep; stops running tasks, denies their cards), `borrow`; borrowed tasks are never resumed or retried outside the loan. `Toolbox.lent` hook; `ApprovalBus.cancel_where`; `Scheduler.stop_task`.
+- Hub: an active grant's sender gets through (text or voice, echoed in their chat); they get the reply, the owner gets the request, the cards and the full receipt; loan start/end notices to both. `GET /lend`, `POST /lend`, `POST /lend/{id}/revoke`.
+- Tests: `tests/test_lend.py` (5):
+  - Amma reads a bill with one owner card; the Bank and Private reads are refused with no card; she gets the reply and the owner the receipt; retry refused.
+  - Strangers are ignored; revoking denies the open card and stops the task; an expired loan lets nothing through.
+  - A voice note is echoed in her chat.
+  - The owner's words compile with the engine's own decisions on the examples.
+  - The code-first refusals.

@@ -76,6 +76,7 @@ class Toolbox:
         self.widgets = widgets  # widgets.Widgets
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
+        self.lent = None        # lend.Guard while a borrowed task runs (S13): every call checked, then approved
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
@@ -635,6 +636,8 @@ class Toolbox:
 
     # ---- dispatch ----------------------------------------------------------
     def call(self, name: str, args: dict) -> dict:
+        if self.lent is not None:   # S13: a borrowed task; refused calls come back as a ToolError the model reads
+            self.lent.allow(self, name, args)
         if self.mcp is not None and name in self.mcp.tools:
             return self.mcp_call(name, args)
         fn = getattr(self, name, None)

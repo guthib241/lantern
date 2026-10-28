@@ -163,8 +163,14 @@ class ApprovalBus:
 
     def cancel_all(self, reason: str = "cancelled") -> int:
         """Kill switch: deny everything pending."""
+        return self.cancel_where(lambda a: True, reason)
+
+    def cancel_where(self, match, reason: str = "cancelled") -> int:
+        """Deny every pending approval `match(approval)` picks (S13: a loan's cards when it ends)."""
         n = 0
         for a in self.pending():
+            if not match(a):
+                continue
             with self._state:
                 if a.status != PENDING:   # answered in the meantime
                     continue

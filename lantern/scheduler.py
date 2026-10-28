@@ -500,6 +500,19 @@ class Scheduler:
                 self._cancel(r, "stopped by the user")
         return [r.id for r in runs]
 
+    def stop_task(self, task_id: int) -> bool:
+        """Stop one task at its next step (S13: a loan that ended)."""
+        with self._lock:
+            r = self.runs.get(task_id)
+        if r is None:
+            return False
+        r.cancelled = True
+        if r.agent is not None:
+            r.agent.cancel.set()
+        if r.phase == "parked" and r.reason == "waiting_user":
+            self._cancel(r, "the loan ended")
+        return True
+
     def _cancel(self, run: Run, why: str) -> None:
         with self._lock:
             self.runs.pop(run.id, None)
