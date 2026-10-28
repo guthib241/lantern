@@ -24,7 +24,7 @@ import time
 from typing import Any, Callable
 
 from . import models
-from .agent import Agent, Result
+from .agent import NOT_DONE, Agent, Result, track_unconfirmed
 from .tools import AskUser, ToolError
 
 STATE_VERSION = 1
@@ -220,6 +220,7 @@ class ResumableAgent(Agent):
             if answer is None:   # still waiting for the user
                 raise Parked("waiting_user", ask["question"], ask.get("options"), ask.get("tainted", False))
             result = {"answer": answer}
+            state["unconfirmed"] = {}   # the user answered after it: their word confirms (e.g. "I did the CAPTCHA")
             state["results"][ask["call_id"]] = result
             state["ask"] = None
             self.memory.log_step(task_id, "tool_result", {"name": "ask_user", "result": result})
@@ -240,7 +241,8 @@ class ResumableAgent(Agent):
                 if not fcalls:
                     text = getattr(response, "output_text", "") or ""
                     summary = text.strip().splitlines()[0][:200] if text.strip() else "(no reply)"
-                    return self._finish(task_id, "done", summary, text, step, calls_made)
+                    status = "failed" if state.get("unconfirmed") else "done"   # a reply can't confirm a change
+                    return self._finish(task_id, status, summary, text, step, calls_made)
                 state.update(response_id=response.id, results={}, in_flight=None, ask=None,
                              calls=[{"name": fc.name, "call_id": fc.call_id, "arguments": fc.arguments or "{}"}
                                     for fc in fcalls])
@@ -365,9 +367,22 @@ class ResumableAgent(Agent):
                 args, parse_error = {}, {"error": f"could not parse arguments: {e}"}
             else:
                 parse_error = None
+            refused = None
             if name == "finish" and parse_error is None:
                 status = args.get("status") if args.get("status") in ("done", "failed") else "failed"
-                finished = (status, str(args.get("summary", "")).strip() or "(no summary)")
+                summary = str(args.get("summary", "")).strip() or "(no summary)"
+                before = state["results"].get(cid)
+                why = next(iter((state.get("unconfirmed") or {}).values()), None) \
+                    if status == "done" and before is None else None
+                if isinstance(before, dict) and "error" in before:
+                    pass                    # refused before a restart: the model was told, the task goes on
+                elif why and not state.get("refused_done"):   # checked in code, not left to the prompt
+                    refused = {"error": NOT_DONE.format(why=why)}
+                    state["refused_done"] = True
+                elif why:                   # asked once already: it is recorded as what it is
+                    finished = ("failed", f"Not confirmed: {why}. {summary}")
+                else:
+                    finished = (status, summary)
             if cid in state["results"]:
                 continue   # ran before this task was parked or Lantern restarted
             if self.cancel.is_set():
@@ -377,7 +392,7 @@ class ResumableAgent(Agent):
                 if self.recovery is not None:
                     self.recovery.bad_arguments(name, parse_error["error"])
             elif name == "finish":
-                result = {"ok": True}
+                result = refused or {"ok": True}
             elif cid == state.get("in_flight"):
                 result = self._interrupted(task_id, state, name, args)
             elif name == "ask_user" and asked is not None:
@@ -437,6 +452,7 @@ class ResumableAgent(Agent):
                 calls_made: list) -> None:
         state["results"][cid] = result
         state["in_flight"] = None
+        track_unconfirmed(state.setdefault("unconfirmed", {}), name, args, result)
         self._save(task_id, state)
         if name == "ask_private" and isinstance(result, dict) and "answer" in result:
             self.memory.mark_private(task_id)

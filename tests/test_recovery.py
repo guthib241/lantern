@@ -173,6 +173,55 @@ def test_a_step_only_the_user_can_do_goes_to_ask_user_and_parks(tmp_path):
     core.shutdown()
 
 
+# ---- "done" only when the last change verified ---------------------------------------------
+UNPAID = {"done": False, "verified": False, "submitted": True, "url": "http://127.0.0.1:9/apply/payment",
+          "reason": "no confirmation appeared after Submit; check the screenshot"}
+PAID = {"done": True, "verified": True, "submitted": True, "url": "http://127.0.0.1:9/apply/payment"}
+
+
+def test_done_after_an_unverified_change_is_refused_once_then_recorded_as_failed(tmp_path):
+    """Seen live (eval_privacy, masked run 5): the declaration box stayed unticked, the payment page said so, and the
+    agent still finished "done", saying the declaration was accepted."""
+    forms = ScriptedForms([UNPAID])
+    client = Routed({"permit": [([call("fill_form", "a", url=UNPAID["url"], goal="pay")], ""),
+                                finish("f1", "Completed with counter payment and declaration"),
+                                finish("f2", "Completed with counter payment and declaration"), ([], "ok")]})
+    core = core_for(tmp_path, client, forms=forms)
+    tid = core.submit("fill the permit payment page")
+    assert core.wait_idle(5)
+    refused = outputs(client.fakes["permit"], 2)[0]
+    assert "wasn't confirmed (no confirmation appeared after Submit" in refused["error"]
+    t = core.memory.get_task(tid)
+    assert t.status == "failed" and t.summary.startswith("Not confirmed: no confirmation appeared")
+    core.shutdown()
+
+
+def test_only_the_same_form_verifying_or_the_users_word_clears_it_and_both_paths_agree(tmp_path):
+    other = "http://127.0.0.1:8/newsletter"   # another site: its success says nothing about the payment
+    forms = ScriptedForms([UNPAID, {**PAID, "url": other}])
+    client = Routed({"permit": [([call("fill_form", "a", url=UNPAID["url"], goal="pay")], ""),
+                                ([call("fill_form", "b", url=other, goal="review")], ""),   # a success elsewhere
+                                finish("f1", "done"),
+                                ask("q", "The payment page wants the declaration ticked: tick it, then reply done."),
+                                finish("f2", "paid at the counter; you ticked the declaration"), ([], "ok")]})
+    core = core_for(tmp_path, client, forms=forms)
+    tid = core.submit("fill the permit payment page")
+    until(lambda: core.questions())                                               # refused: still open
+    assert "wasn't confirmed" in outputs(client.fakes["permit"], 3)[0]["error"]
+    core.answer(tid, "done")
+    assert core.wait_idle(5) and core.memory.get_task(tid).status == "done"     # the user's word confirms
+    core.shutdown()
+    from fakes import FakeClient
+    one = FakeClient([([call("fill_form", "a", url=UNPAID["url"], goal="pay")], ""), finish("f1", "done"),
+                      finish("f2", "done"), ([], "ok")])                         # one at a time (no scheduler)
+    (tmp_path / "solo").mkdir()
+    solo = Core(config(tmp_path / "solo"), one, reminder_tick=0, forms=ScriptedForms([UNPAID]))
+    tid = solo.submit("fill the permit payment page")
+    assert solo.wait_idle(5)
+    assert solo.memory.get_task(tid).status == "failed" and "wasn't confirmed" in json.dumps(one.requests[2]["input"])
+    solo.shutdown()
+
+
 # ---- impossible ----------------------------------------------------------------------------
 def test_a_step_that_keeps_failing_stops_the_task_with_a_report(tmp_path):
     forms = ScriptedForms([{"done": False, "verified": False, "submitted": False, "reason": f"rejected {i}"}

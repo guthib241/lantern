@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import threading
 from dataclasses import dataclass, field
+from typing import Any
 
 from . import models
 from .mcp_client import with_deferred
@@ -54,6 +55,43 @@ FINISH_SPEC = _fn(
     {"status": {"type": "string", "enum": ["done", "failed"]}, "summary": {"type": "string"}},
     ["status", "summary"],
 )
+
+
+def unconfirmed(result: Any) -> str | None:
+    """Why a change tool's result isn't confirmed (it says verified: false and the step isn't done), else None.
+    A page that "was accepted and moved on" is done even before the form's final check."""
+    if isinstance(result, dict) and result.get("verified") is False and not result.get("done"):
+        return " ".join(str(result.get("reason") or result.get("error") or "it couldn't be verified").split())[:200]
+    return None
+
+
+def track_unconfirmed(open_: dict, name: str, args: dict, result: Any) -> None:
+    """Keep `open_` (step key -> why) up to date: a change that didn't verify opens its step; a later result for
+    the same step (for a web form: the same site) that verifies closes it. A success elsewhere never closes
+    another step's failure."""
+    if isinstance(result, dict) and "verified" in result:
+        from urllib.parse import urlparse
+
+        from .recovery import step_key
+        url = str(args.get("url", ""))
+        # A multi-page form is one step: its final confirmation proves the pages before it went through.
+        key = f"fill_form:{urlparse(url).netloc or url}" if name == "fill_form" else step_key(name, args)
+        why = unconfirmed(result)
+        if why:
+            open_[key] = why
+        else:
+            open_.pop(key, None)
+
+
+def first_unconfirmed(calls_made: list[dict]) -> str | None:
+    open_: dict = {}
+    for c in calls_made:
+        track_unconfirmed(open_, c.get("name", ""), c.get("args") or {}, c.get("result"))
+    return next(iter(open_.values()), None)
+
+
+NOT_DONE = ("Not finished as done: your last change wasn't confirmed ({why}). Fix it and check that it verifies, or "
+            "call finish with status failed and say exactly what didn't work.")
 
 
 @dataclass
@@ -164,6 +202,7 @@ class Agent:
             tools=self.tools,
         )
 
+        refused_done = False
         for step in range(1, self.max_steps + 1):
             if self.cancel.is_set():
                 return self._stop(task_id, "cancelled", "stopped by the user", step, calls_made)
@@ -173,9 +212,10 @@ class Agent:
             if not fcalls:
                 # Plain answer with no finish call: a chat reply or a quick question.
                 summary = text.strip().splitlines()[0][:200] if text.strip() else "(no reply)"
+                status = "failed" if first_unconfirmed(calls_made) else "done"   # a reply can't confirm a change
                 self.memory.log_step(task_id, "reply", text)
-                self.memory.finish_task(task_id, "done", summary)
-                return self._result(task_id, "done", summary, text, step, calls_made)
+                self.memory.finish_task(task_id, status, summary)
+                return self._result(task_id, status, summary, text, step, calls_made)
 
             outputs = []
             finished = None
@@ -193,8 +233,15 @@ class Agent:
                         status = args.get("status")
                         if status not in ("done", "failed"):
                             status = "failed"
-                        finished = (status, str(args.get("summary", "")).strip() or "(no summary)")
-                        result = {"ok": True}
+                        summary = str(args.get("summary", "")).strip() or "(no summary)"
+                        why = first_unconfirmed(calls_made) if status == "done" else None
+                        if why and not refused_done:   # checked in code, not left to the prompt
+                            refused_done, result = True, {"error": NOT_DONE.format(why=why)}
+                        else:
+                            if why:   # asked once already: it is recorded as what it is
+                                status, summary = "failed", f"Not confirmed: {why}. {summary}"
+                            finished = (status, summary)
+                            result = {"ok": True}
                     else:
                         try:
                             result = self.toolbox.call(fc.name, args)

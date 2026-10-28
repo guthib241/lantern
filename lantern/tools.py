@@ -78,6 +78,7 @@ class Toolbox:
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
         self.lent = None        # lend.Guard while a borrowed task runs (S13): every call checked, then approved
         self.tainted = False  # set once untrusted content reached the model in this task
+        self.request = ""     # the user's own request for this task (begin_task), for the form plan
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
         self.can_park = False   # True when a scheduler can park this task while it waits for an answer
@@ -88,6 +89,7 @@ class Toolbox:
         self.tainted = False
         self.untrusted_emails = set()
         self.task_id = task_id
+        self.request = "" if goal.startswith(EXTERNAL_PREFIX) else goal   # the user's own words, for the form plan
         if self.router is not None and hasattr(self.router, "set_task"):
             self.router.set_task(task_id)
         if goal.startswith(EXTERNAL_PREFIX):   # written by another program, not typed by the user
@@ -384,7 +386,8 @@ class Toolbox:
         self.tainted = True
         try:
             result = self.forms.fill(url, goal, approve=self._approve, commit=self._commit,
-                                     task_id=self.task_id, cancel=self.cancel, on_event=self.on_event)
+                                     task_id=self.task_id, cancel=self.cancel, on_event=self.on_event,
+                                     request=self.request)
         except FormError as e:
             raise ToolError(str(e)) from e
         # labels and the confirmation text come from a web page
