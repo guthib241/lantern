@@ -467,3 +467,18 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - S1 restart from the checkpoint: pass, $0.0169.
   - S4 portal learn → heal: fail, $0.0188.
 - **Bug found live and fixed:** mid-task, the API answered 400 "referenced response not found or expired" (check 6 on its third turn; check 3 too, after the refused duplicate). The recap fallback existed but didn't fire: `taskrun.chain_lost` matched a guessed message, and the fallback ran only after a restart. Now it matches the real message and runs on any turn. `tests/test_chain.py` (2) replays the live error.
+- **S4 portal story, rerun after the chain fix:**
+  - First agent run: done, 13 model calls, $0.0505.
+  - Learned as a 22-step routine.
+  - **Second run from the routine: done, 0 model calls, $0.0000.**
+  - The heal after the portal's v2 layout did not work: 0 heals; the agent filled the form again, with 32 model calls per run. Being looked into.
+  - The check cost $0.2444.
+- **S16 Teaching Mode, first live runs** (Muse Spark, real API):
+  - Lesson "solve x² − 5x + 6 = 0 by factoring": two runs, each with 3 steps ✓ by SymPy and nothing removed. Run 1: 2 rounds (one fix), $0.0256. Run 2: 3 rounds, $0.0659. The lesson plays on the board with ✓ on exactly those lines.
+  - Check my work on a worksheet with a planted mistake on line 3 (three runs, $0.0055–$0.0073 each): line 3 found every time, read as written (not "corrected"), with the right reason ({2, 3} vs {1, 6}).
+- **Fixed after looking at the live output:**
+  - A hint line ran into the graph: lines that would overrun a graph or the board's edge now shrink to fit (`lesson.fit`).
+  - The model gave circles r=1 (the graph's units, an invisible dot): a circle under 12 board units becomes a 22-unit ring, and the prompt now says r is in board units.
+  - SAM's best "handwritten line" was once a ruled line of the paper below the right one: SAM now refines only when its box is centred inside the line and overlaps it by 40% or more.
+  - Muse Spark's box was once half a line low: the box is now moved onto the ink near it, on this computer (`checkwork.snap`).
+  - Tests for each.

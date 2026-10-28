@@ -38,6 +38,9 @@ MAX_ACTIONS = 60
 FIX_ROUNDS = 2
 PLOT_SAMPLES = 80
 MAX_NOTES = 12000
+MIN_RING, RING = 12.0, 22.0       # a circle smaller than MIN_RING board units can't be seen; it becomes a ring
+SIZES = {"write_math": 46.0, "write_text": 32.0}   # the board's default sizes (board.js place())
+EM = {"write_math": 0.5, "write_text": 0.52}        # rough width of a character, in font sizes
 
 PLAN_RULES = """You plan a short lesson for Lantern's teaching board: a timeline of actions, each with a line spoken
 aloud. Answer with only the JSON object the schema asks for.
@@ -47,11 +50,12 @@ aloud. Answer with only the JSON object the schema asks for.
     sides by 2"), check (below).
   write_text: text, x, y, size.
   draw: shape line or arrow (from, to: board points); circle (around: an id, or center and r; with axes, center is
-    in that graph's numbers); axes (id, x, y, w, h, xrange, yrange, xlabel, ylabel, ticks); plot (axes: an id, fn:
+    in that graph's numbers, but r is always in board units: about 22 to ring a point); axes (id, x, y, w, h, xrange, yrange, xlabel, ylabel, ticks); plot (axes: an id, fn:
     the function of x in SymPy syntax, label). Lantern computes the plot's points itself.
   highlight: target (an id). erase: target (an id, or "all"). pause: seconds.
 - The board is 1600 wide and 900 tall; x and y are the top-left of what is written. Write lines from the top left,
-  about 90 apart; put graphs on the right half. Keep everything on the board. Give every item an id (eq0, eq1, ax).
+  about 90 apart; put graphs on the right half and keep writing to their left. Keep text lines under about 40
+  characters. Keep everything on the board. Give every item an id (eq0, eq1, ax).
 - Every step in algebra or calculus (a math line that follows from an earlier one: it has a step) has a check.
   A formula or definition that isn't a step may go without one; it shows without a check mark. A check:
   sympy: the line in SymPy syntax (** for powers, * for every product, Eq(left, right) for an equation,
@@ -228,6 +232,8 @@ def _draw(a: dict, raw: dict) -> tuple[dict | None, str]:
             a["around"] = _id(raw.get("around"))
         else:
             r, axes = _num(raw.get("r"), 1, 800), _id(raw.get("axes"))
+            if r is not None and r < MIN_RING:   # seen live: r in the graph's units (1), which draws a dot
+                r = RING
             center = _pair(raw.get("center")) if axes else _point(raw.get("center"))
             if not center or r is None:
                 return None, "a circle needs center and r, or around"
@@ -416,7 +422,34 @@ def finish(lesson: dict, results: dict, drop: dict[str, str], points: dict[str, 
         if a["do"] == "write_math":
             a["verified"] = bool("check" in a and results.get(a["id"], (False, ""))[0])
         out.append(a)
+    fit(out)
     return {**lesson, "actions": out}, removed
+
+
+def _chars(a: dict) -> int:
+    if a["do"] == "write_text":
+        return len(a["text"])
+    return len(re.sub(r"\\[a-zA-Z]+|[{}^_\\ ]", "", a["latex"])) + 2   # what KaTeX shows, roughly (and the ✓)
+
+
+def fit(actions: list[dict]) -> int:
+    """Shrink a line of text or math that would run into a graph to its right, or off the board (seen live: a hint
+    line ran into the y-axis). Positions stay where the model put them. Returns how many were shrunk."""
+    graphs = [(a["x"], a["y"], a["x"] + a["w"], a["y"] + a["h"]) for a in actions if a.get("shape") == "axes"]
+    n = 0
+    for a in actions:
+        if a["do"] not in SIZES or "x" not in a or "y" not in a:
+            continue
+        size = a.get("size") or SIZES[a["do"]]
+        limit = W - 40
+        for x0, y0, x1, y1 in graphs:
+            if a["x"] < x0 and a["y"] < y1 and a["y"] + size * 1.3 > y0:
+                limit = min(limit, x0 - 30)
+        width = _chars(a) * size * EM[a["do"]]
+        if a["x"] + width > limit and width > 0:
+            a["size"] = max(16.0, float(int(size * (limit - a["x"]) / width)))
+            n += 1
+    return n
 
 
 def validate(lesson: dict) -> list[str]:

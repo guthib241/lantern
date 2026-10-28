@@ -271,7 +271,7 @@ def red_rows(path):
 def test_the_first_wrong_line_is_found_explained_and_circled(tmp_path):
     eyes = Eyes(reading())
     out = checkwork.run(eyes, working(), folder=tmp_path, use_sam=False)
-    assert out["wrong"] == 3 and out["ok"] == [1, 2] and out["located_by"] == "spark"
+    assert out["wrong"] == 3 and out["ok"] == [1, 2] and out["located_by"] == "ink"   # moved onto the ink
     assert out["reply"] == ("Line 3 doesn't follow from line 2: line 2 has the solutions {2, 3}, but line 3 has "
                             "{1, 6}. I circled it on the photo.")
     rows = red_rows(out["image"])
@@ -289,6 +289,29 @@ def test_sam_refines_the_circle_when_it_finds_the_line(tmp_path):
         out = pool.submit(checkwork.run, eyes, working(), folder=tmp_path).result()
     assert out["located_by"] == "sam" and eyes.sam[0]["input"][0]["content"][0]["text"] == "handwritten line"
     assert out["wrong"] == 3
+
+
+def test_sam_is_ignored_when_it_finds_something_else(tmp_path):
+    """Seen live: SAM's best "handwritten line" was a ruled line of the paper just below, page-wide."""
+    top, bottom = ROWS[2]
+    ruled = "<0f>" + record(0, 0, bottom + 10, W - 1, bottom + 60, w=W, h=H) + "\n"
+    eyes = Eyes(reading(), sam_text=ruled)
+    with concurrent.futures.ThreadPoolExecutor(1) as pool:
+        out = pool.submit(checkwork.run, eyes, working(), folder=tmp_path).result()
+    assert out["wrong"] == 3 and out["located_by"] == "ink"
+    rows = red_rows(out["image"])
+    assert min(rows) < bottom and max(rows) > top                  # around line 3, not the empty line below it
+
+
+def test_a_box_half_a_line_off_is_moved_onto_the_ink():
+    """Seen live: Muse Spark's box for the wrong line sat half a line below it."""
+    img = checkwork._image(working())
+    top, bottom = ROWS[2]
+    low = [120, top + (bottom - top) / 2 + 10, 650, bottom + 50]           # mostly under line 3
+    box = checkwork.snap(img, low)
+    assert box is not None and box[1] <= top + 12 and bottom - 12 <= box[3] <= bottom + 12
+    blank = Image.new("RGB", (W, H), (250, 250, 247))
+    assert checkwork.snap(blank, low) is None                               # no ink: keep Muse Spark's box
 
 
 def test_it_says_so_when_a_line_cant_be_read_and_when_everything_checks_out(tmp_path):
@@ -336,3 +359,22 @@ def test_lesson_shape_keeps_only_what_the_board_accepts():
     final, removed = lesson_mod.finish(lesson, {}, {}, {})
     assert [a["do"] for a in final["actions"]] == ["write_text", "draw"]             # erasing nothing is dropped
     assert copy.deepcopy(final) == final and schema_errors(final) == []
+
+
+def test_lines_that_would_run_into_a_graph_shrink_and_tiny_circles_become_rings():
+    """Both seen in the first live lesson: a hint line ran into the y-axis, and the roots were circled with r=1
+    (the graph's units), which draws an invisible dot."""
+    d = {"title": "t", "subject": "algebra", "actions": [
+        {"do": "write_text", "id": "hint", "text": "Find two numbers that multiply to 6 and add to -5: -2 and -3",
+         "x": 100, "y": 190},
+        {"do": "write_text", "id": "short", "text": "Check", "x": 100, "y": 300},
+        {"do": "draw", "shape": "axes", "id": "ax", "x": 850, "y": 120, "w": 600, "h": 500, "xrange": [-1, 6],
+         "yrange": [-5, 10]},
+        {"do": "draw", "shape": "circle", "id": "c0", "axes": "ax", "center": [2, 0], "r": 1}]}
+    lesson, problems = lesson_mod.shape(d)
+    final, _ = lesson_mod.finish(lesson, {}, {}, {})
+    by = {a["id"]: a for a in final["actions"]}
+    assert by["hint"]["size"] < 32 and 100 + len(by["hint"]["text"]) * by["hint"]["size"] * 0.52 <= 850 - 30
+    assert "size" not in by["short"]                       # lines that fit are left alone
+    assert by["c0"]["r"] == lesson_mod.RING
+    assert schema_errors(final) == []

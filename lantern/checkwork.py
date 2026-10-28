@@ -7,8 +7,9 @@
   2. Check, in code: SymPy compares each line with the one before it (mathcheck.py). An equation must have the same
      solutions as the equation before; an expression must be equal to the one before; a line the learner marked as
      a derivative must be the derivative. The first line is the problem as written.
-  3. Find it on the photo: SAM 3.1 looks for the handwritten lines (a text prompt); the one that overlaps the line
-     Muse Spark placed best gives the circle. Without SAM, or when nothing overlaps, Muse Spark's box is used.
+  3. Find it on the photo: Muse Spark's box is moved onto the ink near it (on this computer, no model). Then SAM
+     3.1 looks for the handwritten lines (a text prompt); a box centred inside that line and overlapping it by 40%
+     or more gives the circle. Otherwise the ink box is used.
   4. Mark it: Pillow draws a red circle around that line on a copy in Lantern's media folder, and the reply says in
      one sentence what's wrong.
 When a line can't be read, or SymPy can't read what Muse Spark wrote for it, Lantern says so and stops there: it
@@ -40,6 +41,7 @@ height. Leave out crossed-out lines and anything that isn't math."""
 SIDE = 1600
 MAX_LINES = 20
 SAM_CONCEPT = "handwritten line"
+MIN_IOU = 0.4   # SAM refines Muse Spark's box only when it clearly finds the same line
 
 
 class CheckError(ValueError):
@@ -165,12 +167,72 @@ def _set(s) -> str:
     return str(s)
 
 
+def snap(img, box: list[float]) -> list[float] | None:
+    """Muse Spark's box moved onto the ink near it, on this computer with no model (seen live: its box sat half a
+    line low). Ink is what's much darker than the paper; faint ruled lines aren't. Of the bands of ink rows near the
+    box, the one overlapping it most (else the nearest) wins; None when there's no ink nearby."""
+    w, h = img.size
+    bh, bw = max(1.0, box[3] - box[1]), max(1.0, box[2] - box[0])
+    x0, x1 = int(max(0, box[0] - 0.15 * bw)), int(min(w, box[2] + 0.15 * bw))
+    y0, y1 = int(max(0, box[1] - 1.0 * bh)), int(min(h, box[3] + 1.0 * bh))
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return None
+    gray = img.convert("L").crop((x0, y0, x1, y1))
+    cw, ch = gray.size
+    px = gray.tobytes()
+    paper = sorted(px[::97] or [255])[len(px[::97]) * 3 // 4] if px else 255   # the paper's brightness, roughly
+    dark = min(130, paper - 70)
+    # a column dark in most rows is the desk or the photo's edge, not pen strokes
+    background = {c for c in range(cw) if sum(1 for r in range(ch) if px[r * cw + c] < dark) > 0.6 * ch}
+    ink = [[c for c in _inner([c for c in range(cw) if px[r * cw + c] < dark], cw) if c not in background]
+           for r in range(ch)]
+    rows = [len(x) for x in ink]
+    need = max(2, cw // 200)
+    bands, start, gap = [], None, max(2, int(bh * 0.15))
+    quiet = 0
+    for r, n in enumerate(rows + [0] * (gap + 1)):
+        if n >= need:
+            start, quiet = (r if start is None else start), 0
+        elif start is not None:
+            quiet += 1
+            if quiet > gap:
+                bands.append((start, r - quiet))
+                start, quiet = None, 0
+    if not bands:
+        return None
+    top, bottom = box[1] - y0, box[3] - y0
+    centre = (top + bottom) / 2
+    band = max(bands, key=lambda b: (max(0, min(b[1], bottom) - max(b[0], top)), -abs((b[0] + b[1]) / 2 - centre)))
+    cols = sorted({c for r in range(band[0], band[1] + 1) for c in ink[r]})
+    if not cols:
+        return None
+    return [x0 + cols[0], y0 + band[0], x0 + cols[-1] + 1, y0 + band[1] + 1]
+
+
+def _inner(cols: list[int], width: int) -> list[int]:
+    """Dark columns of one row without a run touching the window's edge (a photo's slanted border, a desk)."""
+    cols = list(cols)
+    edge = 0
+    while cols and cols[0] == edge:
+        cols.pop(0)
+        edge += 1
+    edge = width - 1
+    while cols and cols[-1] == edge:
+        cols.pop()
+        edge -= 1
+    return cols
+
+
 def locate(client: Any, img, box: list[float], *, memory=None, task_id: int | None = None) -> tuple[list[float], str]:
-    """The line's box in pixels, refined by SAM 3.1 when one of its boxes overlaps Muse Spark's. (box, "sam"|"spark")"""
+    """The line's box in pixels: Muse Spark's, moved onto the ink near it, then refined by SAM 3.1 when SAM clearly
+    found the same line. (box, "sam" | "ink" | "spark")"""
     w, h = img.size
     spark = [box[0] * w / 1000, box[1] * h / 1000, box[2] * w / 1000, box[3] * h / 1000]
+    by = "spark"
+    if (inked := snap(img, spark)) is not None:
+        spark, by = inked, "ink"
     if client is None:
-        return spark, "spark"
+        return spark, by
     from .sam import segment
     small = img.copy()
     small.thumbnail((SIDE, SIDE))
@@ -178,16 +240,19 @@ def locate(client: Any, img, box: list[float], *, memory=None, task_id: int | No
     try:
         found = segment(client, _jpeg_url(img), SAM_CONCEPT)
     except Exception:   # SAM improves the circle here; it's never required
-        return spark, "spark"
+        return spark, by
     if memory is not None:
         memory.log_usage(task_id, models.SAM, cost_usd=models.sam_cost(1))
-    best, score = None, 0.2
+    best, score = None, MIN_IOU
     for b in found["boxes"]:
         b = [v * k for v in b]
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        if not (spark[0] <= cx <= spark[2] and spark[1] <= cy <= spark[3]):
+            continue   # seen live: a ruled line of the paper just below, page-wide, overlapping a little
         s = _iou(spark, b)
         if s > score:
             best, score = b, s
-    return (best, "sam") if best else (spark, "spark")
+    return (best, "sam") if best else (spark, by)
 
 
 def _iou(a: list[float], b: list[float]) -> float:
@@ -203,7 +268,7 @@ def annotate(img, box: list[float], folder: str | Path) -> Path:
     from PIL import ImageDraw
     out = img.copy()
     w, h = out.size
-    pad_x, pad_y = (box[2] - box[0]) * 0.08 + 6, (box[3] - box[1]) * 0.35 + 6
+    pad_x, pad_y = (box[2] - box[0]) * 0.12 + 16, (box[3] - box[1]) * 0.35 + 8   # seen live: 8% cut a digit
     ellipse = [max(0, box[0] - pad_x), max(0, box[1] - pad_y), min(w - 1, box[2] + pad_x), min(h - 1, box[3] + pad_y)]
     ImageDraw.Draw(out).ellipse(ellipse, outline=(226, 40, 40), width=max(3, round(min(w, h) / 160)))
     folder = Path(folder)
