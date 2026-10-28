@@ -429,3 +429,14 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - Notes go through the policy (private refused) and are wrapped untrusted; the API serves lessons.
   - Check my work: the first wrong line is found, explained and circled; SAM refines the circle (real wire format); unreadable lines are reported; a phone photo with "check my work" gets the reply.
 - `desktop/test/lessons.test.js` (3).
+
+## Oct 28 (Phase 2, S7: Decoy Screens)
+- `lantern/decoy.py`: format-preserving, per-task HMAC stand-ins; `hide`, `guard` (the field may only get its stand-in), `reveal` (stand-in → real at keystroke; refuses real values and anything else in a guarded field).
+- `BrowserDriver.decoy_screenshot`: stand-ins painted into the page's own elements for one screenshot, then restored (caret too); stops if a stand-in is left in a field.
+- `ComputerLoop(decoys=…, on_decoy=…)`, `LANTERN_SCREENSHOTS=decoy` in the form filler (goal with stand-ins, `screen_privacy.typed_real`), `GET /decoy/image/{name}`, Privacy tab "What the cloud saw" (side by side). `scripts/eval_privacy.py` runs decoy mode.
+- Tests: `tests/test_decoy.py` (8):
+  - stand-in shape and stability; the map hides, reveals and refuses;
+  - in Chromium, the screenshot matches the page holding the stand-ins (pixel diff within JPEG noise), and the page and caret are restored after; a page that keeps a stand-in stops the run;
+  - the model types a stand-in and the real value lands, with no real value in any request; typing a real value or another value into a guarded field is refused;
+  - fill_form in decoy mode keeps the pairs and reports them.
+- The eval dry run now covers decoy mode.

@@ -36,6 +36,7 @@ from urllib.parse import unquote, urlparse
 
 from .. import models
 from ..config import HOME
+from ..decoy import Decoys
 from ..policy import PRIVATE, Policy, PolicyError
 from ..untrusted import wrap
 from . import guards
@@ -104,6 +105,8 @@ def _trace_entry(f: dict, value: str) -> dict:
             entry["value"] = chosen["value"] if stable else chosen.get("text", value)
     return entry
 
+DECOY_PAIRS = 6                                # S7: screenshot pairs kept for the side-by-side view
+
 
 @dataclass
 class FormSettings:
@@ -121,7 +124,7 @@ class FormSettings:
     max_steps: int = MAX_STEPS
     confirm_selectors: tuple[str, ...] = CONFIRM_SELECTORS
     confirm_wait_ms: int = 4_000
-    screenshots: str = "raw"                  # S0.5: raw | masked (black boxes over the profile's values)
+    screenshots: str = "raw"                  # S0.5: raw | masked (black boxes) | decoy (S7: stand-in values)
 
     @classmethod
     def from_config(cls, cfg) -> "FormSettings":
@@ -204,6 +207,7 @@ class _Run:
     protocol: str = ""
     masked: int = 0
     exposed: int = 0
+    swapped: int = 0
 
 
 class FormService:
@@ -313,7 +317,7 @@ class FormService:
                    "refused": run.refused, "problems": run.problems, "steps": run.steps,
                    "screenshots": run.screenshots,
                    "screen_privacy": {"mode": self.settings.screenshots, "masked": run.masked,
-                                      "shown": run.exposed},
+                                      "shown": run.exposed, "typed_real": run.swapped},
                    "model": models.badge(self.settings.model if run.used_loop else self.settings.plan_model)}
             if run.used_loop:
                 out["protocol"] = run.protocol
@@ -462,10 +466,12 @@ class FormService:
     def _loop(self, d: BrowserDriver, url: str, run: _Run, approve: Approve, commit: Commit,
               cancel: threading.Event, emit: Events, usage) -> dict | None:
         """Hand the leftovers to the computer-use model. Returns a failure dict, or None if it went fine."""
+        decoys = Decoys(self._screen_values()) if self.settings.screenshots == "decoy" else None
         lines = []
         for f, value in run.visual:
             hint = " (custom dropdown: click it, then pick the option)" if f["type"] == "custom" else ""
-            lines.append(f"- {f['label'] or f['id']}: {value}{hint}")
+            shown = decoys.guard(f["label"] or "", str(value)) if decoys else value   # S7: the model gets stand-ins
+            lines.append(f"- {f['label'] or f['id']}: {shown}{hint}")
         goal = ("Finish these fields in the form on screen:\n" + "\n".join(lines)
                 + "\nEverything else is already filled. Do not submit the form.")
         badge = models.badge(self.settings.model)
@@ -486,11 +492,12 @@ class FormService:
             on_usage=usage, cancel=cancel,
             url_guard=lambda current: url_problem(current, self.settings),
             private_values=self._screen_values, mask=self.settings.screenshots == "masked",
+            decoys=decoys, on_decoy=lambda seen, sent, n: self._decoy_pair(seen, sent, n, emit),
         )
         result = loop.run(goal)
         run.used_loop, run.protocol = True, result.protocol
         run.steps, run.screenshots = result.steps, result.screenshots
-        run.masked, run.exposed = result.masked, result.exposed
+        run.masked, run.exposed, run.swapped = result.masked, result.exposed, result.swapped
         run.refused.extend(result.refused)
         if result.status in ("done", "submit_requested"):
             for f, value in run.visual:
@@ -506,6 +513,22 @@ class FormService:
         "raw" mode."""
         data = self.vault.load()
         return [str(v) for sec in ("profile", "answers") for v in data[sec].values() if len(str(v).strip()) >= 3]
+
+    def _decoy_pair(self, seen: bytes, sent: bytes, replaced: int, emit: Events) -> None:
+        """S7: keep what the user sees and what the cloud model was sent, side by side, in Lantern's media folder
+        (the last few pairs only), and tell the desktop."""
+        folder = self.settings.media_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        stem = f"decoy_{time.strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(3)}"
+        (folder / f"{stem}-seen.jpg").write_bytes(seen)
+        (folder / f"{stem}-sent.jpg").write_bytes(sent)
+        for old in sorted(folder.glob("decoy_*-sent.jpg"), key=lambda p: p.stat().st_mtime)[:-DECOY_PAIRS]:
+            for path in (old, old.with_name(old.name.replace("-sent.jpg", "-seen.jpg"))):
+                try:   # overwritten, then gone (the "seen" half shows the user's own values)
+                    self.policy.erase_lantern_data(path, folder)
+                except PolicyError:
+                    pass
+        emit("decoy", {"seen": f"{stem}-seen.jpg", "sent": f"{stem}-sent.jpg", "replaced": replaced})
 
     def _save_shot(self, d: BrowserDriver) -> str:
         self.settings.media_dir.mkdir(parents=True, exist_ok=True)

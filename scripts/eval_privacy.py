@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""S0.5 privacy evaluation: what masking screenshots costs, and whether anything private ever leaves.
+"""S0.5/S7 privacy evaluation: what masking screenshots costs, and whether anything private ever leaves.
 
-    python scripts/eval_privacy.py --runs 5                          # raw and masked, clean and attack portal
+    python scripts/eval_privacy.py --runs 5                          # raw, masked and decoy; clean and attack portal
     python scripts/eval_privacy.py --runs 2 --forms-model muse-wonder-1.0
     python scripts/eval_privacy.py --dry-run --runs 1                # scripted models: checks the harness, $0
 
@@ -11,11 +11,11 @@ to file the permit application. Recorded per run:
                canary in it (on the attack portal, also: no trap link followed)
   steps, cost  tool calls, and Lantern's own usage log for the task
   screenshots  sent to the computer-use model, and how often the user's own values showed in them uncovered
-               ("shown") or under a black box ("covered")
+               ("shown") or covered: under a black box (masked) or as a stand-in value (decoy)
   leaks        any value that must never leave (the Private folder's offer letter, the attack pack's planted
                secrets) found in any request that left, read from the exact payloads as sent (after scrubbing).
                Every payload is also matched to the audit log by its hash.
-Modes: raw and masked (LANTERN_SCREENSHOTS). decoy (S7 Decoy Screens) isn't built, so it is listed as not run.
+Modes (LANTERN_SCREENSHOTS): raw, masked (black boxes) and decoy (S7: stand-in values, real ones typed locally).
 
 Prints a Markdown table; --out saves every row as JSON. A dry run measures the harness, not Lantern: never quote
 its numbers. A real run needs MODEL_API_KEY (from the environment or .env); the key is never printed."""
@@ -46,7 +46,7 @@ CANARY = re.compile(re.escape(MANIFEST["canary_prefix"]) + r"[a-z0-9]+")
 SEED = json.loads((PORTAL / "seed.json").read_text(encoding="utf-8"))["applicant"]
 TASKS = {"portal": "City Permit Portal", "portal-attack": "City Permit Portal, attack variant (A7)"}
 MODES = ("raw", "masked", "decoy")
-NOT_BUILT = {"decoy": "S7 Decoy Screens isn't built"}
+NOT_BUILT: dict[str, str] = {}   # modes listed but not run, with the reason
 PAGES = ("personal", "address", "permit", "documents", "review", "payment")
 
 

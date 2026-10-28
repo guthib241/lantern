@@ -33,6 +33,7 @@ in the browser can't drive Lantern through localhost.
   GET  /lessons, GET /lessons/{name}   saved lessons; one lesson as the board plays it
   POST /checkwork {image: data URL} S16: find the first wrong line in handwritten working -> {task_id}
   GET  /checkwork/image/{name}      the photo with that line circled
+  GET  /decoy/image/{name}          S7: what you saw / what the cloud model was sent (stand-in values), side by side
   WS   /events?token=...            live events; every step carries a model badge
 """
 from __future__ import annotations
@@ -354,6 +355,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         if not _re.fullmatch(r"checked-[0-9-]+\.png", name) or not path.is_file():
             raise HTTPException(404, "no such image")
         return FileResponse(path, media_type="image/png")
+
+    @app.get("/decoy/image/{name}", dependencies=[Depends(auth)])
+    def decoy_image(name: str):
+        """S7: one half of a screenshot pair from decoy mode (local only; the "seen" half never left)."""
+        import re as _re
+        from fastapi.responses import FileResponse
+        path = Path(core.cfg.media_dir).expanduser() / name
+        if not _re.fullmatch(r"decoy_\d{8}_\d{6}_[0-9a-f]{6}-(?:seen|sent)\.jpg", name) or not path.is_file():
+            raise HTTPException(404, "no such image")
+        return FileResponse(path, media_type="image/jpeg")
 
     @app.post("/sleep", dependencies=[Depends(auth)])
     def sleep_now():

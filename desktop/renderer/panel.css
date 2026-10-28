@@ -359,3 +359,8 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; borde
 .checkwork.unclear span { color: var(--orange-text); }
 .checkwork.ok span { color: var(--green-text); }
 .checkwork-photo { display: block; width: 100%; height: auto; border-top: 1px solid var(--separator); }
+/* S7: decoy screens, side by side */
+.decoy-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--separator); }
+.decoy-pair figure { margin: 0; background: var(--card); }
+.decoy-pair img { display: block; width: 100%; height: auto; }
+.decoy-pair figcaption { padding: 6px 10px; font-size: 12.5px; color: var(--label-2); }

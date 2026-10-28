@@ -22,6 +22,9 @@ Two wire protocols, both on the Responses API:
 Action objects are parsed tolerantly (click / left_click, x+y / coordinate, keys /
 text...) because the two harnesses name them differently.
 
+Decoy screens (S7, `decoys`): screenshots show stand-ins for the user's own values (decoy.py, painted into the page
+for the moment of the screenshot), and typed stand-ins become the real values only here, at keystroke time.
+
 Every action passes the hard stops first (guards.py): typing into a password, OTP,
 card or ID field, or touching a CAPTCHA or payment frame ends the loop. Clicking a
 Submit-like control never submits: the loop ends with status "submit_requested" and
@@ -36,6 +39,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .. import models
+from ..decoy import DecoyError, Decoys
 from . import guards
 from .driver import BrowserDriver, DriverError, playwright_key
 
@@ -228,7 +232,8 @@ class LoopResult:
     screenshots: int = 0
     protocol: str = "native"
     captcha: bool = False
-    masked: int = 0          # S0.5: private values covered in the screenshots sent
+    masked: int = 0          # S0.5: private values covered in the screenshots sent (S7: shown as stand-ins)
+    swapped: int = 0         # S7: stand-ins typed by the model, typed as the real values here
     exposed: int = 0         # S0.5: private values that showed, uncovered, in the screenshots sent
 
 
@@ -247,7 +252,8 @@ class ComputerLoop:
                  on_usage: Callable[[str, models.Usage], None] | None = None,
                  cancel: threading.Event | None = None,
                  url_guard: Callable[[str], str | None] | None = None,
-                 private_values: Callable[[], list[str]] | None = None, mask: bool = False):
+                 private_values: Callable[[], list[str]] | None = None, mask: bool = False,
+                 decoys: Decoys | None = None, on_decoy: Callable[[bytes, bytes, int], None] | None = None):
         if protocol == "auto":  # what the live API accepts for this model (models.CUA_PROTOCOL)
             protocol = models.cua_protocol(model)
         if protocol not in ("native", "function"):
@@ -265,6 +271,8 @@ class ComputerLoop:
         self.url_guard = url_guard or (lambda url: None)
         self.private_values = private_values   # values that shouldn't show in a screenshot (S0.5)
         self.mask = mask                       # True: black boxes over them; False: only count them
+        self.decoys = decoys                   # S7: stand-ins in screenshots, real values typed here
+        self.on_decoy = on_decoy               # (what the user sees, what the model was sent, values replaced)
         self._result = LoopResult("error")
 
     # ---- public --------------------------------------------------------------------
@@ -295,6 +303,13 @@ class ComputerLoop:
 
     def _shot(self) -> str:
         self._result.screenshots += 1
+        if self.decoys:
+            seen = self.driver.screenshot() if self.on_decoy else b""   # stays on this computer
+            data, n = self.driver.decoy_screenshot(self.decoys.pairs())
+            self._result.masked += n
+            if self.on_decoy:
+                self.on_decoy(seen, data, n)
+            return data_url(data)
         values = self.private_values() if self.private_values is not None else []
         if values and hasattr(self.driver, "on_screen"):
             if self.mask:
@@ -327,6 +342,7 @@ class ComputerLoop:
         except _Stop as stop:
             s = stop.result
             r.status, r.message, r.captcha = s.status, s.message or r.message, s.captcha or r.captcha
+            r.swapped = self.decoys.swapped if self.decoys else 0
             return r
 
     def _native_step(self, response, units: str, step: int):
@@ -420,6 +436,11 @@ class ComputerLoop:
             reason = guards.value_reason(action["text"])
             if reason:
                 self._refuse(action, reason)
+            if self.decoys:
+                try:
+                    action["real"] = self.decoys.reveal(action["text"], info.get("label", ""))
+                except DecoyError as e:
+                    self._refuse(action, str(e))
 
     def _execute(self, actions: list[dict], units: str, step: int) -> None:
         d = self.driver
@@ -446,7 +467,7 @@ class ComputerLoop:
                     d.scroll(x, y, action["dx"], action["dy"])
                 elif k == "type":
                     self._check_typing(action)
-                    d.type_text(action["text"])
+                    d.type_text(action.pop("real", action["text"]))   # S7: the real value, only here
                 elif k == "key":
                     self._check_typing(action)
                     d.press(action["key"])

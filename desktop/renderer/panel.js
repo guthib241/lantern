@@ -285,6 +285,22 @@
     }
   }
 
+  // ---- decoy screens (S7): what you see / what the cloud saw ------------------------------------------------
+  async function showDecoy(e) {
+    const ok = /^decoy_\d{8}_\d{6}_[0-9a-f]{6}-(seen|sent)\.jpg$/;
+    if (!ok.test(String(e.seen)) || !ok.test(String(e.sent))) return;
+    try {
+      $('decoy-seen').src = await api.dataURL(`/decoy/image/${encodeURIComponent(e.seen)}`);
+      $('decoy-sent').src = await api.dataURL(`/decoy/image/${encodeURIComponent(e.sent)}`);
+    } catch (err) {
+      return;
+    }
+    const n = Number(e.replaced) || 0;
+    $('decoy-note').textContent = n ? `${n} of your value${n === 1 ? '' : 's'} showed as stand-ins; Lantern typed the real ones here.`
+      : 'None of your values was on this screen.';
+    $('decoy-view').hidden = false;
+  }
+
   function routineChart(r) {   // SVG through DOM calls only
     const NS = 'http://www.w3.org/2000/svg';
     const d = LanternRoutines.chartData(r);
@@ -773,6 +789,7 @@
       openLesson(e.name);
     }
     if (e.type === 'checkwork') showCheckwork(e);
+    if (e.type === 'decoy') showDecoy(e);
     if (e.type === 'routine_learned' || e.type === 'routine_healed' || e.type === 'routines' ||
         (e.type === 'done' && tab === 'costs')) loadRoutines();
     if (e.type === 'routine_healed') toast(`The page had changed: healed ${(e.steps || []).length} step(s), now v${e.version}.`);

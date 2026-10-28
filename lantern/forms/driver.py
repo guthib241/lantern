@@ -327,6 +327,58 @@ PAINT_MASKS = """(boxes) => { for (const b of boxes) {
   document.documentElement.appendChild(d);
 } }"""
 CLEAR_MASKS = "() => document.querySelectorAll('[data-lantern-mask]').forEach(e => e.remove())"
+# S7 decoy screens: show stand-ins in the page's own elements for one screenshot (same font, size and place), then
+# put every real value back. The saved state lives in the returned handle, never on `window`, so a page script can't
+# keep Lantern from restoring it.
+DECOY_PAINT = r"""(pairs) => {
+  const low = pairs.map(([r, f]) => [String(r).toLowerCase(), String(r), String(f)]);
+  const swap = (text) => {
+    let out = String(text), n = 0;
+    for (const [lr, r, f] of low) {
+      let i = out.toLowerCase().indexOf(lr);
+      while (i >= 0) { out = out.slice(0, i) + f + out.slice(i + r.length); n++; i = out.toLowerCase().indexOf(lr, i + f.length); }
+    }
+    return [out, n];
+  };
+  const saved = [];
+  let count = 0;
+  for (const el of document.querySelectorAll('input, textarea')) {
+    const type = (el.type || '').toLowerCase();
+    if (['checkbox', 'radio', 'hidden', 'file', 'submit', 'button', 'image', 'reset', 'password'].includes(type)) continue;
+    const [v, n] = swap(el.value);
+    if (!n) continue;
+    let s = null, e = null;
+    try { s = el.selectionStart; e = el.selectionEnd; } catch (err) { /* no selection on this type */ }
+    saved.push({el, value: el.value, s, e});
+    el.value = v;
+    count += n;
+  }
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+  for (const node of nodes) {
+    const p = node.parentElement;
+    if (!p || p.closest('script, style, noscript, template')) continue;
+    const [t, n] = swap(node.nodeValue);
+    if (!n) continue;
+    saved.push({node, text: node.nodeValue});
+    node.nodeValue = t;
+    count += n;
+  }
+  const fakes = low.map(([, , f]) => f.toLowerCase());
+  return {
+    count,
+    restore() {
+      for (const x of saved.reverse()) {
+        if (x.node) { x.node.nodeValue = x.text; continue; }
+        x.el.value = x.value;
+        try { if (x.s !== null) x.el.setSelectionRange(x.s, x.e); } catch (err) { /* not focusable now */ }
+      }
+      // what's left showing a stand-in (a page script changed it meanwhile): Lantern stops rather than submit it
+      return [...document.querySelectorAll('input, textarea')].filter((el) => fakes.some((f) => String(el.value).toLowerCase().includes(f))).length;
+    },
+  };
+}"""
 
 
 class BrowserDriver:
@@ -456,6 +508,21 @@ class BrowserDriver:
         finally:
             if boxes:
                 self.page.evaluate(CLEAR_MASKS)
+
+    def decoy_screenshot(self, pairs: list[list[str]]) -> tuple[bytes, int]:
+        """S7: a screenshot with each real value shown as its stand-in, in the page's own elements; the page is put
+        back right after. Returns (jpeg, values replaced). DriverError if a stand-in is still in a field after."""
+        if not pairs:
+            return self.screenshot(), 0
+        handle = self.page.evaluate_handle(DECOY_PAINT, pairs)
+        try:
+            n = int(handle.evaluate("(h) => h.count"))
+            return self.screenshot(), n
+        finally:
+            left = int(handle.evaluate("(h) => h.restore()"))
+            handle.dispose()
+            if left:
+                raise DriverError("a stand-in value was still in the form after the screenshot; stopped to be safe")
 
     # ---- filling by DOM ------------------------------------------------------------
     def set_value(self, field: dict, value: str) -> bool:

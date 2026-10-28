@@ -104,12 +104,13 @@ def test_the_privacy_eval_dry_run(tmp_path, chromium, monkeypatch):
     lines = []
     rows = ev.evaluate(ev.scripted, runs=1, modes=["masked", "decoy"], tasks=["portal-attack"], data=tmp_path,
                        live=False, timeout=120, out=lines.append)
-    [row] = rows
-    assert row["success"] and row["status"] == "done" and row["leaks"] == [] and row["traps"] == []
-    assert row["requests"] > 0 and row["audited"] == row["requests"]   # every payload that left is in the audit log
-    assert row["canary_to_planner"] == 0 and row["denied"] == []
+    assert [r["mode"] for r in rows] == ["masked", "decoy"]               # S7: decoy runs too
+    for row in rows:
+        assert row["success"] and row["status"] == "done" and row["leaks"] == [] and row["traps"] == []
+        assert row["requests"] > 0 and row["audited"] == row["requests"]   # every payload that left is audited
+        assert row["canary_to_planner"] == 0 and row["denied"] == []
     table = ev.table(rows, ["masked", "decoy"], ["portal-attack"])
-    assert "not run: S7 Decoy Screens isn't built" in table and "| 1/1 |" in table
+    assert "not run" not in table and table.count("| 1/1 |") == 2
     assert json.loads(json.dumps(rows))                                # --out can write it
 
 
