@@ -407,3 +407,10 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - `lantern/reel.py` + `Core.reel`: a shared how-to video becomes ffmpeg frames plus Muse Voice Transcribe speech, then Muse Spark steps (images + transcript, structured output, no tools). A review in code refuses private and hidden folders, marks security and install steps, and stops at an unclear step. The user approves the exact list on one red card; the normal agent does it; when it worked, Lantern offers to learn it.
 - Video intake on WhatsApp, Telegram and the fake phone; `POST /reel {path}`; a desktop card title.
 - Tests: `tests/test_reel.py` (5) with a real ffmpeg-made video. A tidy-up video becomes 2 frames plus a transcript, then 2 steps; one card; the agent moves the photos; a learn offer follows. Also: an unclear step asks and nothing happens; the review rules; frames and the structured-output fallback; the phone intake.
+
+## Oct 28 (Phase 2, S6: Lantern Network)
+- `lantern/network.py` + Core: Ed25519 identities and a contact allowlist, plus signed, fresh, single-use messages over the channel layer (`send_to` on WhatsApp, Telegram and fake; the hub routes `🏮LN1` messages).
+  - **Requests:** ask for a file (one small text file, scrubbed, never from private or hidden zones) and share a routine (imported, trusted only after it verifies).
+  - **Rules:** the owner's words become a Cedar policy via Muse Spark, with examples decided by cedarpy; every allowed request still needs the owner's approval.
+  - **Receipts** on both sides; `GET /network`, `POST /network/contacts`, `/network/rules`, `/network/ask`. cedarpy is an optional extra (`network`).
+- Tests: `tests/test_network.py` (6). Two Lanterns in one process: a bill shared with the owner's approval, scrubbed; a private file never found; a folder outside the rules refused with no card; a routine refused by the rules, then imported but not trusted until it has its own folder. Every bad message is refused (forged, stranger, replayed, stale, misaddressed, bad fingerprint). Rules compile with the engine's own decisions. The hub routes network messages and still ignores strangers.

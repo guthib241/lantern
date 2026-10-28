@@ -43,6 +43,9 @@ class TelegramChannel(Channel):
     def send_text(self, text: str) -> None:
         self._call("sendMessage", {"chat_id": self.owner, "text": text[:4096]})
 
+    def send_to(self, address: str, text: str) -> None:
+        self._call("sendMessage", {"chat_id": address, "text": text[:4096]})
+
     def send_buttons(self, text: str, buttons: list[tuple[str, str]]) -> None:
         for bid, _ in buttons:
             if len(bid.encode()) > 64:

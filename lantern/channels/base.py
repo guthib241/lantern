@@ -82,6 +82,10 @@ class Channel:
         """buttons: [(id, title)], at most 3, titles at most 20 characters."""
         raise NotImplementedError
 
+    def send_to(self, address: str, text: str) -> None:
+        """S6: a Lantern Network message to another Lantern's address (not the owner's chat)."""
+        raise NotImplementedError(f"{self.name} can't send to other addresses")
+
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         """Optional: confirm a button tap in the channel's own UI (Telegram spinner)."""
 

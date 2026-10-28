@@ -7,6 +7,7 @@ subscribers (the server's websocket, channels).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import queue
@@ -130,6 +131,9 @@ class Core:
         self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
         self._undo_lock = threading.Lock()
         self._teaching: dict[int, dict] = {}   # S8: teaching task -> {"stop": Event, "cancelled": bool}
+        self._net = None                         # S6: (Identity, Contacts, Inbox), made on first use
+        self._net_pending: dict[str, dict] = {}   # S6: request id -> {"task_id", "contact", "kind"}
+        self.network_send: Callable[[dict, str], None] | None = None   # set by the channel hub
         self.scheduler = None   # S1: with workers > 0, up to that many tasks run at once (scheduler.py)
         self.compiler = None    # S4: learned routines (compiler.py), with the scheduler
         if workers > 0:
@@ -513,6 +517,221 @@ class Core:
     def _transcriber(self):
         from .voice import transcribe
         return lambda wav: transcribe(wav)
+
+    # ---- Lantern Network (S6, network.py) --------------------------------------------------------------------
+    def net(self):
+        if self._net is None:
+            from .network import Contacts, Identity, Inbox
+            folder = Path(self.cfg.db_path).expanduser().parent / "network"   # Lantern's own folder
+            me = Identity.load_or_create(folder, os.environ.get("LANTERN_NETWORK_NAME", "Lantern"))
+            contacts = Contacts(folder)
+            self._net = (me, contacts, Inbox(me, contacts))
+        return self._net
+
+    def network_card(self) -> dict:
+        return self.net()[0].card()
+
+    def network_add(self, card: dict, channel: str, address: str) -> dict:
+        return self.net()[1].add(card, channel, address)
+
+    def network_rules(self, contact: str, text: str, *, save: bool = False, cedar: str = "") -> dict:
+        """Preview what the owner's words become (Cedar policy + examples the engine decides), or save a policy the
+        owner has seen."""
+        from .network import NetError, compile_rules
+        c = self.net()[1].find(contact)
+        if c is None:
+            raise NetError(f"{contact} isn't one of your contacts")
+        if save:
+            if not cedar.strip():
+                raise NetError("save the policy you previewed")
+            self.net()[1].set_rules(c["fp"], {"text": " ".join(text.split())[:1000], "cedar": cedar})
+            return {"saved": True, "contact": c["name"]}
+        return compile_rules(self.client, c, text, memory=self.memory)
+
+    def _net_send(self, contact: dict, text: str, task_id: int | None) -> None:
+        if self.network_send is None:
+            from .network import NetError
+            raise NetError("no channel can reach other Lanterns (connect WhatsApp or Telegram)")
+        self.network_send(contact, text)
+        self.audit.record(lane="cloud", destination=f"{contact['channel']}:{contact['address']}",
+                          endpoint="network.send", model="lantern-network", payload=text.encode(), task_id=task_id,
+                          preview=f"to {contact['name']}'s Lantern")
+
+    def network_ask(self, contact: str, query: str) -> int:
+        """Ask a contact's Lantern for a file; the reply finishes the task (their owner decides)."""
+        from .network import NetError, seal
+        me, contacts, _ = self.net()
+        c = contacts.find(contact)
+        if c is None:
+            raise NetError(f"{contact} isn't one of your contacts")
+        query = " ".join(str(query).split())[:200]
+        task = self.memory.start_task(f"Ask {c['name']}'s Lantern for “{query}”")
+        text, env = seal(me, c["fp"], "ask_file", {"query": query})
+        self._net_pending[env["id"]] = {"task_id": task.id, "contact": c["fp"], "kind": "ask_file"}
+        self.memory.log_step(task.id, "plan", {"to": c["name"], "request": env["id"], "query": query})
+        self.emit({"type": "queued", "task_id": task.id, "goal": task.goal})
+        try:
+            self._net_send(c, text, task.id)
+        except Exception as e:
+            self.memory.finish_task(task.id, "failed", f"Couldn't reach {c['name']}'s Lantern: {e}")
+            raise
+        self.emit({"type": "task", "id": task.id, "task_id": task.id, "goal": task.goal})
+        return task.id
+
+    def network_share(self, contact: str, routine: str) -> int:
+        """Share a learned routine with a contact's Lantern, after your own approval (it leaves this computer)."""
+        from .network import NetError
+        c = self.net()[1].find(contact)
+        if c is None or self.compiler is None:
+            raise NetError(f"{contact} isn't one of your contacts" if c is None else "sharing needs the scheduler")
+        r = self.compiler.store.load(routine)   # KeyError for an unknown routine
+        goal = f"Share the routine '{r.name}' with {c['name']}'s Lantern"
+        job = self.memory.start_task(goal)
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._net_share_job(agent, job.id, goal, c, r))
+        return job.id
+
+    def _net_share_job(self, agent, job_id: int, goal: str, c: dict, r) -> None:
+        from .network import seal, shareable_contract
+        agent.toolbox.begin_task(job_id, goal)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        contract = shareable_contract(r.contract)
+        payload = {"to": c["fp"], "routine": r.name, "sha256": hashlib.sha256(json.dumps(contract, sort_keys=True)
+                                                                                .encode()).hexdigest()}
+        commit = agent.toolbox._approve("network_send", f"Send the routine '{r.meta.get('title') or r.name}' "
+                                                        f"({len(contract['steps'])} steps, no values from your "
+                                                        f"profile) to {c['name']}'s Lantern?", payload)
+        if commit is None or agent.toolbox._commit(commit, payload):
+            return self._photo_done(agent, job_id, "cancelled", "Not shared.")
+        me = self.net()[0]
+        text, env = seal(me, c["fp"], "share_routine", {"contract": contract})
+        self._net_pending[env["id"]] = {"task_id": job_id, "contact": c["fp"], "kind": "share_routine"}
+        try:
+            self._net_send(c, text, job_id)
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't reach {c['name']}'s Lantern: {e}")
+        self._photo_done(agent, job_id, "done", f"Sent '{r.name}' to {c['name']}'s Lantern; it runs there only after "
+                                                "their owner imports it and it checks out.")
+
+    def network_receive(self, text: str) -> None:
+        """A message from another Lantern (the hub passes on anything that starts with the network prefix)."""
+        from .network import NetError
+        _me, _contacts, inbox = self.net()
+        try:
+            contact, env = inbox.open(text)
+        except NetError as e:
+            self.emit({"type": "network", "refused": str(e)})
+            return
+        if env["kind"] == "reply":
+            return self._net_reply(contact, env)
+        if self.compiler is None:
+            return
+        goal = (f"{contact['name']}'s Lantern asks for “{str(env['body'].get('query', ''))[:80]}”"
+                if env["kind"] == "ask_file" else f"{contact['name']}'s Lantern shares a routine")
+        job = self.memory.start_task(goal)
+        self.memory.mark_quoted(job.id)   # what another Lantern sent stays out of briefings
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._net_request_job(agent, job.id, goal, contact, env))
+
+    def _net_reply_to(self, contact: dict, env: dict, body: dict, task_id: int) -> None:
+        from .network import seal
+        text, _ = seal(self.net()[0], contact["fp"], "reply", {"re": env["id"], **body})
+        self._net_send(contact, text, task_id)
+
+    def _net_request_job(self, agent, job_id: int, goal: str, contact: dict, env: dict) -> None:
+        from . import network as net
+        from .routines.contract import validate
+        from .routines.runner import render
+        from .routines.store import Routine
+        agent.toolbox.begin_task(job_id, goal)
+        agent.toolbox.tainted = True   # another program's request: untrusted
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        name = contact["name"]
+        try:
+            if env["kind"] == "ask_file":
+                query = str(env["body"].get("query", ""))[:200]
+                path = net.find_file(self.policy, query)
+                if path is None:
+                    self._net_reply_to(contact, env, {"ok": False, "reason": "nothing to share"}, job_id)
+                    return self._photo_done(agent, job_id, "done", f"{name}'s Lantern asked for “{query}”: nothing "
+                                                                   "shareable matches, so I said so.")
+                ok, why = net.check(contact, "ask_file", net.file_resource(self.policy, path))
+                if not ok:
+                    self._net_reply_to(contact, env, {"ok": False, "reason": "not shared"}, job_id)
+                    return self._photo_done(agent, job_id, "done", f"Refused {name}'s request for “{query}”: {why}.")
+                text, redacted = net.shareable_text(self.policy, path)
+                digest = hashlib.sha256(text.encode()).hexdigest()
+                payload = {"to": contact["fp"], "file": str(path), "sha256": digest}
+                summary = (f"{name}'s Lantern asks for “{query}”. Send {path.name} ({len(text.encode()):,} bytes"
+                           + (f", {sum(redacted.values())} secret{'s' if sum(redacted.values()) != 1 else ''} "
+                              "scrubbed" if redacted else "") + ")?")
+                commit = agent.toolbox._approve("network_send", summary, payload)
+                if commit is None or agent.toolbox._commit(commit, payload):
+                    self._net_reply_to(contact, env, {"ok": False, "reason": "not shared"}, job_id)
+                    return self._photo_done(agent, job_id, "done", f"You said no; nothing went to {name}'s Lantern.")
+                self._net_reply_to(contact, env, {"ok": True, "name": path.name, "text": text, "sha256": digest},
+                                   job_id)
+                self.memory.log_step(job_id, "tool_result", {"name": "network_send", "result": {
+                    "to": name, "file": str(path), "bytes": len(text.encode()), "sha256": digest,
+                    "redacted": redacted}})
+                return self._photo_done(agent, job_id, "done", f"Sent {path.name} to {name}'s Lantern "
+                                                               f"({len(text.encode()):,} bytes, sha256 {digest[:12]}…).")
+            contract = env["body"].get("contract") or {}
+            problems = validate(contract) if isinstance(contract, dict) else ["not a contract"]
+            if problems:
+                self._net_reply_to(contact, env, {"ok": False, "reason": "not a valid routine"}, job_id)
+                return self._photo_done(agent, job_id, "done", f"{name}'s Lantern sent a routine that breaks a rule "
+                                                               f"({problems[0]}); not imported.")
+            ok, why = net.check(contact, "share_routine", {"name": contract["name"], "zone": "open"})
+            if not ok:
+                self._net_reply_to(contact, env, {"ok": False, "reason": "not accepted"}, job_id)
+                return self._photo_done(agent, job_id, "done", f"Refused the routine from {name}: {why}.")
+            payload = {"from": contact["fp"], "routine": contract["name"],
+                       "sha256": hashlib.sha256(json.dumps(contract, sort_keys=True).encode()).hexdigest()}
+            commit = agent.toolbox._approve("network_import", f"{name}'s Lantern shares the routine "
+                                                              f"'{contract.get('title') or contract['name']}' "
+                                                              f"({len(contract['steps'])} steps). Import it? It runs "
+                                                              "only after it checks out here.", payload)
+            if commit is None or agent.toolbox._commit(commit, payload):
+                self._net_reply_to(contact, env, {"ok": False, "reason": "not accepted"}, job_id)
+                return self._photo_done(agent, job_id, "done", f"You said no; the routine from {name} wasn't imported.")
+            contract = {**contract, "source": {"shared_by": name}}
+            code = render(contract)
+            verify = self.compiler.verify(Routine(contract["name"], 0, contract, code, {}))
+            r = self.compiler.store.save(contract, code, verify, how=f"shared by {name}", trusted=bool(verify["ok"]))
+            self._net_reply_to(contact, env, {"ok": True, "imported": r.name, "trusted": r.trusted}, job_id)
+            return self._photo_done(agent, job_id, "done", f"Imported '{r.name}' from {name}'s Lantern: "
+                                                           + ("it checked out, so it can run." if r.trusted else
+                                                              f"not trusted yet ({verify.get('note')})."))
+        except net.NetError as e:
+            return self._photo_done(agent, job_id, "failed", f"{name}'s request: {e}.")
+
+    def _net_reply(self, contact: dict, env: dict) -> None:
+        body = env["body"]
+        pending = self._net_pending.pop(str(body.get("re", "")), None)
+        if pending is None or pending["contact"] != contact["fp"]:
+            return   # not something this Lantern asked for
+        tid, name = pending["task_id"], contact["name"]
+        if pending["kind"] == "share_routine":
+            self.memory.log_step(tid, "note", f"{name}: " + ("imported" if body.get("ok") else "declined"))
+            return
+        if not body.get("ok"):
+            summary, status = f"{name}'s Lantern didn't share it ({body.get('reason', 'no reason given')}).", "done"
+        else:
+            text = str(body.get("text", ""))
+            if hashlib.sha256(text.encode()).hexdigest() != body.get("sha256"):
+                summary, status = f"The file from {name} arrived damaged; I didn't keep it.", "failed"
+            else:
+                target = self.scans_folder().parent / f"From {name}" / Path(str(body.get("name", "file.txt"))).name
+                self.policy.write_text(target, text)
+                summary, status = f"{name}'s Lantern sent {target.name}; saved in {target.parent}.", "done"
+                self.memory.log_step(tid, "tool_result", {"name": "network_receive", "result": {
+                    "from": name, "file": str(target), "bytes": len(text.encode()), "sha256": body.get("sha256")}})
+        self.memory.mark_quoted(tid)
+        self.memory.log_step(tid, "reply", summary)
+        self.memory.finish_task(tid, status, summary)
+        self.emit({"type": "done", "id": tid, "task_id": tid, "status": status, "summary": summary, "reply": summary,
+                   "cost_usd": 0.0, "steps": 1})
 
     # ---- sleep: nightly check and repair (S11, sleep.py) ---------------------------------------------------
     def sleep(self) -> int:

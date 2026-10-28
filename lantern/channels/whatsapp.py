@@ -68,13 +68,16 @@ class WhatsAppChannel(Channel):
     def _auth(self) -> dict:
         return {"Authorization": f"Bearer {self.token}"}
 
-    def _send(self, message: dict) -> dict:
-        payload = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": self.owner, **message}
+    def _send(self, message: dict, to: str | None = None) -> dict:
+        payload = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to or self.owner, **message}
         return json_call(self.http, "POST", f"{GRAPH}/{self.version}/{self.phone_number_id}/messages",
                          payload, self._auth())
 
     def send_text(self, text: str) -> None:
         self._send({"type": "text", "text": {"preview_url": False, "body": text[:MAX_TEXT]}})
+
+    def send_to(self, address: str, text: str) -> None:
+        self._send({"type": "text", "text": {"preview_url": False, "body": text[:MAX_TEXT]}}, to=address)
 
     def send_buttons(self, text: str, buttons: list[tuple[str, str]]) -> None:
         if not 1 <= len(buttons) <= 3:

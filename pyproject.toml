@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyflakes>=3"]
+network = ["cedarpy>=4"]   # Lantern Network rules (S6); without it every network request is refused
 
 [project.scripts]
 lantern = "lantern.cli:main"

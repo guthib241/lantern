@@ -24,6 +24,10 @@ class FakeChannel(Channel):
         with self._lock:
             self.sent.append({"type": "text", "text": text, "ts": time.time()})
 
+    def send_to(self, address: str, text: str) -> None:
+        with self._lock:
+            self.sent.append({"type": "text", "text": text, "ts": time.time(), "to": address})
+
     def send_buttons(self, text: str, buttons: list[tuple[str, str]]) -> None:
         with self._lock:
             self.sent.append({"type": "buttons", "text": text, "ts": time.time(),

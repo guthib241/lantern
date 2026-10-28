@@ -37,6 +37,7 @@ from .. import models
 from ..approvals import ApprovalError
 from ..scrubber import DEFAULT as SCRUBBER
 from ..undo import WORDS as UNDO_WORDS, UndoError
+from ..network import PREFIX as NET_PREFIX
 from ..voice import to_wav16k, transcribe
 from .base import Channel, Incoming
 
@@ -89,9 +90,18 @@ class ChannelHub:
         self._photo_lock = threading.Lock()
 
     # ---- lifecycle -------------------------------------------------------------------
+    def _net_send(self, contact: dict, text: str) -> None:
+        """S6: a signed message to another Lantern, on the channel and address its card was added with."""
+        ch = self.channels.get(contact.get("channel", ""))
+        if ch is None:
+            raise ValueError(f"no {contact.get('channel')} channel here to reach {contact.get('name')}")
+        ch.send_to(contact["address"], text)
+
     def start(self, listen: bool = True) -> "ChannelHub":
         """Start the workers; `listen` also starts polling channels (tests drive them by hand)."""
         self._unsubscribe = self.core.subscribe(self._on_event)
+        if hasattr(self.core, "network_send"):
+            self.core.network_send = self._net_send
         for name, fn in (("lantern-inbox", self._inbox_loop), ("lantern-outbox", self._outbox_loop)):
             t = threading.Thread(target=fn, name=name, daemon=True)
             t.start()
@@ -180,6 +190,13 @@ class ChannelHub:
     # ---- incoming ----------------------------------------------------------------------
     def handle(self, inc: Incoming) -> None:
         ch = self.channels.get(inc.channel)
+        if ch is not None and inc.kind == "text" and inc.text.startswith(NET_PREFIX):
+            # S6: another Lantern. Its signature is checked against the contact list (network.py), not the sender.
+            try:
+                self.core.network_receive(inc.text)
+            except Exception as e:
+                self._error("network", e)
+            return
         if ch is None or not ch.is_owner(inc.sender):
             self.ignored += 1
             return

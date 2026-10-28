@@ -118,6 +118,24 @@ class LearnIn(BaseModel):
     task_id: int
 
 
+class NetContactIn(BaseModel):
+    card: dict
+    channel: str
+    address: str
+
+
+class NetRulesIn(BaseModel):
+    contact: str
+    text: str
+    cedar: str = ""
+
+
+class NetAskIn(BaseModel):
+    contact: str
+    query: str = ""
+    routine: str = ""
+
+
 class ReelIn(BaseModel):
     path: str
     words: str = ""
@@ -233,6 +251,44 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except KeyError:
             raise HTTPException(404, "no such task")
         except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    # ---- Lantern Network (S6) -----------------------------------------------------------------------------
+    @app.get("/network", dependencies=[Depends(auth)])
+    def network():
+        me, contacts, _ = core.net()
+        return {"card": me.card(), "contacts": [{k: c[k] for k in ("name", "fp", "channel", "address")}
+                                                | {"rules": (c.get("rules") or {}).get("text", "")}
+                                                for c in contacts.all().values()]}
+
+    @app.post("/network/contacts", dependencies=[Depends(auth)])
+    def network_add(body: NetContactIn):
+        from .network import NetError
+        try:
+            c = core.network_add(body.card, body.channel, body.address)
+        except NetError as e:
+            raise HTTPException(400, str(e))
+        return {k: c[k] for k in ("name", "fp", "channel", "address")}
+
+    @app.post("/network/rules", dependencies=[Depends(auth)])
+    def network_rules(body: NetRulesIn):
+        """Preview: the policy and what the engine decides for example requests. With `cedar`: save that policy."""
+        from .network import NetError
+        try:
+            return core.network_rules(body.contact, body.text, save=bool(body.cedar), cedar=body.cedar)
+        except NetError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/network/ask", dependencies=[Depends(auth)])
+    def network_ask(body: NetAskIn):
+        from .network import NetError
+        try:
+            if body.routine:
+                return {"task_id": core.network_share(body.contact, body.routine)}
+            return {"task_id": core.network_ask(body.contact, body.query)}
+        except KeyError:
+            raise HTTPException(404, "no such routine")
+        except NetError as e:
             raise HTTPException(409, str(e))
 
     @app.post("/reel", dependencies=[Depends(auth)])
