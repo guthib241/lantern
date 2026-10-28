@@ -56,7 +56,7 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
 ### What Session B must build next (spec order: Tier A; S4 and S0 are done)
 1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure. Then try `lantern --teach` on the laptop with a visible browser.
 2. **S5 extras: done.** A changed page flow is re-learned from the agent's run; file tasks compile into rules by pattern (`files.sort`).
-3. **Tier B** (spec order): S9 glasses → laptop handoff with S10 photo-to-scan, S11 Sleep (nightly check and repair), S12 "Do this Reel", S6 Lantern Network.
+3. **Tier B** (spec order): S9 glasses → laptop handoff with S10 photo-to-scan are **done** (scripted tests; try it live: send a photo of a paper to the WhatsApp number with a caption that names a learned routine). Next: S11 Sleep (nightly check and repair), S12 "Do this Reel", S6 Lantern Network.
 
 State (Oct 27, session 5: tested on the live API):
 - **Session 5 (live API testing)** continued on branch `claude/gallant-albattani-18fmje` (PR #1's branch, fast-forwarded to everything from PR #2 plus the fixes below). Which PR to keep is the user's call; see "Open questions".

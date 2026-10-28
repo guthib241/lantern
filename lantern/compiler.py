@@ -529,8 +529,10 @@ class Compiler:
         return r
 
     # ---- run as a task (rung 0) ---------------------------------------------------------------------------
-    def run_task(self, task_id: int, goal: str, match: Match, *, agent, sched=None):
-        """Run the matched routine as this task. Returns the agent's Result when it fell back to the agent."""
+    def run_task(self, task_id: int, goal: str, match: Match, *, agent, sched=None, tainted: bool = False,
+                 flags: list[str] | None = None):
+        """Run the matched routine as this task. Returns the agent's Result when it fell back to the agent.
+        `tainted`/`flags`: the task read untrusted content first (S9: a photographed paper); the card says so."""
         r = match.routine
         params, missing = resolve_params(r.contract, match.params)
         if missing:   # a secret the routine needs each time: let the agent (and the user) handle it
@@ -546,6 +548,10 @@ class Compiler:
             return agent.run(goal, task_id=task_id)
         toolbox = agent.toolbox
         toolbox.begin_task(task_id, goal)
+        if tainted:
+            toolbox.tainted = True
+        if flags and hasattr(toolbox, "_flags"):
+            toolbox._flags = list(flags)
         if hasattr(agent.client, "set_task"):
             agent.client.set_task(task_id)
         public = {k: v for k, v in plan["payload"]["params"].items()}
@@ -572,15 +578,16 @@ class Compiler:
                              emit=lambda kind, rec: self._emit(task_id, kind, **rec))
         ctx.on_red = lambda: self.memory.save_task_state(task_id, "running", "", {
             "goal": goal, "routine": r.name, "version": r.version, "acted": True})
-        cost0 = self.memory.task_usage(task_id)["cost_usd"]
+        before = self.memory.task_usage(task_id)
         with self._browser():
             res = execute(r, params, ctx)
-        return self._finish(task_id, goal, r, res, agent, cost0)
+        return self._finish(task_id, goal, r, res, agent, before["cost_usd"], before["calls"])
 
-    def _finish(self, task_id: int, goal: str, r: Routine, res: RunResult, agent, cost0: float):
+    def _finish(self, task_id: int, goal: str, r: Routine, res: RunResult, agent, cost0: float, calls0: int = 0):
         """After a run: record it, heal or report it, or (nothing irreversible done) fall back to the agent."""
         from .agent import Result
-        usage = self.memory.task_usage(task_id)
+        usage = dict(self.memory.task_usage(task_id))
+        usage["calls"] -= calls0   # this run's own calls (a photo's scan and reading came before it)
         info = {"routine": r.name, "version": r.version, **res.public()}
         self.memory.log_step(task_id, "routine", {**info, "log": res.log})
         self.memory.log_step(task_id, "tool_call", {"name": "run_routine", "args": {"routine": r.name,

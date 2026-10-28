@@ -51,9 +51,13 @@ QUESTION_DELAY = 1.0   # seconds: questions that arrive together go out as one m
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
          "resume, undo (puts back the files the last task moved), receipt (proof of what the last task did), or "
-         "learn (turn the last task into a routine that runs with no model calls). "
+         "learn (turn the last task into a routine that runs with no model calls). Send a photo of a paper (from "
+         "your phone or glasses) and say what it's for: I scan it and run the routine with the scan attached. "
          "Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
+
+
+PHOTO_WAIT = 15.0
 
 
 class ChannelHub:
@@ -78,6 +82,10 @@ class ChannelHub:
         self._question_lock = threading.Lock()
         self._finished: dict[int, str] = {}       # recently finished task -> its channel (for learn offers)
         self._offers: deque = deque(maxlen=20)   # tasks Lantern offered to learn, newest last
+        self.photo_wait = PHOTO_WAIT              # S9: seconds to wait for words after a photo without a caption
+        self._photos: dict[str, tuple[bytes, int]] = {}   # channel -> (photo waiting for words, its number)
+        self._photo_n = 0
+        self._photo_lock = threading.Lock()
 
     # ---- lifecycle -------------------------------------------------------------------
     def start(self, listen: bool = True) -> "ChannelHub":
@@ -181,12 +189,56 @@ class ChannelHub:
             self._seen.append(key)
         if inc.kind == "button":
             return self._button(ch, inc)
+        if inc.kind == "photo":
+            return self._photo(ch, inc)
         text = inc.text
         if inc.kind == "voice":
             text = self._voice(ch, inc)
             if text is None:
                 return
+        if not STOP.match((text or "").strip()) and (photo := self._take_photo(ch.name)) is not None:
+            return self._start_photo(ch, photo, text)   # the words right after a photo say what it's for
         self._text(ch, text)
+
+    # ---- photos (S9: from the glasses, or any phone) ------------------------------------------------
+    def _photo(self, ch: Channel, inc: Incoming) -> None:
+        try:
+            image, _ext = inc.fetch_image()
+        except Exception as e:   # download failed
+            self._error(f"{ch.name} photo", e)
+            return self.say(ch.name, f"I couldn't get that photo ({type(e).__name__}). Try sending it again.")
+        if (inc.text or "").strip():
+            return self._start_photo(ch, image, inc.text)
+        with self._photo_lock:
+            self._photo_n += 1
+            n = self._photo_n
+            self._photos[ch.name] = (image, n)
+        timer = threading.Timer(self.photo_wait, self._photo_waited, (ch, n))
+        timer.daemon = True
+        timer.start()
+        self.say(ch.name, f"📷 Got the photo. Tell me what it's for (a message or a voice note), or I'll read it in "
+                          f"{self.photo_wait:.0f} s.")
+
+    def _take_photo(self, channel: str) -> bytes | None:
+        with self._photo_lock:
+            item = self._photos.pop(channel, None)
+        return item[0] if item else None
+
+    def _photo_waited(self, ch: Channel, n: int) -> None:
+        with self._photo_lock:
+            item = self._photos.get(ch.name)
+            if item is None or item[1] != n:
+                return
+            del self._photos[ch.name]
+        self._start_photo(ch, item[0], "")
+
+    def _start_photo(self, ch: Channel, image: bytes, words: str) -> None:
+        try:
+            task_id = self.core.photo(image, words)
+        except ValueError as e:
+            return self.say(ch.name, f"I can't scan photos right now: {e}.")
+        self.origin[task_id] = ch.name
+        self.say(ch.name, f"📷 Scanning it (task #{task_id}).")
 
     def _text(self, ch: Channel, text: str) -> None:
         t = (text or "").strip()

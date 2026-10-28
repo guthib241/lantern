@@ -282,9 +282,13 @@ def skeleton_from_traces(goal: str, traces: list[dict], vault: dict, source: dic
         for f in t.get("fields") or []:
             label = f.get("label") or f.get("name") or f.get("html_id")
             hints = {k: f[k] for k in ("name", "html_id") if f.get(k)}
-            if f.get("type") == "file":
+            if f.get("type") == "file":   # a path param: next time it can be another file (S9: a fresh scan)
+                pname = re.sub(r"[^a-z0-9]+", "_", (f.get("name") or label).lower()).strip("_")[:30] or "file"
+                if pname in {p["name"] for p in params}:
+                    pname = f"{pname}_{len(params)}"
+                params.append({"name": pname, "type": "path", "default": f["value"], "say": f"the file for {label}"})
                 steps.append({"id": f"s{len(steps) + 1}", "say": f"Attach {base_name(f['value'])} as {label}",
-                              "action": "browser.upload", "args": {"field": label, "path": f["value"], **hints},
+                              "action": "browser.upload", "args": {"field": label, "path": "{{" + pname + "}}", **hints},
                               "post": []})
                 continue
             options = [o if isinstance(o, dict) else {"value": o, "text": o} for o in f.get("options") or []]

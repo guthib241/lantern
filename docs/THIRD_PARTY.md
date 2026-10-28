@@ -15,7 +15,8 @@
 | mcp (Model Context Protocol Python SDK 2.x) | MIT | MCP client (other tools as deferred tools) and Lantern's MCP server |
 | cryptography (Fernet) | Apache-2.0 / BSD-3 | encrypting memory and the audit log at rest |
 | keyring | MIT | keeping the encryption key in the OS keychain |
-| meta_sam_parser (Meta) | SAM License | decoding SAM 3.1 segmentation streams (camera check-in) |
+| meta_sam_parser (Meta) | SAM License | decoding SAM 3.1 segmentation streams (camera check-in, photo to scan) |
+| Pillow | MIT-CMU (HPND) | photo to scan (S10): open the photo, straighten the page, save PNG and PDF |
 | setuptools (build only) | MIT | builds the `lantern` package and command from `pyproject.toml` |
 | pyflakes (dev only) | MIT | lint in CI: unused imports, undefined names |
 | GitHub Actions: actions/checkout, actions/setup-python, actions/setup-node (CI only) | MIT | runs the tests, the rehearsal and the doctor on each pull request |

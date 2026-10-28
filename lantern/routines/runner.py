@@ -173,7 +173,10 @@ def plan_for(routine, params: dict, vault: dict, target: str = "", policy=None) 
             specs = [next((p for p in c.get("params") or [] if p["name"] == k), {}) for k in placeholders(a.get("value", ""))]
             secret = any(p.get("type") == "secret" for p in specs)
             label = next((p.get("labels", {}).get(v) for p in specs if p.get("labels", {}).get(v)), None)
-            shown.append(f"{a['field']}: {'(secret)' if secret else _short(label or v)}")
+            if s["action"] == "browser.upload":   # what gets attached always shows, first
+                shown.insert(0, f"attach {PurePath(str(v)).name} as {a['field']}")
+            else:
+                shown.append(f"{a['field']}: {'(secret)' if secret else _short(label or v)}")
         elif ACTIONS[s["action"]][2] == "red":
             red.append(s["id"])
     payload = {"routine": routine.name, "version": routine.version, "target": target,

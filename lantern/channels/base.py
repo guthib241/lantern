@@ -55,15 +55,17 @@ def json_call(http: Http, method: str, url: str, payload: dict | None = None,
 
 @dataclass
 class Incoming:
-    """Something the owner sent. `fetch_audio` downloads a voice note: () -> (bytes, file_extension)."""
+    """Something the owner sent. `fetch_audio` downloads a voice note and `fetch_image` a photo (S9):
+    () -> (bytes, file_extension). A photo's caption is in `text`."""
     channel: str
     sender: str
-    kind: str                      # text | button | voice
+    kind: str                      # text | button | voice | photo
     text: str = ""
     button: str = ""
     msg_id: str = ""
     callback_id: str = ""          # Telegram: answer the button tap
     fetch_audio: Callable[[], tuple[bytes, str]] | None = field(default=None, repr=False)
+    fetch_image: Callable[[], tuple[bytes, str]] | None = field(default=None, repr=False)
 
 
 class Channel:

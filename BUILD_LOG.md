@@ -382,3 +382,13 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - Also S5: **file tasks become routines.** A verified tidy-up compiles into rules by pattern (`files.sort(folder, match, to)`: `*.jpg → Images`, by exact name when one extension went two ways), with the folder as a param.
   - The run asks once, with the exact moves listed. It moves only those; a file that arrived after the card stays put, and nothing is overwritten. Moves are checked on disk and undoable.
   - Tests: `tests/test_file_routines.py` (3). The agent tidies Downloads once; the run is learned; a new week's files are sorted by the rules with 0 model calls and one card; a late arrival stays; Undo puts it all back.
+
+## Oct 28 (Phase 2, S10 photo to scan, S9 glasses → laptop handoff)
+- `lantern/scan.py` (S10): SAM 3.1 finds the page (document/paper/letter, largest mask). The corners come from the mask, then Lantern straightens the page (Pillow perspective), cleans it (greyscale, autocontrast) and saves PNG + PDF through policy.py in a writable `Scans` folder. Without a page, or with SAM off, it uses the whole photo and says so.
+- `lantern/handoff.py` + `Core.photo` (S9):
+  - A photo on WhatsApp, Telegram or the fake phone is scanned, then read by Muse Spark (no tools, JSON checked in code), and the files are renamed by what the paper is.
+  - The caption, or the voice note or message sent right after it, picks the learned routine; the routine runs with the scan attached after the approval on the phone, and the result comes back as one line.
+  - Without words the paper's kind is tried, with a warning on the card and no values from the paper.
+- Routines: file uploads are `path` params; the approval card lists attachments first; a routine's summary counts only its own model calls.
+- Tests: `tests/test_scan.py` (4). A synthetic tilted page and its SAM mask, through Meta's real parser: corners within 4 px, the page straightened to its own size, no desk left in the corners, PNG and PDF via policy.py, no overwrite, the fallbacks.
+- `tests/test_handoff.py` (5): a photo with words on the fake phone runs the learned portal routine in Chromium; the portal's stored file has the scan's SHA-256. A photo without words waits, then the paper's kind chooses, with a flagged card and no paper-set values. Also the words after a photo, the reading's shape, and WhatsApp and Telegram photos.

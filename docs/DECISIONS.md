@@ -206,3 +206,13 @@
     - Nothing is overwritten; hidden files, folders and shortcuts never move.
     - Each move is checked on disk and logged for Undo.
   - **Verifying it.** A files routine verifies as a dry run against the folder as it is now: nothing moves, and the recorded run proved the moves. With nothing to move, there is no card at all.
+- Oct 28 (S10 photo to scan): **SAM finds the page; everything else happens on this computer.**
+  - **The request.** It is the same SAM 3.1 request as the camera check-in (cookbook 07_sam; the shape was verified live in session 5), decoded by Meta's `meta_sam_parser`. "document", then "paper", then "letter", one noun phrase per request; a mask under 5% of the photo is not the page.
+  - **Corners and cleaning.** The four corners come from the mask's own pixels (the extremes of x+y and x−y). The straightening is a Pillow perspective transform, solved with an 8×8 Gaussian elimination, so no numpy. Then greyscale and autocontrast. Saved as PNG and PDF through policy.py into a writable zone's `Scans` folder, never overwriting.
+  - **No page found, or `LANTERN_SCAN_SAM=off`:** the whole photo, cleaned, and the reply says so. Pillow is the one new dependency (THIRD_PARTY.md).
+- Oct 28 (S9 glasses → laptop): **the user's words choose; the paper only informs.**
+  - **The photo arrives.** It comes on WhatsApp or Telegram like any photo; there is no glasses SDK. A caption is the instruction. Without one, the hub waits 15 s for a voice note or message (the glasses send them separately), then goes on without words.
+  - **Reading it.** Muse Spark reads the clean scan with no tools: the Responses API with `input_image`, the request shape computer use already sends live. Its JSON is held to a fixed shape in code: kind, title, up to 12 fields, ID/card/account numbers dropped. Structured output over the Responses API (`text.format`) is unverified here, so it isn't relied on.
+  - **Choosing the routine.** The user's words pick it. Without words the paper's kind is tried; then the card carries "⚠ Chosen from what the paper says, not from your words", and the paper may set no value except enum choices. Every such card is marked as after untrusted content.
+  - **Attaching the scan.** A learned routine's file upload is now a `path` param (it used to be a literal), so the scan goes in its place. A path is never a model's pick. The card shows "attach <file> as <field>" first.
+  - **The reply** is the routine's one-line result; the reading's summary stays out of later briefings.

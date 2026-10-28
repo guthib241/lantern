@@ -358,6 +358,84 @@ class Core:
                 self.memory.log_step(job_id, "note", f"couldn't learn it: {e}")
                 self.emit({"type": "teach", "task_id": job_id, "phase": "not_learned", "reason": str(e)[:200]})
 
+    # ---- glasses -> laptop handoff (S9, handoff.py) and photo to scan (S10, scan.py) ----------------------
+    def photo(self, image: bytes, instruction: str = "") -> int:
+        """A photo from the phone (or the glasses): scan it, read it, and run the learned routine it's for with the
+        scan attached (after the user approves). `instruction`: the user's own words, if any. Returns the task."""
+        if self.compiler is None:
+            raise ValueError("photos need Lantern's scheduler (lantern --serve)")
+        instruction = " ".join(str(instruction or "").split())[:200]
+        goal = f"Scan this photo{': ' + instruction if instruction else ''}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "photo_bytes": len(image)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._photo_job(agent, job.id, goal, image, instruction))
+        return job.id
+
+    def scans_folder(self) -> Path:
+        """Where scans go: a Scans folder in the first writable zone."""
+        z = next((z for z in self.policy.describe() if z["zone"] == "writable"), None)
+        if z is None:
+            raise ValueError("there's no writable folder to save scans in (lantern --set-zone FOLDER writable)")
+        return Path(z["path"]) / "Scans"
+
+    def _photo_job(self, agent, job_id: int, goal: str, image: bytes, instruction: str) -> None:
+        from . import handoff
+        from .reliability import explain
+        from .scan import ScanError, file_name, scan
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            sc = scan(image, client=agent.client, policy=self.policy, folder=self.scans_folder(), memory=self.memory,
+                      task_id=job_id)
+            paper = handoff.read(agent.client, self.policy.read_bytes(sc["png"]), memory=self.memory, task_id=job_id)
+            if paper["kind"]:   # a name that says what it is: "2026-10-28 permit renewal notice.pdf"
+                for ext in ("png", "pdf"):
+                    target = Path(sc[ext]).with_name(f"{file_name(paper['kind'])}.{ext}")
+                    if not self.policy.exists(target):
+                        self.policy.move(sc[ext], target)
+                        sc[ext] = str(target)
+            self.memory.log_step(job_id, "tool_call", {"name": "scan", "args": {"bytes": len(image)}})
+            self.memory.log_step(job_id, "tool_result", {"name": "scan", "result": {**sc, "paper": paper}})
+            self.memory.mark_quoted(job_id)   # what the paper says stays out of later briefings
+            agent.on_event("tool", {"name": "scan", "args": {}, "result": {"pdf": sc["pdf"], "found": sc["found"],
+                                                                         "kind": paper["kind"]},
+                                    "badge": models.badge(models.SAM)})
+            words = instruction or paper["kind"]
+            match = self.compiler.match(words, client=agent.client, ladder=agent.ladder, task_id=job_id) if words else None
+            upload = handoff.upload_param(match.routine) if match is not None else None
+        except (ScanError, handoff.ReadError, ValueError) as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't scan that photo: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't scan that photo: {explain(e)}")
+        line = handoff.reply(paper, sc) + f", saved as {Path(sc['pdf']).name}"
+        if paper["instructions"]:
+            line += ". It contained instructions for an AI; I ignored them"
+        if match is None or upload is None:
+            what = (f"no learned routine for '{words}'" if words else "say what it's for")
+            return self._photo_done(agent, job_id, "done", f"{line}. {what[0].upper() + what[1:]}; tell me what to "
+                                                           "do with it.")
+        if not instruction:   # the paper chose the routine: it may pick nothing else (choices, never free text)
+            enums = {p["name"] for p in match.routine.contract.get("params") or [] if p.get("type") == "enum"}
+            match.params = {k: v for k, v in match.params.items() if k in enums}
+        match.params[upload] = sc["pdf"]
+        self.memory.log_step(job_id, "note", line)
+        flags = [] if instruction else ["⚠ Chosen from what the paper says, not from your words: approve only if you "
+                                        "meant it."]
+        try:
+            self.compiler.run_task(job_id, words, match, agent=agent, sched=self.scheduler, tainted=True, flags=flags)
+        finally:
+            if hasattr(agent.toolbox, "_flags"):
+                agent.toolbox._flags = []
+
+    def _photo_done(self, agent, job_id: int, status: str, summary: str) -> None:
+        self.memory.log_step(job_id, "reply", summary)
+        self.memory.finish_task(job_id, status, summary)
+        agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
+
     def routines(self) -> list[dict]:
         return self.compiler.list() if self.compiler is not None else []
 

@@ -46,9 +46,11 @@ class FakeChannel(Channel):
 
     @staticmethod
     def incoming(text: str = "", button: str = "", sender: str = FAKE_OWNER, audio: bytes | None = None,
-                 ext: str = ".ogg") -> Incoming:
+                 ext: str = ".ogg", image: bytes | None = None) -> Incoming:
         if audio is not None:
             return Incoming("fake", sender, "voice", fetch_audio=lambda: (audio, ext))
+        if image is not None:   # a photo; `text` is its caption
+            return Incoming("fake", sender, "photo", text=text, fetch_image=lambda: (image, ".jpg"))
         if button:
             return Incoming("fake", sender, "button", button=button)
         return Incoming("fake", sender, "text", text=text)
