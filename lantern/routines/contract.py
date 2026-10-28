@@ -33,6 +33,8 @@ ACTIONS: dict[str, tuple[tuple[str, ...], tuple[str, ...], str]] = {
     "browser.upload": (("field", "path"), ("name", "html_id"), "yellow"),
     "browser.submit": (("button",), (), "red"),
     "files.move": (("source", "destination"), (), "red"),
+    # S5: every top-level file in `folder` whose name matches `match` (*.jpg) goes into `to` (relative to it)
+    "files.sort": (("folder", "match", "to"), (), "red"),
 }
 CHECKS: dict[str, tuple[str, ...]] = {
     "browser.url_contains": ("text",),
@@ -181,6 +183,7 @@ def plan_of(c: dict) -> list[tuple[str, str]]:
     for s in c.get("steps") or []:
         a = s.get("args") or {}
         target = a.get("url", "") if s.get("action") == "browser.open" else (
+            f"{a.get('match')} -> {a.get('to')}" if s.get("action") == "files.sort" else
             a.get("field") or a.get("button") or a.get("source") or "")
         if s.get("action") == "browser.open":
             target = urlparse(str(target).replace("{{base_url}}", "http://base")).path
@@ -199,7 +202,7 @@ def same_plan(proposed: dict, recorded: dict) -> list[str]:
         defaults = {p["name"]: p.get("default") for p in proposed.get("params") or []}
         rec_defaults = {p["name"]: p.get("default") for p in recorded.get("params") or []}
         for s, r in zip(proposed["steps"], recorded["steps"]):
-            for k in ("value", "path", "url", "source", "destination"):
+            for k in ("value", "path", "url", "source", "destination", "folder"):
                 if k in r.get("args", {}):
                     mine = _resolve_defaults(s["args"].get(k), defaults)
                     theirs = _resolve_defaults(r["args"][k], rec_defaults)
@@ -311,6 +314,45 @@ def skeleton_from_traces(goal: str, traces: list[dict], vault: dict, source: dic
         success.append({"check": "browser.url_contains", "args": {"text": urlparse(last["final_url"]).path}})
     return {"name": slug(goal_words(goal)), "title": goal_words(goal)[:80], "kind": "web",
             "examples": [goal_words(goal)], "params": params, "steps": steps, "success": success, "source": source}
+
+
+def skeleton_from_moves(goal: str, moves: list[dict], source: dict) -> dict:
+    """A tidy-up the user approved (organize_files: [{"from", "to"}]) as rules by pattern, not fixed paths: next
+    time, whatever matches in that folder goes to the same place. By extension when every file of that type went to
+    one place; by exact name otherwise."""
+    from pathlib import PurePath
+    if not moves:
+        raise ContractError("this task didn't fill any form or move any files, so there is nothing to compile")
+    folders = {str(PurePath(m["from"]).parent) for m in moves}
+    if len(folders) != 1:
+        raise ContractError("the files came from more than one folder; a routine tidies one folder")
+    folder = PurePath(folders.pop())
+    by_ext: dict[str, set[str]] = {}
+    dest: dict[str, str] = {}
+    for m in moves:
+        src, dst = PurePath(m["from"]), PurePath(m["to"])
+        if dst.name != src.name:
+            raise ContractError(f"{src.name} was renamed on the way; routines only sort files into folders")
+        try:
+            to = str(dst.parent.relative_to(folder))
+        except ValueError:
+            to = str(dst.parent)          # somewhere outside the folder: the full path (checked by policy.py)
+        dest[src.name] = to
+        by_ext.setdefault(src.suffix.lower(), set()).add(to)
+    rules: list[tuple[str, str]] = []
+    for name, to in dest.items():
+        ext = PurePath(name).suffix.lower()
+        pattern = f"*{ext}" if ext and len(by_ext[ext]) == 1 else name
+        if (pattern, to) not in rules:
+            rules.append((pattern, to))
+    rules.sort(key=lambda r: (r[1].lower(), r[0].startswith("*"), r[0]))   # exact names before patterns
+    steps = [{"id": f"s{i}", "say": f"Move {pattern} into {to}", "action": "files.sort",
+              "args": {"folder": "{{folder}}", "match": pattern, "to": to}, "post": []}
+             for i, (pattern, to) in enumerate(rules, 1)]
+    return {"name": slug(goal_words(goal)), "title": goal_words(goal)[:80], "kind": "files",
+            "examples": [goal_words(goal)], "params": [{"name": "folder", "type": "path", "default": str(folder),
+                                                        "say": "the folder to tidy"}],
+            "steps": steps, "success": [], "source": source}
 
 
 def base_name(path: str) -> str:

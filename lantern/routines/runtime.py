@@ -22,11 +22,13 @@ The names are bound per run to a `RoutineContext`, which holds the rules, in cod
 """
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import os
 import re
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Callable
 
 from ..forms import guards
@@ -99,6 +101,9 @@ class RoutineContext:
         self.current: str | None = None
         self.acted = False                # a red action happened in this run
         self.skipped: set[str] = set()    # steps whose red action was skipped (dry run)
+        self.sorted: set[str] = set()     # files.sort: files a rule already took (each file moves once)
+        self.moved: list[dict] = []       # files.sort: what moved, checked on disk
+        self.left: list[str] = []         # files.sort: files that weren't on the approved list
         self._commit = None
         self._committed = False
         self._driver = None
@@ -300,9 +305,49 @@ def _match(fields: list[dict], label: str, hints: dict) -> dict | None:
     return None
 
 
+def sort_moves(policy, folder: str, match: str, to: str, taken: set[str] | None = None) -> list[tuple[str, str]]:
+    """S5: the moves a files.sort step would make now: top-level files in `folder` (never folders, shortcuts or
+    hidden files) whose name matches `match`, into `to` (relative to the folder, or a full path). Files another rule
+    already took, or whose new name is taken, stay where they are. The plan and the run both use this."""
+    base = policy.check_writable(folder)
+    target = Path(to) if Path(to).is_absolute() else base / to
+    out = []
+    for p in policy.list_dir(base):
+        if (not p.is_file() or p.name.startswith(".") or policy.is_link(p) or str(p) in (taken or set())
+                or not fnmatch.fnmatch(p.name.lower(), match.lower())):
+            continue
+        dst = target / p.name
+        if not dst.exists():
+            out.append((str(p), str(dst)))
+    return out
+
+
 class Files:
     def __init__(self, ctx: RoutineContext):
         self._ctx = ctx
+
+    def sort(self, folder: str, match: str, to: str) -> None:
+        """Move what matches into `to`: only moves on the approved list, each checked on disk and kept for Undo."""
+        ctx = self._ctx
+        if ctx.policy is None:
+            raise ctx.fail("file access isn't set up", "not_available")
+        try:
+            moves = sort_moves(ctx.policy, folder, match, to, ctx.sorted)
+        except PolicyError as e:
+            raise ctx.fail(str(e), "refused") from e
+        approved = {tuple(m) for m in ctx.plan.get("moves") or []}
+        for src, dst in moves:
+            ctx.sorted.add(src)
+            if ctx.mode == "live" and (src, dst) not in approved:
+                ctx.left.append(src)   # it arrived after you approved: it stays where it is
+                continue
+            ctx.red("move")
+            ctx.policy.move(src, dst)
+            ctx.acted = True
+            if not Path(dst).is_file() or Path(src).exists():
+                raise ctx.fail(f"{Path(src).name} isn't in {to} after the move")
+            ctx.moved.append({"from": src, "to": dst})
+            ctx.on_moved([{"source": dst, "destination": src}])
 
     def move(self, source: str, destination: str) -> None:
         ctx = self._ctx

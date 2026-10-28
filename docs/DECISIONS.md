@@ -196,3 +196,13 @@
   - **What heals can't fix.** Heals re-target a field or button on the page the routine expects. A new page (demo/portal flow b adds "Contact" between Address and Permit) makes the routine land somewhere it didn't plan for, and no re-target fixes that.
   - **When it may fall back.** A routine that stops **before its last submit** now falls back to the agent, even after earlier Next presses. The recorded run proved only the last submit (it showed the confirmation); the earlier presses just moved the form along. A stop at the last submit itself, or after any moved file, still reports "repeats nothing" (`compiler.before_final_submit`).
   - **Re-learning.** When the fallback run verifies, it is learned again as the same routine's next version (`Core.learn(replace=…)`). That version is verified on a fresh copy of the site as it is now, and it becomes current only once verified. The receipt and `meta.json` say "re-learned … the site's flow changed".
+- Oct 28 (S5): **file tasks compile into rules, not paths.**
+  - **Where the rules come from.** A verified `organize_files` run (each move checked on disk) becomes a `files` routine: one `files.sort(folder, match, to)` step per rule.
+    - The rule is by extension when every file of that type went to one place (`*.jpg → Images`), by exact name otherwise.
+    - `to` is relative to the folder, or a full path when the file went elsewhere (checked by policy.py on every run).
+    - The folder is a param. Renamed files and moves from several folders are refused with the reason.
+  - **One approval with the exact list.** The approval is for the exact moves found when the card is made, bound to their hash; the summary groups them by destination. At run time only moves on that list happen.
+    - A file that arrived after the card stays where it is, and the summary says so.
+    - Nothing is overwritten; hidden files, folders and shortcuts never move.
+    - Each move is checked on disk and logged for Undo.
+  - **Verifying it.** A files routine verifies as a dry run against the folder as it is now: nothing moves, and the recorded run proved the moves. With nothing to move, there is no card at all.

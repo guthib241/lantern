@@ -49,13 +49,13 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
 - **dev.meta.ai didn't resolve from this container.** Reasoning effort follows the cookbook's reasoning notebook and session 5's live use of `reasoning.effort: low`. `"high"` and chaining across efforts are untested live; check 4 of the live script covers them. How the API reports an expired `previous_response_id` isn't documented; `taskrun.chain_lost` guesses a 400/404 that names the previous response, and check 5 shows whether the chain survives a restart.
 - **Known limits, recorded in DECISIONS:**
   - **Fixed since S1:** multi-page portals now work in production (session cookies per task; pages that move on report `advanced`).
-  - **Routines can't do these yet:** compile only web form tasks (no file tasks; no pages that needed computer use).
+  - **Routines can't do these yet:** pages that needed computer use (custom widgets). Web forms and tidy-ups (rules by pattern) compile.
   - **Healing scope:** heals re-target fields and buttons; a changed flow (a new page) is re-learned from the agent's run instead (S5, `tests/test_relearn.py`; demo/portal `--flow b`).
   - **No avatar art for juggling:** there's no Muse Image "juggling" sprite yet. The avatar shows the thinking face with two orbiting lights; `scripts/make_avatar.py` can add one (~$0.01).
 
 ### What Session B must build next (spec order: Tier A; S4 and S0 are done)
 1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure. Then try `lantern --teach` on the laptop with a visible browser.
-2. **S5 extras on the portal:** a page-flow change is done (re-learned from the agent's run). Still to do: compile file tasks (rules by pattern, not fixed paths).
+2. **S5 extras: done.** A changed page flow is re-learned from the agent's run; file tasks compile into rules by pattern (`files.sort`).
 3. **Tier B** (spec order): S9 glasses → laptop handoff with S10 photo-to-scan, S11 Sleep (nightly check and repair), S12 "Do this Reel", S6 Lantern Network.
 
 State (Oct 27, session 5: tested on the live API):

@@ -18,7 +18,7 @@ import ast
 RUNTIME = "lantern.routines.runtime"
 API: dict[str, frozenset[str]] = {
     "browser": frozenset({"open", "fill", "upload", "submit"}),
-    "files": frozenset({"move"}),
+    "files": frozenset({"move", "sort"}),
     "vault": frozenset({"get"}),
     "check": frozenset({"url_contains", "text_contains", "text_matches", "field_equals", "file_exists",
                         "file_missing"}),

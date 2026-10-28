@@ -37,7 +37,8 @@ from urllib.parse import urlparse
 
 from . import models
 from .ladder import RUNGS
-from .routines.contract import (ContractError, goal_words, looks_private, placeholders, same_plan,
+from .policy import PolicyError
+from .routines.contract import (ContractError, goal_words, looks_private, placeholders, same_plan, skeleton_from_moves,
                                 skeleton_from_traces, slug, validate)
 from .routines.runner import RunResult, calls_of, execute, plan_for, render, resolve_params, same_calls
 from .routines.checker import check
@@ -114,7 +115,8 @@ Allowed, and nothing else:
   def run(params):
       with step("<step id>", "<what it does>"):
           browser.open(url) | browser.fill(field, value, name=..., html_id=..., type=...) |
-          browser.upload(field, path, name=..., html_id=...) | browser.submit(button) | files.move(source, destination)
+          browser.upload(field, path, name=..., html_id=...) | browser.submit(button) | files.move(source, destination) |
+          files.sort(folder, match, to)
           check.url_contains(text) | check.text_contains(text) | check.text_matches(pattern) |
           check.field_equals(field, value) | check.file_exists(path) | check.file_missing(path)
 Contract values: "{{name}}" is params["name"]; "{{vault.key}}" is vault.get("key"); join pieces with +.
@@ -235,17 +237,24 @@ class Compiler:
         t = self.memory.get_task(task_id)
         if t.status != "done":
             raise CompileError(f"task #{task_id} is {t.status}; only a finished, verified task can be learned")
-        traces = []
+        traces, moves = [], []
         for s in self.memory.steps(task_id):
+            try:
+                content = json.loads(s["content"])
+            except (ValueError, TypeError):
+                continue
             if s["kind"] == "trace":
-                try:
-                    traces.append(json.loads(s["content"]))
-                except ValueError:
-                    continue
+                traces.append(content)
+            elif s["kind"] == "tool_result" and isinstance(content, dict) and content.get("name") == "organize_files":
+                r = content.get("result") or {}
+                if r.get("verified") and r.get("undo"):   # S5: what a tidy-up moved, checked on disk
+                    moves += [{"from": u["destination"], "to": u["source"]} for u in r["undo"]]
         usage = self.memory.task_usage(task_id)
         source = {"task_id": task_id, "cost_usd": round(float(usage["cost_usd"]), 6), "model_calls": usage["calls"],
                   "seconds": round(t.updated_at - t.created_at, 1)}
         try:
+            if moves and not traces:
+                return skeleton_from_moves(t.goal, moves, source)
             return skeleton_from_traces(t.goal, traces, self.vault(), source)
         except ContractError as e:
             raise CompileError(str(e)) from e
@@ -337,6 +346,9 @@ class Compiler:
         if mode == "sandbox":
             out["note"] = ("every step and the final check passed on a fresh copy of the site" if res.ok
                            else "failed on a fresh copy of the site")
+        elif c.get("kind") == "files":
+            out["note"] = ("its rules checked against the folder as it is now, nothing moved; the recorded run proved "
+                           "the moves" if res.ok else "its rules don't fit the folder")
         else:
             out["note"] = (f"dry run on the real site up to the first submit ({res.stopped_at}); "
                            "the recorded run proved the rest" if res.ok else "the dry run failed")
@@ -525,8 +537,13 @@ class Compiler:
             self.memory.log_step(task_id, "note", f"routine {r.name} needs {', '.join(missing)}; doing it step by step")
             return agent.run(goal, task_id=task_id)
         vault = self.vault()
-        host = urlparse(str(params.get("base_url", ""))).netloc
-        plan = plan_for(r, params, vault, target=host)
+        host = (str(params.get("folder", "")) if r.contract.get("kind") == "files" else
+                urlparse(str(params.get("base_url", ""))).netloc)
+        try:
+            plan = plan_for(r, params, vault, target=host, policy=self.core.policy)
+        except PolicyError as e:   # the folder isn't writable (any more): do it the normal way, which explains
+            self.memory.log_step(task_id, "note", f"routine {r.name} can't plan: {e}; doing it step by step")
+            return agent.run(goal, task_id=task_id)
         toolbox = agent.toolbox
         toolbox.begin_task(task_id, goal)
         if hasattr(agent.client, "set_task"):
@@ -590,6 +607,10 @@ class Compiler:
             status = "done"
             summary = (f"Ran the learned routine '{r.meta.get('title') or r.name}' v{r.version}: {len(res.log)} steps, "
                        f"each checked; {usage['calls']} model call{'s' if usage['calls'] != 1 else ''}, ${cost:.4f}.")
+            if r.contract.get("kind") == "files":
+                summary += (f" Moved {len(res.moved)} file{'s' if len(res.moved) != 1 else ''}"
+                            + (f"; {len(res.left)} arrived after you approved and stayed where they were"
+                               if res.left else "") + ".")
             if healed is not None:
                 summary += (f" The page had changed: {len(res.patches)} step{'s' if len(res.patches) != 1 else ''} "
                             f"healed, saved as v{healed.version}" + ("" if healed.trusted else " (not verified yet)") + ".")

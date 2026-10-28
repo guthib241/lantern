@@ -16,18 +16,20 @@ import ast
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import PurePath
 from types import SimpleNamespace
 from typing import Any
 
 from .checker import RUNTIME, CheckError, check
 from .contract import ACTIONS, PLACEHOLDER, fill_in, placeholders
-from .runtime import DryStop, RoutineContext, StepFailed, sha
+from .runtime import DryStop, RoutineContext, StepFailed, sha, sort_moves
 
 CHECK_CALLS = {"browser.url_contains": "check.url_contains", "browser.text_contains": "check.text_contains",
                "browser.text_matches": "check.text_matches", "browser.field_equals": "check.field_equals",
                "files.exists": "check.file_exists", "files.missing": "check.file_missing"}
 ARG_ORDER = {"browser.open": ("url",), "browser.fill": ("field", "value"), "browser.upload": ("field", "path"),
-             "browser.submit": ("button",), "files.move": ("source", "destination")}
+             "browser.submit": ("button",), "files.move": ("source", "destination"),
+             "files.sort": ("folder", "match", "to")}
 
 
 # ---- code from a contract ---------------------------------------------------------------
@@ -148,11 +150,22 @@ def resolve_params(contract: dict, given: dict | None = None) -> tuple[dict, lis
     return params, missing
 
 
-def plan_for(routine, params: dict, vault: dict, target: str = "") -> dict:
+def plan_for(routine, params: dict, vault: dict, target: str = "", policy=None) -> dict:
     c = routine.contract
     fields, red, values, shown = [], [], {}, []
+    moves: list[list[str]] = []      # files.sort: the exact moves the user approves, found now (S5)
+    taken: set[str] = set()
     for s in c["steps"]:
         a = s["args"]
+        if s["action"] == "files.sort":
+            if policy is None:
+                raise ValueError("a files routine needs policy.py to plan its moves")
+            found = sort_moves(policy, fill_in(a["folder"], params, vault), a["match"], a["to"], taken)
+            taken |= {src for src, _ in found}
+            moves += [[src, dst] for src, dst in found]
+            if found:
+                red.append(s["id"])
+            continue
         if s["action"] in ("browser.fill", "browser.upload"):
             v = fill_in(a.get("value", a.get("path")), params, vault)
             values[s["id"]] = sha(v)
@@ -167,9 +180,20 @@ def plan_for(routine, params: dict, vault: dict, target: str = "") -> dict:
                "params": {k: v for k, v in params.items()
                           if next((p for p in c.get("params") or [] if p["name"] == k), {}).get("type") != "secret"},
                "fields": fields, "red": [[sid, next(s["action"] for s in c["steps"] if s["id"] == sid)] for sid in red]}
+    if c.get("kind") == "files":
+        payload["moves"] = moves
+        groups: dict[str, int] = {}
+        for _, dst in moves:
+            folder = PurePath(dst).parent.name
+            groups[folder] = groups.get(folder, 0) + 1
+        summary = (f"Run the learned routine '{c.get('title') or routine.name}' v{routine.version} on {target} "
+                   f"(no model calls): move {len(moves)} file{'s' if len(moves) != 1 else ''}"
+                   + (": " + "; ".join(f"{n} → {g}" for g, n in sorted(groups.items(), key=lambda x: -x[1])[:6])
+                      if moves else "") + ".")
+        return {"payload": payload, "summary": summary, "red": red, "values": values, "moves": moves}
     actions = sum(1 for s in c["steps"] if s["id"] in red)
     summary = (f"Run the learned routine '{c.get('title') or routine.name}' v{routine.version} on {target or 'this computer'} "
-               f"(no model calls): {actions} {'submit' if c.get('kind') == 'web' else 'move'}{'s' if actions != 1 else ''}"
+               f"(no model calls): {actions} submit{'s' if actions != 1 else ''}"
                + (f", with {'; '.join(shown[:12])}{' …' if len(shown) > 12 else ''}" if shown else "") + ".")
     return {"payload": payload, "summary": summary, "red": red, "values": values}
 
@@ -191,6 +215,8 @@ class RunResult:
     declined: bool = False
     stopped_at: str | None = None   # a dry run's first red step
     seconds: float = 0.0
+    moved: list = field(default_factory=list)   # files.sort: what moved
+    left: list = field(default_factory=list)    # files.sort: what arrived after the approval and stayed
 
     def public(self) -> dict:
         return {"ok": self.ok, "mode": self.mode, "steps": len(self.log), "acted": self.acted,
@@ -218,5 +244,6 @@ def execute(routine, params: dict, ctx: RoutineContext) -> RunResult:
     finally:
         ctx.close()
         res.log, res.patches, res.acted = ctx.log, ctx.patches, ctx.acted
+        res.moved, res.left = ctx.moved, ctx.left
         res.seconds = time.monotonic() - t0
     return res
