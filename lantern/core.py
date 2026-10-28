@@ -136,6 +136,7 @@ class Core:
         self._teaching: dict[int, dict] = {}   # S8: teaching task -> {"stop": Event, "cancelled": bool}
         self._net = None                         # S6: (Identity, Contacts, Inbox), made on first use
         self._net_pending: dict[str, dict] = {}   # S6: request id -> {"task_id", "contact", "kind"}
+        self._meetings: dict[str, list[dict]] = {}   # S15: proposal id -> the items the user was shown
         self.network_send: Callable[[dict, str], None] | None = None   # set by the channel hub
         self.scheduler = None   # S1: with workers > 0, up to that many tasks run at once (scheduler.py)
         self.compiler = None    # S4: learned routines (compiler.py), with the scheduler
@@ -519,6 +520,49 @@ class Core:
     def _transcriber(self):
         from .voice import transcribe
         return lambda wav: transcribe(wav)
+
+    # ---- meeting recording → tasks and reminders (S15, meeting.py) ------------------------------------------
+    def meeting(self, path: str, transcriber=None, now=None) -> dict:
+        """A recording in a visible zone → speaker-labelled turns and proposed items. Nothing is done until the user
+        confirms items (confirm_meeting). Returns {"id", "task_id", "file", "seconds", "turns", "items", ...}."""
+        from . import meeting as meeting_mod
+        from .voice import to_wav16k, transcribe
+        task = self.memory.start_task(f"Meeting notes: {Path(path).name}")
+        try:
+            heard = meeting_mod.listen(self.policy, path, Path(self.cfg.media_dir).expanduser(),
+                                       transcriber or (lambda wav: transcribe(wav, mode="DIARIZATION")), to_wav16k)
+            self.memory.log_usage(task.id, models.VOICE, cost_usd=models.audio_cost(heard["audio_ms"]))
+            proposal = meeting_mod.propose(self.client, heard, now=now, memory=self.memory, task_id=task.id)
+        except Exception as e:
+            self.memory.finish_task(task.id, "failed", f"Couldn't read that meeting: {e}")
+            raise
+        self.memory.mark_quoted(task.id)   # the recording's words stay out of later briefings
+        self.memory.log_step(task.id, "tool_result", {"name": "meeting", "result": {
+            "turns": len(heard["turns"]), "items": proposal["items"], "dropped": proposal["dropped"]}})
+        self.memory.finish_task(task.id, "done", f"{len(proposal['items'])} item(s) proposed from the meeting")
+        mid = f"m{task.id}"
+        self._meetings[mid] = proposal["items"]
+        return {"id": mid, "task_id": task.id, **heard, **proposal,
+                "cost_usd": self.memory.task_usage(task.id)["cost_usd"]}
+
+    def confirm_meeting(self, meeting_id: str, picks: list[int]) -> dict:
+        """The items the user ticked, by number: reminders are saved, tasks start as the user's own requests."""
+        items = self._meetings.get(meeting_id)
+        if items is None:
+            raise ValueError("that meeting's list has expired; send the recording again")
+        chosen = [i for i in items if i["n"] in set(picks)]
+        reminders, tasks = [], []
+        for item in chosen:
+            if item["kind"] == "reminder":
+                reminders.append(self.memory.add_reminder(item["text"], item["due_at"]).id)
+            else:
+                tasks.append(self.submit(item["text"]))
+        self._meetings.pop(meeting_id, None)
+        saved = {r.id for r in self.memory.reminders()}
+        if reminders:
+            self.emit({"type": "reminders"})
+        return {"reminders": reminders, "tasks": tasks, "skipped": len(items) - len(chosen),
+                "verified": all(r in saved for r in reminders)}
 
     # ---- Teaching Mode (S16, lesson.py and checkwork.py) -----------------------------------------------------
     def lessons_folder(self) -> Path:

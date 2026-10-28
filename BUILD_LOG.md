@@ -482,3 +482,11 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - SAM's best "handwritten line" was once a ruled line of the paper below the right one: SAM now refines only when its box is centred inside the line and overlaps it by 40% or more.
   - Muse Spark's box was once half a line low: the box is now moved onto the ink near it, on this computer (`checkwork.snap`).
   - Tests for each.
+
+## Oct 28 (live session B: docs read, S14 data, S15 meeting → tasks)
+- dev.meta.ai read (it resolved here) and the code fixed where it differed: S12 sends the clip itself (`input_video`, `store: false`; frames as fallback), S9/S16 readers use `text.format` structured output, S16 sends Muse Spark's box to SAM as a box prompt. Details: DECISIONS (Oct 28, live session).
+- Measured live: video steps $0.0072 (12 s clip); Check my work $0.0066 (rendered image, not real handwriting).
+- S14 data: `scripts/s14_export.py` → `demo/s14/data/` (251 train, 93 held-out, split by routine; 344/357 Wonder labels agreed with the catalog). Spark 1.3 low: 93/93 on held-out. Export cost $2.37.
+- S14 on Modal: `scripts/s14_weights.py` (weights in a Volume: 59.6 GB, 244 s), `scripts/s14_modal.py` (vLLM eval, TRL QLoRA). Baseline and training wait on a payment method on the Modal workspace (every GPU function is refused without one).
+- S15 meeting recording → tasks and reminders: `lantern/meeting.py`, `POST /meeting`, `POST /meeting/confirm`. Live on a synthetic two-voice recording: A/B separated, 3 items, $0.0053.
+- Tests: `tests/test_s14.py` (5), `tests/test_meeting.py` (2).

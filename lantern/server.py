@@ -50,7 +50,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import __version__, models
 from .approvals import ApprovalError
@@ -185,6 +185,15 @@ class ProfileIn(BaseModel):
 
 class ResumeIn(BaseModel):
     path: str
+
+
+class MeetingIn(BaseModel):
+    path: str
+
+
+class MeetingConfirmIn(BaseModel):
+    id: str
+    picks: list[int] = Field(default_factory=list)
 
 
 def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
@@ -562,6 +571,23 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         try:
             return propose(core.client, core.policy, body.path, Vault(core.cfg.profile_path), memory=core.memory)
         except (ResumeError, PolicyError) as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/meeting", dependencies=[Depends(auth)])
+    def meeting(body: MeetingIn):
+        """S15: a meeting recording → who said what, and proposed tasks and reminders; nothing is done yet."""
+        from .meeting import MeetingError
+        try:
+            return core.meeting(body.path)
+        except (MeetingError, PolicyError) as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/meeting/confirm", dependencies=[Depends(auth)])
+    def meeting_confirm(body: MeetingConfirmIn):
+        """The items the user ticked: reminders are saved, tasks start as the user's own requests."""
+        try:
+            return core.confirm_meeting(body.id, body.picks)
+        except ValueError as e:
             raise HTTPException(409, str(e))
 
     @app.get("/checkin/ideas", dependencies=[Depends(auth)])
