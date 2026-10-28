@@ -43,8 +43,9 @@ and a time limit. Use exactly these names:
   resource: Target with attributes kind ("file", "web" or "none"), path (full path), folder (the folder it is in),
             folders (every folder on its path, a set of names), name, ext (".pdf"), host (a web form's site).
 "Download bills" means listing, searching and reading files in a bills folder. "Fill forms" means fill_form.
-Write only permit and forbid statements for this principal. Whatever the words don't allow stays denied; "never X"
-is a forbid. hours: how long the loan lasts (1 if not said, at most 24).
+Write only permit and forbid statements for this principal, in this exact form:
+  permit(principal == Borrower::"borrower", action == Action::"read_file", resource) when { resource.folder == "Bills" };
+Whatever the words don't allow stays denied; "never X" is a forbid. hours: how long the loan lasts (1 if not said, at most 24).
 Also give up to 6 example requests that show the rules at work: {"action", "path", "host"} ("" when not used).
 Answer only with the JSON object the schema asks for."""
 LEND_SCHEMA = {
@@ -234,7 +235,7 @@ def compile_grant(client, name: str, text: str, *, memory=None, task_id: int | N
     """{"cedar", "hours", "examples": [{..., "allowed": what the engine decides}]} for the owner to look at."""
     from . import models
     from .ladder import RUNGS
-    from .network import NetError, _cedar
+    from .network import NetError, _cedar, tidy_cedar
     from .reader import ask_json
     text = " ".join(str(text).split())[:1000]
     if not text:
@@ -244,7 +245,7 @@ def compile_grant(client, name: str, text: str, *, memory=None, task_id: int | N
                                   kind="compile")
     if data is None:
         raise LendError(f"couldn't turn that into a grant: {error}")
-    cedar = str(data.get("cedar", "")).strip()
+    cedar = tidy_cedar(str(data.get("cedar", "")))
     try:
         _cedar().format_policies(cedar)
     except NetError:

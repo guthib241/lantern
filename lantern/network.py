@@ -43,7 +43,9 @@ The rules are about what that contact's Lantern may ask for. Use exactly these n
   actions: Action::"ask_file", Action::"share_routine"
   resources: File with attributes folder (the folder's name, e.g. "Bills"), path (its full path), ext (".pdf"),
              name; Routine with attribute name.
-Write only permit and forbid statements for this principal. Anything the rules don't allow stays denied.
+Write only permit and forbid statements for this principal, in this exact form:
+  permit(principal == Contact::"{fp}", action == Action::"ask_file", resource) when {{ resource.folder == "Bills" }};
+Anything the rules don't allow stays denied.
 Also give up to 6 example requests that show the rules at work: {{"action", "folder", "name"}}.
 Answer only with the JSON object the schema asks for."""
 RULES_SCHEMA = {
@@ -227,6 +229,12 @@ def _cedar():
     return cedarpy
 
 
+def tidy_cedar(cedar: str) -> str:
+    """Seen live: Muse Spark wrote `principal is Borrower::"borrower"`. Cedar's `is` takes a type, so that doesn't
+    parse; an equality with that one entity is what was meant. Nothing else is rewritten."""
+    return re.sub(r'\bprincipal\s+is\s+([A-Z]\w*::"[^"]*")', r"principal == \1", cedar.strip())
+
+
 def check(contact: dict, action: str, resource: dict) -> tuple[bool, str]:
     """(allowed, why). Private and hidden zones are refused in code before any policy is consulted."""
     if resource.get("zone") in ("private", "hidden"):
@@ -260,7 +268,7 @@ def compile_rules(client, contact: dict, text: str, *, memory=None, task_id: int
                                   name="network_rules", kind="compile")
     if data is None:
         raise NetError(f"couldn't turn those rules into a policy: {error}")
-    cedar = str(data.get("cedar", "")).strip()
+    cedar = tidy_cedar(str(data.get("cedar", "")))
     cedarpy = _cedar()
     try:
         cedarpy.format_policies(cedar)

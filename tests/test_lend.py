@@ -141,6 +141,26 @@ def test_the_owners_words_become_a_policy_whose_examples_the_engine_decides(tmp_
         lend_mod.compile_grant(Both(None, bad), "Amma", "anything")
 
 
+def test_a_principal_written_with_is_is_read_as_the_one_borrower_it_names(tmp_path):
+    """Seen live: Muse Spark wrote `principal is Borrower::"borrower"` (Cedar's `is` takes a type), so the grant was
+    refused as unparseable. It is read as `==` that one entity; someone else is still refused afterwards."""
+    live = ('permit(principal is Borrower::"borrower", action == Action::"fill_form", resource) when { resource.kind '
+            '== "web" && resource.host == "portal.school.example" }; permit(principal is Borrower::"borrower", action '
+            '== Action::"read_file", resource) when { resource.kind == "file" && resource.folder == "Shared" };')
+    chat = Chat(lend_rules=lambda kw: {"cedar": live, "hours": 3, "examples": [
+        {"action": "fill_form", "path": "", "host": "portal.school.example"},
+        {"action": "read_file", "path": "/home/a/Shared/trip.pdf", "host": ""},
+        {"action": "read_file", "path": "/home/a/Bills/water.txt", "host": ""}]})
+    out = lend_mod.compile_grant(Both(None, chat), "Ravi", "the school trip form and my Shared folder for 3 hours")
+    assert 'principal is' not in out["cedar"] and out["cedar"].count('principal == Borrower::"borrower"') == 2
+    assert [e["allowed"] for e in out["examples"]] == [True, True, False] and out["hours"] == 3.0
+    assert 'principal == Borrower::"borrower", action == Action::"read_file"' in chat.requests[0]["messages"][0]["content"]
+    other = Chat(lend_rules=lambda kw: {"cedar": 'permit(principal is Contact::"x", action, resource);', "hours": 1,
+                                        "examples": []})
+    with pytest.raises(lend_mod.LendError, match="someone else"):
+        lend_mod.compile_grant(Both(None, other), "Ravi", "anything")
+
+
 def test_the_guard_refuses_in_code_before_any_policy(tmp_path):
     docs = tmp_path / "docs"
     (docs / "Private").mkdir(parents=True)
