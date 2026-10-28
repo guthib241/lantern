@@ -49,3 +49,19 @@ def test_the_one_at_a_time_agent_continues_with_a_recap(tmp_path):
     retry = client.requests[2]                  # after the 400: a fresh chain whose input recaps the steps so far
     assert "previous_response_id" not in retry and "list_folders" in retry["input"]
     assert any("no longer had" in str(s["content"]) for s in mem.steps(r.task_id))
+
+
+def test_the_scheduler_recap_keeps_the_users_answer(tmp_path):
+    """Live, Oct 28 (8 tasks at once): after a lost chain the recap said only "ask_user (ok)", so the model asked
+    the same question again and the task waited forever."""
+    from lantern.taskrun import ResumableAgent
+    (tmp_path / "docs").mkdir()
+    mem = Memory(str(tmp_path / "m.db"))
+    tools = Toolbox(Policy([Rule.make(tmp_path / "docs", WRITABLE)]), mem, lambda d: True)
+    agent = ResumableAgent(FakeClient([]), mem, tools)
+    t = mem.start_task("ask my colour, then make the folder")
+    mem.log_step(t.id, "tool_result", {"name": "ask_user", "result": {"answer": "teal"}})
+    mem.log_step(t.id, "tool_result", {"name": "list_dir", "result": {"path": "/docs", "entries": [{"name": "x"}]}})
+    recap = agent._recap(t.id, {"goal": t.goal, "calls": []}, [])
+    assert "the user answered: teal" in recap
+    assert "list_dir (ok: " in recap and '"path": "/docs"' in recap and '"x"' not in recap   # no content

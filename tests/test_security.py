@@ -481,3 +481,15 @@ def test_a_text_answer_that_copies_the_documents_instructions_is_defanged():
     assert out.startswith("It says the refund is approved.")
     assert "evil.example" not in out and "PAN" not in out and out.count("not followed") == 2
     assert len(out) <= MAX_TEXT + 200
+
+
+def test_a_made_up_handle_is_never_shown_raw(tmp_path):
+    """Live, Oct 28: after ask_private refused, the reply read "$h1 is sitting in your Private folder"."""
+    scripts = {"salary": [finish("c1", "couldn't read $h1"), ([], "I know where $h1 is, but I can't read $doc3.")]}
+    env = make_core(tmp_path, scripts)
+    tid = env.core.submit("what salary does my offer letter say")
+    assert env.core.wait_idle(10)
+    done = done_event(env, tid)
+    assert "$h1" not in done["reply"] and "$doc3" not in done["reply"] and "(that)" in done["reply"]
+    assert "$h1" not in env.core.memory.get_task(tid).summary
+    env.core.shutdown()
