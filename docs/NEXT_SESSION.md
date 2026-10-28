@@ -53,6 +53,8 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
   - **Healing scope:** heals re-target fields and buttons; a changed flow (a new page) is re-learned from the agent's run instead (S5, `tests/test_relearn.py`; demo/portal `--flow b`).
   - **No avatar art for juggling:** there's no Muse Image "juggling" sprite yet. The avatar shows the thinking face with two orbiting lights; `scripts/make_avatar.py` can add one (~$0.01).
 
+**Live session (real Meta API + Modal): start with [`docs/LIVE_SESSION.md`](LIVE_SESSION.md).**
+
 ### What Session B must build next (spec order: Tier A; S4 and S0 are done)
 1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure. Then try `lantern --teach` on the laptop with a visible browser.
 2. **S5 extras: done.** A changed page flow is re-learned from the agent's run; file tasks compile into rules by pattern (`files.sort`).
