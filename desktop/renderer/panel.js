@@ -285,6 +285,43 @@
     }
   }
 
+  // ---- resume → profile (S15): a proposal; only what the user ticks is saved -----------------------------------
+  async function cvRead(ev) {
+    ev.preventDefault();
+    const path = $('cv-path').value.trim();
+    if (!path) return toast('Give the path of your resume (a PDF or a text file).');
+    let proposal;
+    try {
+      proposal = await api.post('/profile/resume', { path });
+    } catch (e) {
+      return toast(`Couldn't read it: ${e.message}`);
+    }
+    const list = LanternCV.rows(proposal);
+    const box = $('cv-proposal');
+    box.textContent = '';
+    box.hidden = false;
+    if (!list.length) return box.append(h('div', { class: 'row' }, h('span', { class: 'sub' }, 'Nothing to add from that file.')));
+    const ticked = new Set(list.filter((r) => r.checked).map((r) => r.key));
+    for (const r of list) {
+      const id = `cv-${r.key.replace(/\W+/g, '-')}`;
+      box.append(h('label', { class: 'row', for: id },
+        h('input', { type: 'checkbox', id, checked: r.checked,
+                     onchange: (e) => (e.target.checked ? ticked.add(r.key) : ticked.delete(r.key)) }),
+        h('div', {}, h('div', {}, `${r.key}: ${r.value}`), h('div', { class: 'sub' }, r.note))));
+    }
+    if (proposal.dropped) box.append(h('div', { class: 'row' }, h('span', { class: 'sub' }, `Left out ${proposal.dropped} ID or card number${proposal.dropped === 1 ? '' : 's'}.`)));
+    box.append(h('div', { class: 'row' }, h('button', { class: 'tinted', onclick: async () => {
+      const bodies = LanternCV.saves(list, ticked);
+      try {
+        for (const b of bodies) await api.post('/profile', b);
+        toast(`Saved ${bodies.length} value${bodies.length === 1 ? '' : 's'} to your profile.`);
+        box.hidden = true;
+      } catch (e) {
+        toast(`Couldn't save: ${e.message}`);
+      }
+    } }, 'Save ticked')));
+  }
+
   // ---- decoy screens (S7): what you see / what the cloud saw ------------------------------------------------
   async function showDecoy(e) {
     const ok = /^decoy_\d{8}_\d{6}_[0-9a-f]{6}-(seen|sent)\.jpg$/;
@@ -696,6 +733,7 @@
   $('teach-form').addEventListener('submit', teachStart);
   $('lesson-form').addEventListener('submit', lessonStart);
   $('checkwork-form').addEventListener('submit', checkworkStart);
+  $('cv-form').addEventListener('submit', cvRead);
 
   $('phone-form').addEventListener('submit', (e) => {
     e.preventDefault();

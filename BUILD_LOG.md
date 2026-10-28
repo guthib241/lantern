@@ -451,3 +451,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - A voice note is echoed in her chat.
   - The owner's words compile with the engine's own decisions on the examples.
   - The code-first refusals.
+
+## Oct 28 (Phase 2, S15: resume → forms profile)
+- `lantern/cv.py` + `POST /profile/resume {path}`: the user's own resume (PDF or text, via policy.py, never private) becomes a proposal of profile values from Muse Spark (structured output). ID and card values are dropped; nothing is saved until the user ticks values in the panel (Setup → *Profile from my resume*), which saves them through `POST /profile`.
+- pypdf as optional extra `cv` (THIRD_PARTY.md).
+- Tests: `tests/test_cv.py` (4), `desktop/test/cv.test.js` (1).

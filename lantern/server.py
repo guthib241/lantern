@@ -17,6 +17,7 @@ in the browser can't drive Lantern through localhost.
   GET  /memory                      remembered facts
   GET  /usage                       tokens and cost per model, and the spending limits (budget.py)
   GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
+  POST /profile/resume {path}       S15: values for the profile from your own resume (a proposal; nothing saved)
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
@@ -180,6 +181,10 @@ class ProfileIn(BaseModel):
     key: str
     value: str
     section: str = "profile"
+
+
+class ResumeIn(BaseModel):
+    path: str
 
 
 def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
@@ -549,6 +554,15 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except VaultError as e:
             raise HTTPException(400, str(e))
         return vault.load()
+
+    @app.post("/profile/resume", dependencies=[Depends(auth)])
+    def profile_from_resume(body: ResumeIn):
+        """S15: Muse Spark reads your own resume and proposes profile values; you save the ones you choose."""
+        from .cv import ResumeError, propose
+        try:
+            return propose(core.client, core.policy, body.path, Vault(core.cfg.profile_path), memory=core.memory)
+        except (ResumeError, PolicyError) as e:
+            raise HTTPException(409, str(e))
 
     @app.get("/checkin/ideas", dependencies=[Depends(auth)])
     def checkin_ideas():

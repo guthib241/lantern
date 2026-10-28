@@ -20,6 +20,7 @@
 | Pillow | MIT-CMU (HPND) | photo to scan (S10): open the photo, straighten the page, save PNG and PDF; Check my work (S16): circle the wrong line |
 | KaTeX 0.19.0 (vendored in `desktop/board/vendor/katex`) | MIT | renders the teaching board's math (S16) |
 | SymPy (optional extra `teach`) | BSD-3-Clause | Teaching Mode (S16): checks every math step of a lesson, and each line of handwritten working, before a check mark is shown |
+| pypdf (optional extra `cv`) | BSD-3-Clause | S15: reads the text of the user's own PDF resume for the forms profile |
 | setuptools (build only) | MIT | builds the `lantern` package and command from `pyproject.toml` |
 | pyflakes (dev only) | MIT | lint in CI: unused imports, undefined names |
 | GitHub Actions: actions/checkout, actions/setup-python, actions/setup-node (CI only) | MIT | runs the tests, the rehearsal and the doctor on each pull request |

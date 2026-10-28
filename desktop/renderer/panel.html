@@ -167,6 +167,12 @@
         <div class="row"><span class="row-text">Switch sections</span><kbd id="kbd-tabs">⌘ 1 – 6</kbd></div>
       </div>
       <p class="footnote">Appearance follows your system's light or dark mode.</p>
+      <h2 class="section">Profile from my resume</h2>
+      <form class="group teach-form" id="cv-form">
+        <label class="row"><span>My resume</span><input id="cv-path" type="text" placeholder="a PDF or text file (not private)" autocomplete="off"></label>
+        <div class="row"><span class="sub">Muse Spark proposes values for your form profile; you choose what to save.</span><button class="tinted" type="submit">Read it</button></div>
+      </form>
+      <div class="group" id="cv-proposal" hidden></div>
       <h2 class="section">Setup check</h2>
       <div class="group">
         <div class="hero">
@@ -232,6 +238,7 @@
   <script src="lib/routines.js"></script>
   <script src="lib/teach.js"></script>
   <script src="lib/lessons.js"></script>
+  <script src="lib/cv.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

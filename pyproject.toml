@@ -27,6 +27,7 @@ dependencies = [
 dev = ["pytest>=8", "pyflakes>=3"]
 network = ["cedarpy>=4"]   # Lantern Network rules (S6); without it every network request is refused
 teach = ["sympy>=1.12"]    # Teaching Mode (S16): every math step is checked before it gets a check mark
+cv = ["pypdf>=4"]          # S15: read a PDF resume into the forms profile (text files need nothing)
 
 [project.scripts]
 lantern = "lantern.cli:main"
