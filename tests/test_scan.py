@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw  # noqa: E402
 from lantern import models  # noqa: E402
 from lantern.memory import Memory  # noqa: E402
 from lantern.policy import PRIVATE, WRITABLE, Policy, PolicyError, Rule  # noqa: E402
-from lantern.scan import ScanError, corners, file_name, perspective, scan  # noqa: E402
+from lantern.scan import CONCEPTS, ScanError, corners, file_name, perspective, scan  # noqa: E402
 from test_sam import StreamClient, events  # noqa: E402
 
 W, H = 600, 450
@@ -98,8 +98,9 @@ def test_the_page_is_found_straightened_and_saved(tmp_path, policy):
 def test_no_page_found_means_the_whole_photo_cleaned_and_saying_so(tmp_path, policy):
     client = SamByConcept({})
     out = scan(photo(), client=client, policy=policy, folder=tmp_path / "docs" / "Scans")
-    assert not out["found"] and out["sam_calls"] == 3 and out["size"] == [W, H]
-    assert [r["input"][0]["content"][0]["text"] for r in client.requests] == ["document", "paper", "letter"]
+    assert not out["found"] and out["sam_calls"] == 5 and out["size"] == [W, H]
+    assert [r["input"][0]["content"][0]["text"] for r in client.requests] == list(CONCEPTS)
+    assert "sheet of paper" in CONCEPTS   # live, Oct 28: the only phrase that found a flat page on a plain desk
     assert "couldn't find the page" in out["note"]
     again = scan(photo(), client=client, policy=policy, folder=tmp_path / "docs" / "Scans", use_sam=False)
     assert again["sam_calls"] == 0 and again["png"].endswith("scan (2).png")   # never overwrites the first

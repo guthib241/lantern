@@ -297,7 +297,7 @@ def test_hard_stop_fields_are_never_filled():
 def test_a_moved_field_heals_by_retargeting_never_by_changing_the_value():
     seen = []
 
-    def heal(step_id, kind, old, candidates):
+    def heal(step_id, kind, old, candidates, page=None):
         seen.append((step_id, kind, old, [c["label"] for c in candidates]))
         return {"field": "Your name", "button": "Continue"}[kind]
     r, ctx, page = mini(layout="v2", mode="sandbox", heal=heal)
@@ -397,7 +397,7 @@ def test_learn_the_portal_run_it_at_zero_flip_the_layout_heal_and_run_at_zero_ag
 
     def repair(kw):   # a model that knows "Full name" and "Applicant's name" are the same thing
         q = json.loads(kw["messages"][1]["content"])
-        listed = json.loads(next(v for k, v in q.items() if k.startswith("page_"))["content"])
+        listed = json.loads(next(v for k, v in q.items() if k.startswith("page_"))["content"])["candidates"]
         want = v1_to_v2.get(q["used_to_be"], "").lower()
         return {"target": next((c["label"] for c in listed if c["label"].lower() == want), "none")}
     chat = Chat(routine_contract=contract_answer, routine_code=code_answer, routine_repair=repair)
@@ -655,3 +655,33 @@ def test_routines_on_the_api(tmp_path):
     assert api.post("/routines/mini-form/forget", headers=h).json() == {"forgot": True}
     assert api.get("/routines", headers=h).json() == []
     core.shutdown()
+
+
+def test_a_repair_request_carries_the_page_and_what_comes_next():
+    """Live, Oct 28: with only the button labels, Muse Spark answered "none" for 'Continue to payment' ->
+    'Go to fees' three times out of three; with the page's heading and the next steps it picked 'Go to fees'."""
+    from lantern.compiler import Compiler
+    seen = []
+
+    class Chat:
+        def __init__(self):
+            self.chat = self
+            self.completions = self
+
+        def create(self, **kw):
+            seen.append(kw)
+            return NS(choices=[NS(message=NS(content='{"target": "Go to fees"}'))],
+                                   usage=None)
+    comp = Compiler.__new__(Compiler)
+    comp.core = NS(memory=NS(log_usage=lambda *a, **k: None))
+    comp._emit = lambda *a, **k: None
+    got = Compiler.repair(comp, {"say": "Press Continue to payment"}, "button", "Continue to payment",
+                          [{"label": "← Previous", "submit": True}, {"label": "Go to fees", "html_id": "btn-fees"}],
+                          client=Chat(), ladder=None, task_id=None,
+                          page={"title": "Check your answers", "heading": "Check your answers"},
+                          next_steps=["Choose Payment option: Pay at the counter", "Press Submit application"])
+    assert got == "Go to fees"
+    q = json.loads(seen[0]["messages"][1]["content"])
+    assert q["then_the_routine"][0].startswith("Choose Payment option")
+    listing = json.loads(q["page_buttons"]["content"])
+    assert listing["page"]["heading"] == "Check your answers" and listing["candidates"][1]["html_id"] == "btn-fees"

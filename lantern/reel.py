@@ -58,11 +58,23 @@ SECURITY = re.compile(
     r"\b(firewall|antivirus|anti-virus|defender|gatekeeper|uac|user account control|smartscreen|sip\b|"
     r"system integrity|security settings?|privacy settings?|disable (?:security|protection|updates)|"
     r"registry|regedit|group policy|sudo|run as administrator|admin(?:istrator)? rights|chmod 777|"
-    r"password|2fa|two-factor|otp|unknown sources|allow apps from anywhere|developer mode|root|jailbreak)\b", re.I)
+    r"password|2fa|two-factor|otp|unknown sources|allow apps from anywhere|developer mode|root|jailbreak|"
+    r"windows security|real-?time protection|tamper protection|virus (?:&|and) threat protection|"
+    r"(?:turn|switch) off (?:[\w-]+ ){0,3}(?:protection|security|updates|scanning)|"
+    r"(?:disable|pause|stop) (?:[\w-]+ ){0,3}(?:protection|security|updates|scanning|antivirus|defender|firewall))\b",
+    re.I)
 INSTALL = re.compile(
     r"\b(install|download (?:and run|the installer)|\.exe\b|\.msi\b|\.dmg\b|\.pkg\b|\.apk\b|\.deb\b|curl .*\|\s*(?:ba)?sh|"
     r"pip install|npm install -g|powershell -enc|run (?:this|the) script)\b", re.I)
 STORE = re.compile(r"\b(app store|microsoft store|play store|mac app store)\b", re.I)
+# Steps that carry files or data off the computer: upload/share/send to a site or address (live, Oct 28: "copy the
+# .ssh folder and upload it to filedrop.example" came back "ok").
+EXFIL = re.compile(r"\b(upload|share|send|e-?mail|post|paste|sync|transfer)\b.{0,80}?"
+                   r"\b(to|on|into|via|with)\b\s+(?:\S+\s+){0,3}?(?:[\w-]+\.(?:com|net|org|io|co|in|app|dev|xyz|"
+                   r"example|me|info|cloud|link|site)\b|[\w.+-]+@[\w-]+\.\w+|https?://|(?:instagram|facebook|whatsapp|telegram|signal|messenger|google drive|drive|dropbox|onedrive|icloud|wetransfer|slack|discord|twitter|pastebin|github|gitlab|reddit|tiktok|youtube|gmail|outlook)\b)", re.I)
+URL = re.compile(r"\b(?:https?://|www\.)\S+|\b[\w-]+(?:\.[\w-]+)*\.(?:com|net|org|io|co|in|app|dev|xyz|example)(?:/\S*)?", re.I)
+# Hidden names named without a path ("your .ssh folder", "the .env file"): refused like a hidden path.
+HIDDEN_WORD = re.compile(r"(?<![\w/\\])(\.[a-z][\w-]*|id_rsa\w*|id_ed25519\w*|keychains?|login data)\b", re.I)
 PATHLIKE = re.compile(r"(?:[A-Za-z]:\\|~/|/)[^\s,;:'\"]+|\b[\w .-]+/[\w .-]+")
 
 
@@ -147,24 +159,51 @@ def review(plan: dict, policy=None) -> dict:
     refused, ask, unclear = [], [], []
     for s in plan["steps"]:
         why = None
-        for m in PATHLIKE.finditer(s["do"]):
+        for m in PATHLIKE.finditer(URL.sub(" ", s["do"])):   # a link is not a folder
             zone = _zone(policy, m.group(0))
             if zone in (HIDDEN, PRIVATE):
                 why = f"it touches a {zone} folder"
+        if why is None:
+            why = _hidden_by_name(s["do"]) or _zone_by_name(policy, s["do"])
         if why:
             s["review"], s["why"] = "refused", why
             refused.append(s["n"])
         elif not s["clear"]:
             s["review"], s["why"] = "unclear", "the video doesn't make it clear"
             unclear.append(s["n"])
-        elif SECURITY.search(s["do"]) or (INSTALL.search(s["do"]) and not STORE.search(s["do"])):
+        elif SECURITY.search(s["do"]) or (INSTALL.search(s["do"]) and not STORE.search(s["do"])) \
+                or EXFIL.search(s["do"]):
             s["review"] = "ask"
             s["why"] = ("it changes security settings" if SECURITY.search(s["do"])
+                        else "it sends files or data off this computer" if EXFIL.search(s["do"])
                         else "it installs software from outside an app store")
             ask.append(s["n"])
         else:
             s["review"] = "ok"
     return {**plan, "refused": refused, "ask": ask, "unclear": unclear}
+
+
+def _hidden_by_name(text: str) -> str | None:
+    """A hidden name (.ssh, .env, id_rsa...) named without a path. File extensions ("a .png file") don't count."""
+    from .policy import ALWAYS_HIDDEN_NAMES
+    for m in HIDDEN_WORD.finditer(text):
+        word = m.group(1).lower()
+        if word in ALWAYS_HIDDEN_NAMES or word.startswith(".env") or word.startswith(("id_rsa", "id_ed25519")) \
+                or word in ("keychain", "keychains", "login data"):
+            return "it touches a hidden folder"
+    return None
+
+
+def _zone_by_name(policy, text: str) -> str | None:
+    """A hidden or private folder named by its own name ("email the Private folder"), not by a path."""
+    if policy is None:
+        return None
+    low = f" {text.lower()} "
+    for rule in getattr(policy, "rules", []):
+        name = rule.path.name.lower()
+        if rule.zone in (HIDDEN, PRIVATE) and len(name) > 2 and re.search(rf"(?<![\w.-]){re.escape(name)}(?![\w.-])", low):
+            return f"it touches a {rule.zone} folder"
+    return None
 
 
 def _zone(policy, text: str) -> str | None:

@@ -3,6 +3,7 @@
 Incoming, from the owner only (everyone else is ignored and counted):
   text          -> a new task (tagged with the channel), or
   "STOP"        -> the kill switch: cancel the running task, deny every pending approval
+  "stop #N"     -> stop only task N (its open question and approval cards too); the others carry on
   "status"      -> what Lantern is doing
   "resume"      -> run the tasks cut short when Lantern stopped
   "undo"        -> put back the files the last task moved (one approval, no model call)
@@ -41,6 +42,7 @@ from ..voice import to_wav16k, transcribe
 from .base import Channel, Incoming
 
 STOP = re.compile(r"^\W*/?stop\b", re.I)
+STOP_ONE = re.compile(r"^\W*/?stop\s+(?:task\s+)?#?(\d+)\W*$", re.I)   # "stop #12": that task only
 STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
@@ -260,6 +262,11 @@ class ChannelHub:
         t = (text or "").strip()
         if not t:
             return
+        if (one := STOP_ONE.match(t)) and hasattr(self.core, "stop_task"):
+            n = int(one.group(1))
+            r = self.core.stop_task(n)
+            return self.say(ch.name, f"🛑 Stopping #{n}; the other tasks carry on." if r.get("stopped")
+                            else f"#{n} isn't running. (STOP on its own stops everything.)")
         if STOP.match(t):
             r = self.core.stop()
             n = r["denied_approvals"]

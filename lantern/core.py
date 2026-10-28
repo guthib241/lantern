@@ -599,6 +599,14 @@ class Core:
         first = self.current_task if self.current_task is not None else (stopped[0] if stopped else None)
         return {"stopped": True, "denied_approvals": denied, "task_id": first, "task_ids": stopped}
 
+    def stop_task(self, task_id: int) -> dict:
+        """Stop one task ("stop #N" on the phone); the others carry on. One-at-a-time mode: only the running one."""
+        if self.scheduler is not None:
+            return {"stopped": self.scheduler.stop_one(task_id), "task_id": task_id}
+        if self.current_task == task_id:
+            return {**self.stop(), "task_id": task_id}
+        return {"stopped": False, "task_id": task_id}
+
     def retry_task(self, task_id: int) -> int:
         """Run a failed or cancelled task's goal again as a new task (an interrupted one is resumed)."""
         t = self.memory.get_task(task_id)
