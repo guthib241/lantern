@@ -287,8 +287,10 @@ def test_sam_refines_the_circle_when_it_finds_the_line(tmp_path):
     # main thread, and SAM's stream parser starts its own.
     with concurrent.futures.ThreadPoolExecutor(1) as pool:
         out = pool.submit(checkwork.run, eyes, working(), folder=tmp_path).result()
-    assert out["located_by"] == "sam" and eyes.sam[0]["input"][0]["content"][0]["text"] == "handwritten line"
-    assert out["wrong"] == 3
+    top, bottom = ROWS[2]
+    prompt = eyes.sam[0]["input"][0]["content"][0]["text"]            # Muse Spark's box for line 3, as a box prompt
+    assert prompt == f"<0f>1<|box;x1=120;y1={top};x2=649;y2={bottom - 1};w={W};h={H}|>", prompt
+    assert out["located_by"] == "sam" and out["wrong"] == 3
 
 
 def test_it_says_so_when_a_line_cant_be_read_and_when_everything_checks_out(tmp_path):
