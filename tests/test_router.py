@@ -63,12 +63,13 @@ def test_full_agent_flow_cloud_never_sees_private_text(setup, tmp_path):
     cloud = FakeClient([
         ([call("ask_private", "c1", path=str(root / "Private/offer_letter.txt"), question="When do I start?")], ""),
         ([call("finish", "c2", status="done", summary="answered start date from private file")], ""),
-        ([], "December 1. You're welcome."),
+        ([], "$p1 You're welcome."),
     ])
     r = Agent(GuardedClient(cloud, audit), mem, tb).run("when does my new job start?")
+    assert "December 1" in r.reply and "$p1" not in r.reply   # filled in on this computer
     sent = json.dumps(cloud.requests, default=str)
     assert "42 lakh" not in sent and AADHAAR not in sent and "IGNORE ALL RULES" not in sent
-    assert "December 1" in sent  # only the answer crossed
+    assert "December 1" not in sent and "$p1" in sent   # live, Oct 28: not even the answer crosses, only $p1
     assert "42 lakh" in glimmer.calls[0][1]  # the local lane did see the file
     s = audit.summary()
     assert s["local"]["calls"] == 1 and s["cloud"]["calls"] == 3
@@ -171,3 +172,29 @@ def test_config_flags():
     assert cfg.mode == "openai" and cfg.model == "muse-glimmer"
     with pytest.raises(ValueError):
         make_backend(RouterConfig(mode="openai", url=""))
+
+
+def test_the_modal_lane_reads_its_key_from_the_token_file_and_says_where_it_runs(tmp_path):
+    from lantern.router import PRIVATE_SYSTEM, RouterConfig, system_for
+    token = tmp_path / "private_token"
+    token.write_text("x" * 43 + "\n")
+    cfg = RouterConfig.from_env({"LANTERN_GLIMMER_URL": "https://ws--lantern-glimmer-gate.us-east.modal.run/v1",
+                                 "LANTERN_GLIMMER_KEY_FILE": str(token)})
+    assert cfg.mode == "openai" and cfg.api_key == "x" * 43 and cfg.timeout is None
+    assert RouterConfig.from_env({"LANTERN_GLIMMER_URL": "http://127.0.0.1:8080/v1"}).api_key == "local"
+    assert "own computer" in PRIVATE_SYSTEM and "own computer" not in system_for("selfhosted")
+    assert "private server" in system_for("selfhosted") and system_for("local") == PRIVATE_SYSTEM
+
+
+def test_a_private_answer_echoed_by_the_model_is_hidden_before_it_leaves(setup, tmp_path):
+    """Belt and braces: even if the answer turned up in a later request, it goes out as $p1."""
+    root, policy, audit = setup
+    mem = Memory(tmp_path / "m.db")
+    glimmer = FakeGlimmer(audit)
+    tb = Toolbox(policy, mem, lambda d: True, router=Router(policy, glimmer))
+    tb.begin_task(1)
+    out = tb.ask_private(str(root / "Private/offer_letter.txt"), "When do I start?")
+    value = tb.private_answers[out["answer"]]
+    assert out["answer"] == "$p1" and value and value not in json.dumps(out)
+    assert tb.hide_private([{"output": f"you start {value}"}]) == [{"output": "you start $p1"}]
+    assert tb.fill_private("Answer: $p1 ($p9)") == f"Answer: {value} ((not available))"

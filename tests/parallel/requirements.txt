@@ -1,0 +1,6 @@
+# Test-only dependencies for tests/parallel (the root requirements.txt is left untouched by this branch).
+# Each test skips cleanly with a reason if its dependency is missing.
+pytest>=8          # MIT
+jsonschema>=4.18   # MIT: lesson schema validation (Draft 2020-12)
+sympy>=1.12        # BSD: re-verifies every check mark in the sample lessons
+playwright>=1.40   # Apache-2.0: real-browser tests of the portal and the board (needs a Chromium)

@@ -20,11 +20,16 @@ Config (env or ~/.lantern/config.json):
   LANTERN_GLIMMER_URL    e.g. http://127.0.0.1:8080/v1
   LANTERN_GLIMMER_MODEL  default "muse-glimmer"
   LANTERN_GLIMMER_KEY    only if your server wants one (Modal); never committed
+  LANTERN_GLIMMER_KEY_FILE  or read it from a file (deploy/modal/rotate_token.py writes ~/.lantern/private_token),
+                         so rotating the token needs no .env edit
+  LANTERN_GLIMMER_TIMEOUT  seconds per private question: 120 on this computer, 600 on a self-hosted server
+                         (a server that scaled to zero needs a cold start first)
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -41,6 +46,15 @@ PRIVATE_SYSTEM = (
     "Do not copy ID numbers, account numbers, card numbers, passwords or keys into your answer; "
     "say they exist instead. If the document does not answer the question, say so."
 )
+
+
+# On a self-hosted server (Modal) the sentence about where it runs must stay true (docs/MODAL.md).
+PRIVATE_SYSTEM_SELFHOSTED = PRIVATE_SYSTEM.replace("You run on the user's own computer.",
+                                                   "You run on the user's own private server.")
+
+
+def system_for(lane: str) -> str:
+    return PRIVATE_SYSTEM_SELFHOSTED if lane == "selfhosted" else PRIVATE_SYSTEM
 
 
 class PrivateLaneError(RuntimeError):
@@ -64,7 +78,7 @@ class OpenAIGlimmer:
 
     def __init__(self, url: str, model: str = models.GLIMMER_LOCAL, api_key: str = "local",
                  audit: AuditLog | None = None, reasoning_strength: str = "low",
-                 max_tokens: int = 1024, client: Any = None):
+                 max_tokens: int = 1024, client: Any = None, timeout: float | None = None):
         self.url = url
         self.model = model
         self.lane = lane_for_url(url)
@@ -73,7 +87,8 @@ class OpenAIGlimmer:
         self.max_tokens = max_tokens
         if client is None:
             from openai import OpenAI
-            client = OpenAI(base_url=url, api_key=api_key, timeout=120, max_retries=1)
+            client = OpenAI(base_url=url, api_key=api_key, max_retries=1,
+                            timeout=timeout or (120 if self.lane == "local" else 600))
         self.client = GuardedClient(client, audit, lane=self.lane, destination=url) if audit else client
 
     def set_task(self, task_id: int | None) -> None:
@@ -90,12 +105,13 @@ class OpenAIGlimmer:
                 extra_body={"top_k": 64, "chat_template_kwargs": {"reasoning_strength": self.reasoning_strength}},
             )
         except Exception as e:  # connection refused, timeout, 5xx
-            raise PrivateLaneError(f"the local model at {self.url} is not answering ({type(e).__name__})") from e
+            where = "the local model" if self.lane == "local" else "the private server"
+            raise PrivateLaneError(f"{where} at {self.url} is not answering ({type(e).__name__})") from e
         content = (r.choices[0].message.content or "").strip()
         # If the server keeps reasoning inline, drop everything before the final answer marker.
         content = re.sub(r"(?s)^.*<\|start\|>assistant<\|message\|>", "", content).strip()
         if not content:
-            raise PrivateLaneError("the local model returned an empty answer")
+            raise PrivateLaneError("the private lane returned an empty answer")
         return content
 
 
@@ -150,6 +166,7 @@ class RouterConfig:
     url: str = ""
     model: str = models.GLIMMER_LOCAL
     api_key: str = "local"
+    timeout: float | None = None
 
     @classmethod
     def from_env(cls, env: dict) -> "RouterConfig":
@@ -158,15 +175,22 @@ class RouterConfig:
             mode=env.get("LANTERN_GLIMMER_MODE", "openai" if url else "off"),   # never a stand-in by surprise
             url=url,
             model=env.get("LANTERN_GLIMMER_MODEL", models.GLIMMER_LOCAL),
-            api_key=env.get("LANTERN_GLIMMER_KEY", "local"),
+            api_key=env.get("LANTERN_GLIMMER_KEY") or _key_from_file(env.get("LANTERN_GLIMMER_KEY_FILE", "")) or "local",
+            timeout=float(env["LANTERN_GLIMMER_TIMEOUT"]) if env.get("LANTERN_GLIMMER_TIMEOUT") else None,
         )
+
+
+def _key_from_file(path: str) -> str:
+    """Lantern's own token file (like ~/.lantern/token for the server), not a user file: no policy.py."""
+    p = Path(path).expanduser() if path else None
+    return p.read_text(encoding="utf-8").strip() if p and p.is_file() else ""
 
 
 def make_backend(cfg: RouterConfig, audit: AuditLog | None = None) -> Backend:
     if cfg.mode == "openai":
         if not cfg.url:
             raise ValueError("LANTERN_GLIMMER_MODE=openai needs LANTERN_GLIMMER_URL")
-        return OpenAIGlimmer(cfg.url, cfg.model, cfg.api_key, audit=audit)
+        return OpenAIGlimmer(cfg.url, cfg.model, cfg.api_key, audit=audit, timeout=cfg.timeout)
     if cfg.mode == "fake":   # tests and rehearsal only, chosen explicitly
         return FakeGlimmer(audit)
     if cfg.mode == "off":
@@ -198,7 +222,7 @@ class Router:
             raise PolicyError(f"{p} is not a file")
         text = self.policy.read_text(p, allow_private=True, limit=MAX_PRIVATE_CHARS)
         user = f"Question: {question.strip()}\n<document>\n{text}\n</document>"
-        answer = self.backend.ask(PRIVATE_SYSTEM, user)
+        answer = self.backend.ask(system_for(getattr(self.backend, "lane", "local")), user)
         clean = SCRUBBER.scrub(answer)
         return {
             "path": str(p),

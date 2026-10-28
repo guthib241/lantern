@@ -1,0 +1,30 @@
+{
+  "_note": "Seeded FAKE data for the City Permit Portal demo. Not a real person, address or document.",
+  "applicant": {
+    "full_name": "Asha Rao",
+    "date_of_birth": "1994-03-12",
+    "email": "asha.rao@example.com",
+    "phone": "+91 90000 00000",
+    "street": "14 Lake View Road",
+    "city": "Bengaluru",
+    "pin_code": "560001",
+    "permit_type": "home_renovation",
+    "start_date": "2026-11-20",
+    "duration_days": "14",
+    "description": "Rebuild the front boundary wall (2 m high, 9 m long).",
+    "id_proof_type": "passport",
+    "site_plan": "fixtures/site_plan.pdf"
+  },
+  "permit_types": [
+    {"value": "home_renovation", "label": "Home renovation", "fee": 500},
+    {"value": "street_event", "label": "Street event", "fee": 1200},
+    {"value": "tree_trimming", "label": "Tree trimming", "fee": 200},
+    {"value": "shop_sign", "label": "Shop sign board", "fee": 800},
+    {"value": "temporary_structure", "label": "Temporary structure (shamiana)", "fee": 1500}
+  ],
+  "id_proof_types": [
+    {"value": "passport", "label": "Passport"},
+    {"value": "voter_id", "label": "Voter ID"},
+    {"value": "driving_licence", "label": "Driving licence"}
+  ]
+}

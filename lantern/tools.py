@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import re
 import json
 import threading
 from pathlib import Path
@@ -32,7 +33,9 @@ MAX_RESULTS = 50
 TEXT_EXTS = {
     ".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".html", ".css",
     ".yaml", ".yml", ".toml", ".ini", ".log", ".xml", ".tex", ".rst",
+    ".eml",   # live, Oct 28: refused, so the model renamed the user's email file to .txt to read it
 }
+PRIVATE_HANDLE = re.compile(r"\$p\d+\b")
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".cache"}
 
 
@@ -65,6 +68,8 @@ class Toolbox:
         self.on_event: Callable[[str, dict], None] = lambda kind, data: None
 
     def begin_task(self, task_id: int | None = None, goal: str = "") -> None:
+        self.private_answers: dict[str, str] = {}   # "$p1" -> the private lane's answer; never sent to the cloud
+        self.filed: dict[str, str] = {}             # form page URL -> what confirmed it, for this task
         self.tainted = False
         self.untrusted_emails = set()
         self.task_id = task_id
@@ -185,10 +190,42 @@ class Toolbox:
             raise ToolError("the private lane (local Muse Glimmer) is not set up, so I can't read private files")
         try:
             result = self.router.ask_private(path, question)
-            self._saw_untrusted(result.get("answer", ""))  # derived from untrusted file content
-            return result
         except PrivateLaneError as e:
             raise ToolError(f"{e}. Private files never go to the cloud, so I can't answer this right now.") from e
+        self._saw_untrusted(result.get("answer", ""))  # derived from untrusted file content
+        # The answer stays on this computer: the cloud model gets a placeholder and writes it into its reply, which
+        # is filled in here (fill_private). Live, Oct 28: the answer itself reached the Meta API in the next turn.
+        answers = getattr(self, "private_answers", None)
+        if answers is None:
+            answers = self.private_answers = {}
+        handle = f"$p{len(answers) + 1}"
+        answers[handle] = str(result.get("answer", ""))
+        return {**result, "answer": handle,
+                "note": f"{handle} holds the private answer. It stays on this computer and you can't read it: "
+                        f"write {handle} in your reply and summary where the answer goes, and Lantern fills it "
+                        f"in on the user's own screen. {handle} is a whole sentence: put it on its own (\"Here's "
+                        f"what it says: {handle}\"), don't wrap it in a sentence of your own."}
+
+    def fill_private(self, text: str) -> str:
+        """Put the private answers back into text shown on the user's own screen."""
+        answers = getattr(self, "private_answers", None) or {}
+        return PRIVATE_HANDLE.sub(lambda m: answers.get(m.group(0), "(not available)"), text or "")
+
+    def hide_private(self, obj):
+        """Belt and braces before anything goes to the cloud: a private answer becomes its placeholder again."""
+        answers = getattr(self, "private_answers", None) or {}
+        pairs = sorted(((v, k) for k, v in answers.items() if len(v) >= 4), key=lambda p: len(p[0]), reverse=True)
+        if not pairs:
+            return obj
+        if isinstance(obj, str):
+            for value, handle in pairs:
+                obj = obj.replace(value, handle)
+            return obj
+        if isinstance(obj, list):
+            return [self.hide_private(x) for x in obj]
+        if isinstance(obj, dict):
+            return {k: self.hide_private(v) for k, v in obj.items()}
+        return obj
 
     # ---- tools that change things (approval + verify) ----------------------
     def write_file(self, path: str, content: str, overwrite: bool = False) -> dict:
@@ -362,6 +399,16 @@ class Toolbox:
         # The page's labels and screenshots reach the model while it fills, so the task is tainted from
         # the moment the page opens: the Submit card is marked, and quick-approve shortcuts are refused.
         self.tainted = True
+        page = url.split("#")[0].split("?")[0].rstrip("/")
+        filed = getattr(self, "filed", None)
+        if filed is None:
+            filed = self.filed = {}
+        if page in filed:
+            # Live, Oct 28: after a lost chain the model started the portal again and filed it twice. A form that
+            # was submitted and verified is never submitted again in the same task, whatever the model believes.
+            return {"done": True, "verified": True, "submitted": False, "already_filed": True,
+                    "reason": f"this form was already submitted and confirmed in this task ({filed[page]}); "
+                              "it is not submitted again. Finish the task."}
         try:
             result = self.forms.fill(url, goal, approve=self._approve, commit=self._commit,
                                      task_id=self.task_id, cancel=self.cancel, on_event=self.on_event)
@@ -369,6 +416,8 @@ class Toolbox:
             raise ToolError(str(e)) from e
         # labels and the confirmation text come from a web page
         self._saw_untrusted((result.get("confirmation") or {}).get("content", ""))
+        if result.get("submitted") and result.get("verified"):
+            filed[page] = "confirmation seen on the page"
         return result
 
     # ---- email -----------------------------------------------------------------

@@ -12,13 +12,18 @@
   6. Submit only after an approval bound to the URL + SHA-256 of every field value
      (and the hidden inputs), recomputed right before the click.
   7. Verify: a confirmation element on the resulting page, plus a screenshot saved in
-     ~/.lantern/media. `verified` is true only with that evidence.
+     ~/.lantern/media. `verified` is true only with that evidence. A multi-page form's
+     middle page has no confirmation of its own: when it moves on to the next page without
+     an error, the result says `advanced` (done, but not verified).
+A task's session cookies are carried from one fill_form call to the next (in memory only), so a
+multi-page portal keeps its session although every call opens a fresh browser.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import mimetypes
+import os
 import re
 import secrets
 import threading
@@ -45,7 +50,7 @@ BUILTIN_FORMS = {
     "reimbursement": "reimbursement.html",
     "demo traps": "traps.html",
 }
-CONFIRM_SELECTORS = ("#confirmation", "[data-confirmation]", "[data-testid=confirmation]")
+CONFIRM_SELECTORS = ("#confirmation", "[data-confirmation]", "[data-testid=confirmation]", "[data-reference]")
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
@@ -81,6 +86,11 @@ Commit = Callable[[Any, dict], "dict | None"]      # Toolbox._commit -> refusal 
 Events = Callable[[str, dict], None]
 
 
+# Native controls whose popups are drawn outside the page, so a screenshot never shows them (live, Oct 28: Muse
+# Wonder clicked the permit-type <select> twenty times). In "visual" mode these are still set through the page.
+OFF_SCREEN = ("select", "date", "time", "datetime-local", "month", "week", "color")
+
+
 class FormError(Exception):
     """The form can't be filled; the message is safe to show the model."""
 
@@ -101,13 +111,17 @@ class FormSettings:
     max_steps: int = MAX_STEPS
     confirm_selectors: tuple[str, ...] = CONFIRM_SELECTORS
     confirm_wait_ms: int = 4_000
+    # "dom": fields are set through the page and computer use only does what that can't (cheap, the default);
+    # "visual": every field but file uploads is done by the computer-use model on screen (LANTERN_FORMS_FILL)
+    fill: str = "dom"
 
     @classmethod
     def from_config(cls, cfg) -> "FormSettings":
         return cls(model=models.check_model(cfg.forms_model), plan_model=cfg.model, protocol=cfg.forms_protocol,
                    coords=cfg.forms_coords, headless=cfg.forms_headless, chromium=cfg.chromium_path,
                    domains=tuple(cfg.forms_domains), profile_dir=Path(cfg.browser_profile_dir),
-                   media_dir=Path(cfg.media_dir), vault_path=Path(cfg.profile_path))
+                   media_dir=Path(cfg.media_dir), vault_path=Path(cfg.profile_path),
+                   fill="visual" if os.environ.get("LANTERN_FORMS_FILL", "").strip().lower() == "visual" else "dom")
 
 
 def sha(text: str) -> str:
@@ -191,6 +205,8 @@ class FormService:
         self.memory = memory
         self.driver_factory = driver_factory or (lambda: BrowserDriver(
             settings.profile_dir, headless=settings.headless, executable_path=chromium_executable(settings.chromium)))
+        self._cookies: dict[int, list] = {}   # task -> its session cookies between fills (memory only)
+        self._cookie_lock = threading.Lock()
 
     @property
     def vault(self) -> Vault:
@@ -215,9 +231,37 @@ class FormService:
         run = _Run()
         try:
             with self.driver_factory() as d:
-                return self._fill(d, url, goal, run, approve, commit, cancel, emit, usage)
+                self._load_session(d, task_id)
+                try:
+                    return self._fill(d, url, goal, run, approve, commit, cancel, emit, usage)
+                finally:
+                    self._save_session(d, task_id)
         except DriverError as e:
             raise FormError(str(e)) from e
+
+    # ---- a task's browser session (live, Oct 28: every page of demo/portal fell back to page 1) --------
+    def _load_session(self, d: BrowserDriver, task_id: int | None) -> None:
+        with self._cookie_lock:
+            jar = self._cookies.get(task_id) if task_id is not None else None
+        context = getattr(getattr(d, "page", None), "context", None)
+        if jar and context is not None:
+            try:
+                context.add_cookies(jar)
+            except Exception:   # a cookie the browser won't take back must not stop the fill
+                pass
+
+    def _save_session(self, d: BrowserDriver, task_id: int | None) -> None:
+        context = getattr(getattr(d, "page", None), "context", None)
+        if task_id is None or context is None:
+            return
+        try:
+            jar = context.cookies()
+        except Exception:
+            return
+        with self._cookie_lock:
+            self._cookies[task_id] = jar
+            while len(self._cookies) > 32:   # old tasks' sessions go first
+                self._cookies.pop(next(iter(self._cookies)))
 
     def _fill(self, d: BrowserDriver, url: str, goal: str, run: _Run, approve: Approve, commit: Commit,
               cancel: threading.Event, emit: Events, usage) -> dict:
@@ -295,9 +339,22 @@ class FormService:
         result = base(done=verified, verified=verified, submitted=True, screenshot=shot, final_url=d.url)
         if evidence:
             result["confirmation"] = wrap(evidence, d.url, kind="web")
+        elif d.url != before and not self._error_shown(d):
+            title = d.page.title() if getattr(d, "page", None) is not None else ""
+            result.update(done=True, advanced=True, next_page=wrap(title, d.url, kind="web"),
+                          reason="this page was accepted and the form moved on to its next page")
         else:
             result["reason"] = "no confirmation appeared after Submit; check the screenshot"
         return result
+
+    @staticmethod
+    def _error_shown(d: BrowserDriver) -> bool:
+        """An error summary on the page we landed on (role=alert), i.e. the form didn't accept it."""
+        try:
+            alert = d.page.query_selector("[role=alert]")
+            return alert is not None and alert.is_visible() and bool((alert.inner_text() or "").strip())
+        except Exception:
+            return False
 
     # ---- steps -------------------------------------------------------------------------
     def _plan(self, goal: str, fields: list[dict], usage) -> list[dict]:
@@ -351,7 +408,8 @@ class FormService:
                 if not ok:
                     run.problems.append({"field": label, "problem": why})
                     continue
-            elif f["type"] == "custom" or not d.set_value(f, value):
+            elif f["type"] == "custom" or (self.settings.fill == "visual" and f["type"] not in OFF_SCREEN) \
+                    or not d.set_value(f, value):
                 run.visual.append((f, value))
                 continue
             run.filled.append({"field": label, "value": short(value, 60)})
