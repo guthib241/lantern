@@ -52,7 +52,8 @@ SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the 
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
          "resume, undo (puts back the files the last task moved), receipt (proof of what the last task did), or "
          "learn (turn the last task into a routine that runs with no model calls). Send a photo of a paper (from "
-         "your phone or glasses) and say what it's for: I scan it and run the routine with the scan attached. "
+         "your phone or glasses) and say what it's for: I scan it and run the routine with the scan attached. Send a "
+         "how-to video and I'll send back its steps to check before I do them. "
          "Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
@@ -191,6 +192,8 @@ class ChannelHub:
             return self._button(ch, inc)
         if inc.kind == "photo":
             return self._photo(ch, inc)
+        if inc.kind == "video":
+            return self._video(ch, inc)
         text = inc.text
         if inc.kind == "voice":
             text = self._voice(ch, inc)
@@ -218,6 +221,19 @@ class ChannelHub:
         timer.start()
         self.say(ch.name, f"📷 Got the photo. Tell me what it's for (a message or a voice note), or I'll read it in "
                           f"{self.photo_wait:.0f} s.")
+
+    def _video(self, ch: Channel, inc: Incoming) -> None:
+        """S12: a how-to video: Lantern works out the steps and sends them back as one card to approve."""
+        try:
+            video, _ext = inc.fetch_video()
+            task_id = self.core.reel(video, words=inc.text, transcriber=lambda wav: self.transcriber(wav))
+        except ValueError as e:
+            return self.say(ch.name, f"I can't follow that video: {e}.")
+        except Exception as e:   # download failed
+            self._error(f"{ch.name} video", e)
+            return self.say(ch.name, f"I couldn't get that video ({type(e).__name__}). Try sending it again.")
+        self.origin[task_id] = ch.name
+        self.say(ch.name, f"🎬 Watching it (task #{task_id}). I'll send you the steps to check before I do anything.")
 
     def _take_photo(self, channel: str) -> bytes | None:
         with self._photo_lock:

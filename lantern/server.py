@@ -49,7 +49,7 @@ from .approvals import ApprovalError
 from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
 from .core import Core
 from .forms import Vault, VaultError
-from .policy import ZONES
+from .policy import ZONES, PolicyError
 from .sam import IDEAS, CheckInError
 from .widgets import WidgetError
 
@@ -116,6 +116,11 @@ class AnswerIn(BaseModel):
 
 class LearnIn(BaseModel):
     task_id: int
+
+
+class ReelIn(BaseModel):
+    path: str
+    words: str = ""
 
 
 class TeachIn(BaseModel):
@@ -228,6 +233,14 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except KeyError:
             raise HTTPException(404, "no such task")
         except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/reel", dependencies=[Depends(auth)])
+    def reel(body: ReelIn):
+        """S12: a how-to video file on this computer: the steps come back as one card to approve."""
+        try:
+            return {"task_id": core.reel(path=body.path, words=body.words)}
+        except (ValueError, PolicyError) as e:
             raise HTTPException(409, str(e))
 
     @app.post("/sleep", dependencies=[Depends(auth)])

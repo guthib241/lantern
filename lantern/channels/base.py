@@ -59,13 +59,14 @@ class Incoming:
     () -> (bytes, file_extension). A photo's caption is in `text`."""
     channel: str
     sender: str
-    kind: str                      # text | button | voice | photo
+    kind: str                      # text | button | voice | photo | video
     text: str = ""
     button: str = ""
     msg_id: str = ""
     callback_id: str = ""          # Telegram: answer the button tap
     fetch_audio: Callable[[], tuple[bytes, str]] | None = field(default=None, repr=False)
     fetch_image: Callable[[], tuple[bytes, str]] | None = field(default=None, repr=False)
+    fetch_video: Callable[[], tuple[bytes, str]] | None = field(default=None, repr=False)   # S12: a how-to video
 
 
 class Channel:

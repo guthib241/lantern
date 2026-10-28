@@ -436,6 +436,84 @@ class Core:
         agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
                                 "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
 
+    # ---- do this Reel (S12, reel.py) ------------------------------------------------------------------------
+    def reel(self, video: bytes | None = None, *, path: str = "", words: str = "", transcriber=None) -> int:
+        """A how-to video the user shared (bytes from the phone, or a file in a visible zone): steps they review on
+        one card, then the normal agent does them. Returns the task."""
+        import datetime as _dt
+        if self.compiler is None:
+            raise ValueError("videos need Lantern's scheduler (lantern --serve)")
+        if path:
+            p, zone = self.policy.check_visible(path)
+            if zone == "private":
+                raise ValueError("that video is in a private folder; private files never leave this computer")
+            video = self.policy.read_bytes(p)
+        if not video:
+            raise ValueError("send the video file itself")
+        if len(video) > 200 * 1024 * 1024:
+            raise ValueError("that video is over 200 MB")
+        media = Path(self.cfg.media_dir).expanduser()   # Lantern's own folder: a working copy for ffmpeg
+        media.mkdir(parents=True, exist_ok=True)
+        saved = media / f"reel-{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.mp4"
+        saved.write_bytes(video)
+        words = " ".join(str(words or "").split())[:200]
+        goal = f"Do this video{': ' + words if words else ''}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "video_bytes": len(video)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._reel_job(agent, job.id, goal, saved, transcriber))
+        return job.id
+
+    def _reel_job(self, agent, job_id: int, goal: str, video: Path, transcriber) -> None:
+        from . import reel as reel_mod
+        from .reliability import explain
+        from .voice import to_wav16k
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            shots = reel_mod.frames(video)
+            transcript, ms = reel_mod.transcript_of(video, transcriber or self._transcriber(), to_wav16k)
+            if ms:
+                self.memory.log_usage(job_id, models.VOICE, cost_usd=models.audio_cost(ms))
+            plan = reel_mod.review(reel_mod.steps_from(agent.client, shots, transcript, memory=self.memory,
+                                                       task_id=job_id), self.policy)
+        except (reel_mod.ReelError, ValueError) as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't follow that video: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't follow that video: {explain(e)}")
+        self.memory.mark_quoted(job_id)   # what the video says stays out of later briefings
+        self.memory.log_step(job_id, "tool_result", {"name": "reel", "result": plan})
+        if plan["refused"]:
+            s = next(x for x in plan["steps"] if x["n"] == plan["refused"][0])
+            return self._photo_done(agent, job_id, "done", f"I won't do this one: step {s['n']} ({s['do']}) "
+                                                           f"{s['why']}. Nothing was done.")
+        if plan["unclear"]:   # never guess: ask, and do nothing until the user says
+            s = next(x for x in plan["steps"] if x["n"] == plan["unclear"][0])
+            return self._photo_done(agent, job_id, "done", f"I couldn't follow step {s['n']} of “{plan['title']}” "
+                                                           f"({s['do']}). What exactly does it do? Nothing was done.")
+        toolbox = agent.toolbox
+        toolbox.tainted = True
+        payload = {"title": plan["title"], "steps": [s["do"] for s in plan["steps"]]}
+        commit = toolbox._approve("reel_steps", reel_mod.card(plan), payload)
+        if commit is None:
+            return self._photo_done(agent, job_id, "cancelled", "You said no; nothing from the video was done.")
+        if refused := toolbox._commit(commit, payload):
+            return self._photo_done(agent, job_id, "failed", f"Not done: {refused.get('reason')}.")
+        result = agent.run(reel_mod.goal(plan), task_id=job_id)   # the user's request now: the normal agent
+        if getattr(result, "status", None) == "done":
+            try:
+                offer = self.compiler.offer(job_id)
+            except Exception:   # an offer is a nicety; it must never fail a finished task
+                offer = None
+            if offer is not None:
+                self.emit({"type": "learn_offer", "task_id": job_id, "goal": plan["title"], "auto": False})
+
+    def _transcriber(self):
+        from .voice import transcribe
+        return lambda wav: transcribe(wav)
+
     # ---- sleep: nightly check and repair (S11, sleep.py) ---------------------------------------------------
     def sleep(self) -> int:
         """Check every learned routine where nothing real can happen, repair what drifted, and send the digest."""

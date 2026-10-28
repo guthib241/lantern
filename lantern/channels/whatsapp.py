@@ -97,7 +97,8 @@ class WhatsAppChannel(Channel):
             raise ChannelError(f"media download failed [{status}]")
         mime = str(meta.get("mime_type", "audio/ogg")).split(";")[0].strip()
         ext = {"audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac",
-               "audio/amr": ".amr", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}.get(mime, ".ogg")
+               "audio/amr": ".amr", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "video/mp4": ".mp4",
+               "video/3gpp": ".3gp"}.get(mime, ".ogg")
         return data, ext
 
     # ---- receiving -------------------------------------------------------------------
@@ -133,6 +134,12 @@ class WhatsAppChannel(Channel):
                 return None
             return Incoming(self.name, sender, "voice", msg_id=mid,
                             fetch_audio=lambda media_id=media_id: self.download_media(media_id))
+        if kind == "video":   # S12: a how-to video the user shares ("do this")
+            vid = m.get("video") or {}
+            if not vid.get("id"):
+                return None
+            return Incoming(self.name, sender, "video", text=str(vid.get("caption", "")), msg_id=mid,
+                            fetch_video=lambda media_id=str(vid["id"]): self.download_media(media_id))
         if kind == "image":   # S9: a photo, e.g. from the glasses ("send a photo to Lantern")
             img = m.get("image") or {}
             if not img.get("id"):

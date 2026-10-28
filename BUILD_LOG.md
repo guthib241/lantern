@@ -402,3 +402,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
   - the portal redesigned overnight (v2) is healed on a sandbox copy, the real portal gets nothing, the digest reaches the phone, and the morning run takes 0 model calls with no healing;
   - a routine whose repair fails "needs you";
   - suggestions and the schedule.
+
+## Oct 28 (Phase 2, S12: "Do this Reel")
+- `lantern/reel.py` + `Core.reel`: a shared how-to video becomes ffmpeg frames plus Muse Voice Transcribe speech, then Muse Spark steps (images + transcript, structured output, no tools). A review in code refuses private and hidden folders, marks security and install steps, and stops at an unclear step. The user approves the exact list on one red card; the normal agent does it; when it worked, Lantern offers to learn it.
+- Video intake on WhatsApp, Telegram and the fake phone; `POST /reel {path}`; a desktop card title.
+- Tests: `tests/test_reel.py` (5) with a real ffmpeg-made video. A tidy-up video becomes 2 frames plus a transcript, then 2 steps; one card; the agent moves the photos; a learn offer follows. Also: an unclear step asks and nothing happens; the review rules; frames and the structured-output fallback; the phone intake.

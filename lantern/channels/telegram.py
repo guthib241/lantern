@@ -78,6 +78,10 @@ class TelegramChannel(Channel):
             fid = (m.get("voice") or m.get("audio"))["file_id"]
             return Incoming(self.name, chat, "voice", msg_id=str(m.get("message_id")),
                             fetch_audio=lambda fid=fid: self.download_file(fid))
+        if m.get("video"):   # S12: a how-to video
+            fid = m["video"]["file_id"]
+            return Incoming(self.name, chat, "video", text=str(m.get("caption", "")), msg_id=str(m.get("message_id")),
+                            fetch_video=lambda fid=fid: self.download_file(fid))
         if m.get("photo"):   # S9: the largest size Telegram offers
             fid = max(m["photo"], key=lambda p: p.get("width", 0) * p.get("height", 0))["file_id"]
             return Incoming(self.name, chat, "photo", text=str(m.get("caption", "")), msg_id=str(m.get("message_id")),

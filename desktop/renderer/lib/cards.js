@@ -21,6 +21,7 @@
     mcp_call: "Use another program's tool?",
     run_routine: 'Run this learned routine?',
     open_untrusted_url: 'Open this address?',
+    reel_steps: 'Do the steps from this video?',
   };
   // S0 risk tiers (lantern/security.py): red never gets a one-tap Allow.
   const TIER_NAMES = { green: 'Read only', yellow: 'Reversible change', red: 'Sends, submits or runs' };
