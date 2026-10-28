@@ -93,7 +93,7 @@ class Core:
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
                  bus: ApprovalBus | None = None, approval_timeout: float | None = None,
                  forms: FormService | None = None, email: EmailService | None = None,
-                 mcp: MCPHub | None = None, reminder_tick: float = 1.0, workers: int = 0):
+                 mcp: MCPHub | None = None, reminder_tick: float = 1.0, workers: int = 0, recover: bool = True):
         self.cfg = cfg
         cipher = None if (memory and audit) else cipher_for(cfg)
         self.memory = memory or Memory(cfg.db_path, cipher)
@@ -137,8 +137,9 @@ class Core:
             from .scheduler import Scheduler
             self.scheduler = Scheduler(self, workers, approval_timeout=approval_timeout)
             self.compiler = Compiler(self)
-        keep = self.scheduler.recover() if self.scheduler is not None else set()
-        self.interrupted = recover_interrupted(self.memory, keep)   # before the worker starts taking tasks
+        # recover=False (the terminal): leave tasks another Lantern left unfinished alone; `lantern --resume` does them
+        keep = self.scheduler.recover() if self.scheduler is not None and recover else set()
+        self.interrupted = recover_interrupted(self.memory, keep) if recover else []   # before the worker starts
         self.bus.subscribe(self._approval_event)
         self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
         self._worker.start()
