@@ -214,8 +214,9 @@ class Core:
         return self.scheduler.questions() if self.scheduler is not None else []
 
     # ---- learned routines (S4, compiler.py) ------------------------------------------------
-    def learn(self, task_id: int, auto: bool = False) -> int:
-        """Compile a finished, verified task into a routine, as a task of its own (its model calls are counted)."""
+    def learn(self, task_id: int, auto: bool = False, replace: str | None = None) -> int:
+        """Compile a finished, verified task into a routine, as a task of its own (its model calls are counted).
+        `replace`: the routine this task's run supersedes (S5: the site's flow changed)."""
         if self.compiler is None:
             raise ValueError("learning routines needs Lantern's scheduler (lantern --serve)")
         source = self.memory.get_task(task_id)   # KeyError if unknown
@@ -224,14 +225,15 @@ class Core:
                 self.compiler.skeleton(task_id)
             except Exception as e:
                 raise ValueError(f"task #{task_id} can't be learned: {e}") from e
-        goal = f"Learn task #{task_id} as a routine: {source.goal.splitlines()[0][:80]}"
+        goal = (f"Re-learn {replace} from task #{task_id}" if replace else
+                f"Learn task #{task_id} as a routine: {source.goal.splitlines()[0][:80]}")
         job = self.memory.start_task(goal)
-        self.memory.log_step(job.id, "plan", {"goal": goal, "learn_from": task_id, "auto": auto})
+        self.memory.log_step(job.id, "plan", {"goal": goal, "learn_from": task_id, "auto": auto, "replace": replace})
         self.emit({"type": "queued", "task_id": job.id, "goal": goal})
-        self.scheduler.submit_job(job.id, goal, lambda agent: self._learn_job(agent, job.id, goal, task_id))
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._learn_job(agent, job.id, goal, task_id, replace))
         return job.id
 
-    def _learn_job(self, agent, job_id: int, goal: str, task_id: int) -> None:
+    def _learn_job(self, agent, job_id: int, goal: str, task_id: int, replace: str | None = None) -> None:
         from .compiler import CompileError
         agent.cancel.clear()
         agent.toolbox.begin_task(job_id, goal)
@@ -239,7 +241,7 @@ class Core:
             agent.client.set_task(job_id)
         agent.on_event("task", {"id": job_id, "goal": goal})
         try:
-            info = self.compiler.learn(task_id, client=agent.client, ladder=agent.ladder, job_id=job_id)
+            info = self.compiler.learn(task_id, client=agent.client, ladder=agent.ladder, job_id=job_id, replace=replace)
         except (CompileError, KeyError, ValueError) as e:
             status, summary = "failed", f"Couldn't learn task #{task_id}: {e}"
         except Exception as e:   # never leave the learning task hanging as "active"
@@ -248,7 +250,7 @@ class Core:
             status, summary = "failed", f"Couldn't learn task #{task_id}: {explain(e)}"
         else:
             status = "done"
-            summary = (f"Learned '{info['name']}' v{info['version']}: {info['steps']} steps"
+            summary = (f"{'Re-learned' if replace else 'Learned'} '{info['name']}' v{info['version']}: {info['steps']} steps"
                        + (f", with {', '.join(info['params'])} to choose" if info["params"] else "")
                        + (f". Verified: {info['verify']}. Next time it runs with no model calls."
                           if info["trusted"] else f". Not verified yet ({info['verify']}), so it won't run by itself."))

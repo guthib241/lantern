@@ -194,7 +194,7 @@ python -m lantern --forget-task 12 | --forget-everything
   - `python scripts/make_avatar.py` uses Muse Image (about $0.07).
   - `python scripts/import_avatar.py ~/Downloads/muse/` imports art you made in the MetaMuse app or Vibes.
 - **Camera check-in (SAM 3.1):** click 📷 in the panel. Lantern takes one snapshot, looks for objects only, and stores nothing.
-- **Learned routines:** after a web form task finishes and checks out, choose **Learn this** (or send "learn" from your phone). Lantern turns it into a small checked program. The next time you ask, it runs with one approval and no model calls, and if the site moves a field it heals itself. `python -m lantern --routines` lists them.
+- **Learned routines:** after a web form task finishes and checks out, choose **Learn this** (or send "learn" from your phone). Lantern turns it into a small checked program. The next time you ask, it runs with one approval and no model calls. If the site moves a field it heals itself; if the site adds a page, Lantern does the task step by step once and re-learns it. `python -m lantern --routines` lists them.
 - **Show Lantern once:** Costs → *Show Lantern once* in the panel, or `python -m lantern --teach http://127.0.0.1:8770/apply/personal "apply for a city permit"`. Lantern's browser opens; you fill the form yourself; press Done after its confirmation page. Lantern learns it like any other routine. What you typed stays on this computer (never a password's value), and no screenshot is sent anywhere.
 
 ## Cost so far

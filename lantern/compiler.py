@@ -146,6 +146,22 @@ MATCH_SCHEMA = {"type": "object", "properties": {
     "required": ["routine", "params"], "additionalProperties": False}
 
 
+def before_final_submit(contract: dict, res: RunResult) -> bool:
+    """Did the run stop before the contract's last submit (the one the recorded run proved with a confirmation)?
+    The earlier presses (Next) only moved a web form along, so doing it step by step repeats nothing that counts.
+    A failure at the last submit itself is never assumed safe: it may have been pressed."""
+    if contract.get("kind") != "web" or res.failed is None:
+        return False
+    steps = contract.get("steps") or []
+    ids = [s.get("id") for s in steps]
+    submits = [i for i, s in enumerate(steps) if s.get("action") == "browser.submit"]
+    if not submits or res.failed.step_id not in ids:
+        return False
+    if any(s.get("action") not in ("browser.open", "browser.fill", "browser.upload", "browser.submit") for s in steps):
+        return False
+    return ids.index(res.failed.step_id) < submits[-1]
+
+
 class Compiler:
     def __init__(self, core: Any, root: str | Path | None = None):
         self.core = core
@@ -327,8 +343,13 @@ class Compiler:
         return out
 
     # ---- learn ---------------------------------------------------------------------------------------
-    def learn(self, task_id: int, *, client=None, ladder=None, job_id: int | None = None) -> dict:
+    def learn(self, task_id: int, *, client=None, ladder=None, job_id: int | None = None,
+              replace: str | None = None) -> dict:
+        """Compile a verified task. `replace`: the routine this run supersedes (the site's flow changed); the result
+        is its next version, and becomes current only once verified."""
         contract, how_contract = self.contract(task_id, client=client, ladder=ladder, job_id=job_id)
+        if replace:
+            contract["name"] = replace
         problems = validate(contract)
         if problems:
             raise CompileError("the contract breaks a rule: " + "; ".join(problems[:3]))
@@ -338,10 +359,12 @@ class Compiler:
         trial = Routine(contract["name"], 0, contract, code, {})
         verify = self.verify(trial)
         verify.update(contract_by=how_contract, code_by=how_code)
-        r = self.store.save(contract, code, verify, how=f"learned from task #{task_id}", trusted=bool(verify["ok"]))
+        how = (f"re-learned from task #{task_id}: the site's flow changed" if replace else
+               f"learned from task #{task_id}")
+        r = self.store.save(contract, code, verify, how=how, trusted=bool(verify["ok"]))
         self._emit(job_id, "routine_learned", name=r.name, version=r.version, trusted=r.trusted,
                    title=contract.get("title"), steps=len(contract["steps"]), verify=verify["note"],
-                   learned_from=task_id)
+                   learned_from=task_id, relearned=bool(replace))
         return {"name": r.name, "version": r.version, "trusted": verify["ok"], "steps": len(contract["steps"]),
                 "verify": verify["note"], "contract_by": how_contract, "code_by": how_code,
                 "params": [p["name"] for p in contract["params"] if p.get("type") in CHOOSABLE]}
@@ -538,6 +561,7 @@ class Compiler:
         return self._finish(task_id, goal, r, res, agent, cost0)
 
     def _finish(self, task_id: int, goal: str, r: Routine, res: RunResult, agent, cost0: float):
+        """After a run: record it, heal or report it, or (nothing irreversible done) fall back to the agent."""
         from .agent import Result
         usage = self.memory.task_usage(task_id)
         info = {"routine": r.name, "version": r.version, **res.public()}
@@ -569,12 +593,20 @@ class Compiler:
             if healed is not None:
                 summary += (f" The page had changed: {len(res.patches)} step{'s' if len(res.patches) != 1 else ''} "
                             f"healed, saved as v{healed.version}" + ("" if healed.trusted else " (not verified yet)") + ".")
-        elif not res.acted:   # nothing irreversible happened: do it the normal way instead
+        elif not res.acted or before_final_submit(r.contract, res):   # nothing irreversible happened
             why = res.failed.why if res.failed else "it stopped"
             self.memory.log_step(task_id, "note", f"the routine couldn't do step {getattr(res.failed, 'step_id', '?')} "
                                                   f"({why}); doing it step by step instead")
             self._emit(task_id, "routine_fallback", name=r.name, step=getattr(res.failed, "step_id", None), why=why)
-            return agent.run(goal, task_id=task_id)
+            result = agent.run(goal, task_id=task_id)
+            if getattr(result, "status", None) == "done" and self.learnable(task_id):   # S5: the site changed
+                self.memory.log_step(task_id, "note", f"re-learning {r.name} from this run")
+                self._emit(task_id, "routine_relearn", name=r.name, version=r.version)
+                try:
+                    self.core.learn(task_id, auto=True, replace=r.name)
+                except ValueError as e:
+                    self.memory.log_step(task_id, "note", f"couldn't re-learn {r.name}: {e}")
+            return result
         else:
             status = "failed"
             summary = (f"The routine '{r.meta.get('title') or r.name}' stopped at step {res.failed.step_id} "

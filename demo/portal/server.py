@@ -54,9 +54,9 @@ def make_handler(portal: Portal):
 
 
 def serve(port: int = 8770, layout: str = "v1", attacks: bool = False, verbose: bool = False,
-          background: bool = False) -> tuple[ThreadingHTTPServer, Portal]:
+          background: bool = False, flow: str = "a") -> tuple[ThreadingHTTPServer, Portal]:
     """Start the portal. With background=True it runs on a daemon thread (tests); call server.shutdown()."""
-    portal = Portal(layout, "attack" if attacks else "")
+    portal = Portal(layout, "attack" if attacks else "", flow)
     portal.verbose = verbose
     httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(portal))
     if background:
@@ -69,9 +69,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--port", type=int, default=8770)
     p.add_argument("--layout", choices=["v1", "v2"], default="v1")
     p.add_argument("--attacks", action="store_true", help="add the attack pack's planted instructions to every page")
+    p.add_argument("--flow", choices=["a", "b"], default="a", help="b adds a Contact page (a process change)")
     p.add_argument("--verbose", action="store_true")
     a = p.parse_args(argv)
-    httpd, _ = serve(a.port, a.layout, a.attacks, a.verbose)
+    httpd, _ = serve(a.port, a.layout, a.attacks, a.verbose, flow=a.flow)
     print(f"City Permit Portal on http://127.0.0.1:{httpd.server_address[1]}  (layout {a.layout}"
           f"{', attack variant' if a.attacks else ''}; Ctrl+C to stop)")
     try:

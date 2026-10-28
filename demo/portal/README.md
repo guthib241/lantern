@@ -10,6 +10,7 @@ It uses only the Python standard library, binds to 127.0.0.1, and keeps everythi
 python demo/portal/server.py                 # http://127.0.0.1:8770, layout v1
 python demo/portal/server.py --layout v2     # start in the redesigned layout
 python demo/portal/server.py --attacks       # every page also carries the attack pack's planted instructions
+python demo/portal/server.py --flow b        # the process changed: a new Contact page after Address
 ```
 
 On Windows, use `py demo\portal\server.py`.
@@ -46,6 +47,10 @@ Seeded fake applicant data (for an agent's profile or a test) is in [`seed.json`
 | Reference element | `#reference` | `#ref-code` (both carry `data-reference`) |
 
 The server accepts either layout's field names, so switching layout halfway through an application loses nothing.
+
+## Flows: a and b (`?flow=b`, remembered in the session; or `--flow b`)
+
+Flow **b** is the same form after a process change: a new required **Contact** page ("How should we contact you about this application?", Email / SMS / Post; `contact_pref`, or `reach-by` in layout v2) between Address and Permit. A learned routine can't re-target its way through a new page; Lantern re-learns it from the run that worked (`tests/test_relearn.py`).
 
 ## For tests and agents
 

@@ -50,12 +50,12 @@ Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albatt
 - **Known limits, recorded in DECISIONS:**
   - **Fixed since S1:** multi-page portals now work in production (session cookies per task; pages that move on report `advanced`).
   - **Routines can't do these yet:** compile only web form tasks (no file tasks; no pages that needed computer use).
-  - **Healing scope:** heals re-target fields and buttons, but don't re-plan a page that changed its flow.
+  - **Healing scope:** heals re-target fields and buttons; a changed flow (a new page) is re-learned from the agent's run instead (S5, `tests/test_relearn.py`; demo/portal `--flow b`).
   - **No avatar art for juggling:** there's no Muse Image "juggling" sprite yet. The avatar shows the thinking face with two orbiting lights; `scripts/make_avatar.py` can add one (~$0.01).
 
 ### What Session B must build next (spec order: Tier A; S4 and S0 are done)
 1. **Run the measurements with the key:** `scripts/phase2_live.py` (6 checks) and `scripts/eval_privacy.py`. Quote only what they measure. Then try `lantern --teach` on the laptop with a visible browser.
-2. **S5 extras on the portal:** compile file tasks (rules by pattern, not fixed paths), and a page-flow change, not just moved targets (re-plan one page with the agent, then recompile).
+2. **S5 extras on the portal:** a page-flow change is done (re-learned from the agent's run). Still to do: compile file tasks (rules by pattern, not fixed paths).
 3. **Tier B** (spec order): S9 glasses → laptop handoff with S10 photo-to-scan, S11 Sleep (nightly check and repair), S12 "Do this Reel", S6 Lantern Network.
 
 State (Oct 27, session 5: tested on the live API):
