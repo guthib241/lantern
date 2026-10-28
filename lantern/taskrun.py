@@ -51,11 +51,13 @@ Checkpoint = Callable[[int, dict, str, str], None]   # (task_id, state, phase, r
 
 def chain_lost(exc: BaseException) -> bool:
     """Does this error say the API no longer has the previous response? (Then we replay with a recap.)
-    The API reference doesn't document this error, so this is a guess kept narrow: a 400/404 that names
-    the previous response."""
+    Seen live (Oct 28): 400 invalid_request_error "referenced response not found or expired", mid-task.
+    Kept narrow: a 400/404 that names the referenced or previous response."""
     from .reliability import status_of
-    text = str(getattr(exc, "body", "") or "") + " " + str(exc)
-    return status_of(exc) in (400, 404) and "previous" in text.lower() and "response" in text.lower()
+    text = (str(getattr(exc, "body", "") or "") + " " + str(exc)).lower()
+    if status_of(exc) not in (400, 404) or "response" not in text:
+        return False
+    return "previous" in text or ("referenced response" in text and ("not found" in text or "expired" in text))
 
 
 class ResumableAgent(Agent):
@@ -224,8 +226,7 @@ class ResumableAgent(Agent):
             self.on_event("tool", {"name": "ask_user", "args": {"question": ask["question"]}, "result": result,
                                    "badge": "you"})
             self._save(task_id, state)
-        state["chain_check"] = True   # the next call may find the API dropped the old chain
-        return self._loop(task_id, state, None)
+        return self._loop(task_id, state, None)   # if the API dropped the old chain, _turn recaps
 
     # ---- the loop --------------------------------------------------------------------
     def _loop(self, task_id: int, state: dict, response: Any) -> Result:
@@ -279,9 +280,8 @@ class ResumableAgent(Agent):
             self.memory.log_step(task_id, "note", f"moved up to {rung.badge}; continuing with a recap")
             response = self._model(task_id, kind, rung, input=self._recap(task_id, state, outputs, "moved to "
                                                                           "another model"), **kw)
-        elif not state.pop("chain_check", False):
-            response = self._model(task_id, kind, rung, previous_response_id=state["response_id"], input=outputs, **kw)
-        else:
+        else:   # the API can drop a chain mid-task too (seen live), not only across a restart
+            state.pop("chain_check", None)
             try:
                 response = self._model(task_id, kind, rung, previous_response_id=state["response_id"], input=outputs,
                                        **kw)

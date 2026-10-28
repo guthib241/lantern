@@ -456,3 +456,14 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - `lantern/cv.py` + `POST /profile/resume {path}`: the user's own resume (PDF or text, via policy.py, never private) becomes a proposal of profile values from Muse Spark (structured output). ID and card values are dropped; nothing is saved until the user ticks values in the panel (Setup → *Profile from my resume*), which saves them through `POST /profile`.
 - pypdf as optional extra `cv` (THIRD_PARTY.md).
 - Tests: `tests/test_cv.py` (4), `desktop/test/cv.test.js` (1).
+
+## Oct 28 (live: first Phase 2 run on the real Meta API)
+- The key reaches the API through the environment's network secret (Bearer for `api.meta.ai`): `MODEL_API_KEY` holds a placeholder and the proxy puts in the real key. `/v1/models` lists `muse-spark-1.3`, `muse-wonder-1.0`, `muse-image-1.0`, `muse-voice-transcribe-1.0`, `sam-3.1` (and `-contributor` variants, which Lantern never uses).
+- `scripts/phase2_live.py`, measured: 5 of 6 checks passed, $0.1611 in total.
+  - S1 parking: pass, $0.0466.
+  - S2 tool error, then another way: pass, $0.0087.
+  - S2 no duplicate email: pass, $0.0107.
+  - S3 Spark high, then Wonder on a fresh chain: pass, $0.0593.
+  - S1 restart from the checkpoint: pass, $0.0169.
+  - S4 portal learn → heal: fail, $0.0188.
+- **Bug found live and fixed:** mid-task, the API answered 400 "referenced response not found or expired" (check 6 on its third turn; check 3 too, after the refused duplicate). The recap fallback existed but didn't fire: `taskrun.chain_lost` matched a guessed message, and the fallback ran only after a restart. Now it matches the real message and runs on any turn. `tests/test_chain.py` (2) replays the live error.
