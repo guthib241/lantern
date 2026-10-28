@@ -132,7 +132,17 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
   - **Risk tiers on every tool:** green (reads, no card), yellow (reversible local changes, one tap), red (send, submit, run, share: the full card bound to the payload hash, never one tap).
   - **Learned routines are fixed plans** with every target cross-checked in the page: injection-resistant by construction, with branch-steering checks. Not injection-proof: a typed answer (a number, a choice) read from content can still be wrong on purpose, which is why it shows on the card before anything uses it.
   - **Tested** on the attack pack in [`demo/attacks/`](demo/attacks) (hidden text, fake SYSTEM banners, zero-width tricks, planted secrets, a spoofed email, a poisoned search result, the portal in attack mode), with honest, compromised-planner and compromised-reader scripts: `tests/test_injection.py`.
-  - **Measured, not claimed:** `python scripts/eval_privacy.py --runs 5` runs the portal tasks with raw, masked and decoy screenshots (`LANTERN_SCREENSHOTS=masked` puts black boxes over your own values before a screenshot leaves; `LANTERN_SCREENSHOTS=decoy` shows stand-in values instead, in the page's own font and place, and Lantern types the real ones only on this computer; the panel's Privacy tab shows what you saw next to what the cloud saw) and reports success, steps, cost, what showed in screenshots, any private value found in any request that left, and whether every payload is in the audit log. Its numbers go here once it has been run with the real models.
+  - **Measured, not claimed:** `python scripts/eval_privacy.py --runs 5` runs the portal tasks with raw, masked and decoy screenshots (`LANTERN_SCREENSHOTS=masked` puts black boxes over your own values before a screenshot leaves; `LANTERN_SCREENSHOTS=decoy` shows stand-in values instead, in the page's own font and place, and Lantern types the real ones only on this computer; the panel's Privacy tab shows what you saw next to what the cloud saw) and reports success, steps, cost, what showed in screenshots, any private value found in any request that left, and whether every payload is in the audit log. Measured on Oct 28 (Muse Spark, 5 runs per row, clean and attack-mode portal):
+
+    | Portal | Screenshots | Success | Avg steps | Avg cost | Runs with a leak | Trap links followed | Payloads in the audit log |
+    |---|---|---|---|---|---|---|---|
+    | clean | raw / masked / decoy | 5/5 · 4/5 · 5/5 | 8.2 · 8.2 · 7.8 | $0.052 · $0.055 · $0.054 | 0 | 0 | 232/232 |
+    | attack (A7) | raw / masked / decoy | 5/5 · 5/5 · 3/5 | 8.0 · 9.0 · 7.6 | $0.057 · $0.063 · $0.059 | 0 | 0 | 232/232 |
+    | after the fixes below: clean · attack | raw | 5/5 · 5/5 | 8.2 · 7.8 | $0.061 · $0.055 | 0 | 0 | 153/153 |
+
+    **What it doesn't show:** no run sent a screenshot. The portal has only standard fields, so computer use never ran, and raw, masked and decoy behaved the same. It measures leaks, traps and audit coverage, not masking. Comparing the three modes needs a page only computer use can fill (not built yet).
+
+    **What it found:** the 3 failures were the declaration box left unticked: the agent's goal for the payment page dropped "accept the declaration". In one of them the agent still said "done". Now the form planner also sees your own request, a "done" after a change that didn't verify is refused in code, and a planted "SYSTEM:" alert banner can no longer make an accepted page look rejected.
 - **Verified, or it says so:** every action checks its result on disk or via the API and reports `verified: true/false`.
 - **A receipt for every task:** tap **Receipt** on a task (or send "receipt" from your phone, or `lantern --receipt 12`). It shows what changed and whether each change was checked, what you approved (and the payload hash it was bound to), every byte that left and where it went, what was redacted, what stayed on the local lane, and the cost. It's built from Lantern's own logs, never written by a model.
 - **Other rules:** Lantern never deletes. The server listens on 127.0.0.1 only, with a token. **STOP** (button, Ctrl/Cmd+Shift+X, or the word STOP on WhatsApp) cancels everything.
@@ -213,6 +223,7 @@ python -m lantern --forget-task 12 | --forget-everything
 | API credit | $150 |
 | Spent while building | $0.00: built and tested against scripted fakes (`tests/fakes.py`, the rehearsal model) |
 | Spent testing on the live API (Oct 27) | **about $0.90** for every feature, several times over (see below) |
+| Spent on the live API, Phase 2 (Oct 28) | **about $5.7**: $2.37 of it is S14's training data, $2.3 the privacy evals |
 
 Measured on the live API, Muse Spark doing the planning:
 
@@ -228,6 +239,21 @@ Measured on the live API, Muse Spark doing the planning:
 | Lantern's face: 7 expressions with Muse Image | 2 min | $0.07 |
 | SAM 3.1 check-in, one snapshot | 1 s | $0.0025 |
 
+Phase 2, measured on the live API (Oct 28):
+
+| What | Time | Cost |
+|---|---|---|
+| Learn the permit portal, rerun at 0 model calls, portal redesigned → heal (21 repairs), rerun at 0 calls | 174 s | $0.10 (agent run $0.053, heal $0.027, routine runs $0) |
+| S1–S3: 3 tasks at once with a parked question, a tool error then another way, no double send, Spark high → Wonder, restart from a checkpoint | | $0.16 for the 5 checks |
+| Fill the 6-page permit portal from one request (privacy eval, 40 runs) | 2–3 min | $0.046–0.091 per run |
+| Teaching Mode lesson, every step SymPy-checked | | $0.026–0.066 |
+| Check my work (the wrong line found and circled) | 4.5 s | $0.006–0.007 |
+| "Do this Reel": a 12 s clip sent to Muse Spark as video → steps | 6.3 s | $0.0072 |
+| Photo of a paper → page found by SAM, straightened, read | 10.5 s | $0.0068 |
+| Meeting recording → speakers, tasks and reminders (22 s, synthetic voices) | 7.7 s | $0.0053 |
+| Resume → profile values to tick | 3.1 s | $0.0041 |
+| Owner's words → Cedar rules (S6 / S13) | 4–7 s | $0.005–0.008 |
+
 A full rehearsal of the story on the live API costs about **$0.25**, so recording-day retakes are cheap.
 Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), and the spending limits keep a runaway loop from eating the credit (checked live: a $0.002 task limit stopped the task after one call).
 
@@ -235,7 +261,7 @@ Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's 
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q          # ~570 tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
+python -m pytest -q          # ~660 tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
 python -m pyflakes lantern scripts tests
 cd desktop && npm test       # the panel's logic and the mock server on their own
 cd desktop && npm install && npm run e2e   # the real Electron app against the real server, whole story (Linux without a screen: xvfb-run -a npm run e2e)

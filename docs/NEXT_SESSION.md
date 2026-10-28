@@ -1,5 +1,16 @@
 # Handoff: from "all milestones built" to "submitted"
 
+## Live session B (Oct 28): real Meta API and Modal, branch `claude/phase2-core` (PR guthib241/lantern#4, never merge)
+Spent on the live API on Oct 28: about **$5.7** (this session ~$5.2, the parallel session $0.52); ~$6.6 of $150 in total. Every number below was measured; details in BUILD_LOG and DECISIONS.
+- **Environment:** the container has no `MODEL_API_KEY` variable; the proxy injects the real key for api.meta.ai, so use any placeholder (`MODEL_API_KEY=use-network-secret`). dev.meta.ai is reachable (Markdown at `<page>.md`, index at `/llms.txt`). Modal works after `pip install "modal[api-proxy-support]"`.
+- **Docs read, shapes fixed:** S12 sends the clip as `input_video` (frames fallback); S9/S16 readers use `text.format`; S16 sends a SAM box prompt. Voice Transcribe: 25 languages incl. Hindi/Tamil, DIARIZATION, realtime needs the key in the WebSocket's first frame (laptop only; refused from the container). Glimmer: Apache 2.0, LoRA documented. Prices in `models.py` match.
+- **phase2_live.py:** checks 1–5 passed (parallel session, $0.16). Check 6 (S4) failed, was fixed (repair prompt; local reader "NOT FOUND"; no handle for a not-found answer) and **passed: learn → 0 calls → heal (21 repairs) → 0 calls, $0.10**.
+- **First live runs:** S16 lesson and Check my work (parallel session), S12 video, S10/S9 scan + read, S15 resume, S15 meeting → tasks (new), S6/S13 Cedar (failed on `principal is …`, fixed, 6/6).
+- **eval_privacy.py:** 27/30, 0 leaks, $1.70; after the fixes (done-gate in code, the user's request reaches the form planner, planted `role=alert` ignored) 10/10 raw, $0.58. **No screenshots were sent in any run** (no computer use on the portal), so masked/decoy are not compared: that needs a page only computer use can fill.
+- **S14 (Modal):** data exported (`demo/s14/data`: 251 train / 93 held-out, split by routine; Spark 93/93 on held-out; $2.37); weights in the Modal Volume `lantern-glimmer` (59.6 GB). **Blocked:** Modal refuses every GPU function until the workspace has a payment method. Then: `modal run scripts/s14_modal.py --step baseline` (A100-80GB, ~10–15 min, ~$0.40–0.65); **ask the owner before** `--step train` (~40–50 min, ~$1.70–2.10, estimate); then `--step tuned`.
+- **Still open:** S15 live avatar talk (laptop: realtime ASR), Muse Image avatar reactions (shape confirmed, not built), a desktop panel for meeting → tasks, a computer-use page for the screenshot-mode eval.
+
+
 ## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, S4 self-compiling routines, S0 security backbone, S8 teach by demonstration, on branch `claude/phase2-core`
 Spec: `docs/PHASE2_SIGNATURE.md`. The branch started from `claude/gallant-albattani-18fmje` (session 5, everything below), plus the parallel session's `demo/portal`, `demo/attacks`, `desktop/board` and `tests/parallel` (PR #3). It goes to main as its own PR. **Do not merge without the user.**
 - **S1 scheduler** (`lantern/scheduler.py`, `lantern/taskrun.py`):
