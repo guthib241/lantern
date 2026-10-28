@@ -485,6 +485,8 @@ class ChannelHub:
             else:   # answered or withdrawn: forget them, so a new question for the same task is sent
                 with self._question_lock:
                     self._asked &= {q["task_id"] for q in event.get("items", [])}
+        elif kind == "digest" and event.get("text"):   # S11: the morning digest after the nightly check
+            self._outbox.put((None, "text", (event["text"],)))
         elif kind == "reminder":
             note = " (it was due while Lantern was off)" if event.get("late") else ""
             self._outbox.put((None, "text", (f"⏰ Reminder: {event.get('text', '')}{note}",)))

@@ -231,6 +231,8 @@ def main(argv=None) -> None:
     p.add_argument("--usage", action="store_true", help="show tokens and cost per model")
     p.add_argument("--router", action="store_true", help="the model ladder: kind x rung -> success, cost, time")
     p.add_argument("--routines", action="store_true", help="learned routines: version, runs, money saved, last healed")
+    p.add_argument("--sleep", action="store_true",
+                   help="check and repair every learned routine now (nothing is sent or submitted), then the digest")
     p.add_argument("--teach", nargs=2, metavar=("URL", "TASK"),
                    help="show Lantern a web task once in its browser; it learns it as a routine")
     p.add_argument("--zones", action="store_true", help="show privacy zones")
@@ -291,6 +293,17 @@ def main(argv=None) -> None:
         return print(format_routines([store.summary(n) for n in store.names()]))
     if a.teach:
         return teach(cfg, mem, *a.teach)
+    if a.sleep:
+        from .core import Core
+        mem.close()
+        core = Core(cfg, workers=1)
+        try:
+            task_id = core.sleep()
+            core.wait_idle(1800)
+            print(core.memory.get_task(task_id).summary)
+        finally:
+            core.shutdown()
+        return
     if a.audit:
         return print_audit(AuditLog(cfg.audit_path, mem.cipher))
     if a.forget_task:
@@ -367,6 +380,7 @@ def main(argv=None) -> None:
         from .server import serve
         if a.serve:
             refuse_second_server(a.port)
+            os.environ.setdefault("LANTERN_SLEEP_AT", "03:30")   # S11: the nightly check (sleep.py), "off" to stop
         mem.close()
         core = Core(cfg, workers=cfg.workers if a.serve else 0)
         hub = ChannelHub(core, channels_from_env(dict(os.environ)))

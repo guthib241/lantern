@@ -685,6 +685,7 @@
     if (e.type === 'done' && tab === 'privacy') loadPrivacy();
     if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);
     if (e.type === 'reminder') toast(`⏰ ${e.text}`);
+    if (e.type === 'digest' && e.text) toast(e.text);   // S11: the morning digest after the nightly check
     if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
     if (e.type === 'budget') toast(`Lantern has spent ${LanternAudit.money(e.spent_usd)} of its ${LanternAudit.money(e.limit_usd)} limit.`);
     if (e.type === 'done' || e.type === 'budget') loadCosts();

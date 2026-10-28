@@ -216,3 +216,9 @@
   - **Choosing the routine.** The user's words pick it. Without words the paper's kind is tried; then the card carries "⚠ Chosen from what the paper says, not from your words", and the paper may set no value except enum choices. Every such card is marked as after untrusted content.
   - **Attaching the scan.** A learned routine's file upload is now a `path` param (it used to be a literal), so the scan goes in its place. A path is never a model's pick. The card shows "attach <file> as <field>" first.
   - **The reply** is the routine's one-line result; the reading's summary stays out of later briefings.
+- Oct 28 (S11 Sleep): **check where nothing real can happen; fix before the morning.**
+  - **Shadow replay.** Every trusted routine is replayed nightly with the routine runtime's own modes. On a sandbox copy of the site (`LANTERN_ROUTINE_SANDBOX`) every step runs; without one, the real site is used dry, up to the first submit or move. Nothing is sent, submitted or moved.
+  - **Repair.** A moved target gets the normal S4 repair. The healed version is verified before it becomes current; if it doesn't check out, the digest says the routine needs the user.
+  - **Suggestions, no model call:** repeated, learnable goals with no routine ("learn 14"), and trusted routines with identical plans (candidates to merge). The merge itself isn't automatic; the user decides.
+  - **The digest** is plain text built from the night's measured results, not written by a model. It goes to the phone channels and the desktop.
+  - **Schedule.** `lantern --serve` sets 03:30 unless `LANTERN_SLEEP_AT` says otherwise ("off" stops it); every other way of running Lantern never sleeps on its own. It runs once per night, which survives restarts because "ran tonight" is read from the task list. `lantern --sleep` and `POST /sleep` run it now.

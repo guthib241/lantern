@@ -230,6 +230,14 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
         except ValueError as e:
             raise HTTPException(409, str(e))
 
+    @app.post("/sleep", dependencies=[Depends(auth)])
+    def sleep_now():
+        """S11: check and repair every learned routine now (it also runs each night)."""
+        try:
+            return {"task_id": core.sleep()}
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
     @app.post("/teach", dependencies=[Depends(auth)])
     def teach(body: TeachIn):
         """S8: open Lantern's browser and watch the user do the task once; then learn it."""

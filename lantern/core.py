@@ -436,6 +436,40 @@ class Core:
         agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
                                 "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
 
+    # ---- sleep: nightly check and repair (S11, sleep.py) ---------------------------------------------------
+    def sleep(self) -> int:
+        """Check every learned routine where nothing real can happen, repair what drifted, and send the digest."""
+        from . import sleep as sleep_mod
+        if self.compiler is None:
+            raise ValueError("Sleep needs Lantern's scheduler (lantern --serve)")
+        job = self.memory.start_task(sleep_mod.GOAL)
+        self.emit({"type": "queued", "task_id": job.id, "goal": sleep_mod.GOAL})
+        self.scheduler.submit_job(job.id, sleep_mod.GOAL, lambda agent: self._sleep_job(agent, job.id))
+        return job.id
+
+    def _sleep_job(self, agent, job_id: int) -> None:
+        from . import sleep as sleep_mod
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, sleep_mod.GOAL)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": sleep_mod.GOAL})
+        try:
+            report = sleep_mod.run(self.compiler, self.memory, client=agent.client, ladder=agent.ladder,
+                                   task_id=job_id)
+            status = "done"
+        except Exception as e:   # the digest still goes out, saying what stopped it
+            report, status = {"checked": [], "digest": f"🌙 Last night's check stopped: {explain(e)}"}, "failed"
+        text = report["digest"]
+        self.memory.log_step(job_id, "sleep", {k: v for k, v in report.items() if k != "digest"})
+        self.memory.log_step(job_id, "reply", text)
+        self.memory.finish_task(job_id, status, text)
+        self.emit({"type": "digest", "task_id": job_id, "text": text,
+                   "healed": sum(1 for x in report["checked"] if x.get("healed")),
+                   "broken": sum(1 for x in report["checked"] if x.get("ok") is False)})
+        agent.on_event("done", {"id": job_id, "status": status, "summary": text, "reply": text,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": len(report["checked"])})
+
     def routines(self) -> list[dict]:
         return self.compiler.list() if self.compiler is not None else []
 
@@ -637,10 +671,16 @@ class Core:
 
     # ---- reminders ---------------------------------------------------------------
     def _remind_loop(self) -> None:
+        from . import sleep as sleep_mod
         while not self._closing.wait(self.reminder_tick):
             try:
                 self.check_reminders()
             except Exception:  # a bad row must never stop the timer
+                pass
+            try:   # S11: the nightly check, once a night (LANTERN_SLEEP_AT; `lantern --serve` sets 03:30)
+                if self.compiler is not None and sleep_mod.due(self.memory):
+                    self.sleep()
+            except Exception:
                 pass
 
     def check_reminders(self, now: float | None = None) -> list[dict]:

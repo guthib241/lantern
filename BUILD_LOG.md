@@ -392,3 +392,13 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - Routines: file uploads are `path` params; the approval card lists attachments first; a routine's summary counts only its own model calls.
 - Tests: `tests/test_scan.py` (4). A synthetic tilted page and its SAM mask, through Meta's real parser: corners within 4 px, the page straightened to its own size, no desk left in the corners, PNG and PDF via policy.py, no overwrite, the fallbacks.
 - `tests/test_handoff.py` (5): a photo with words on the fake phone runs the learned portal routine in Chromium; the portal's stored file has the scan's SHA-256. A photo without words waits, then the paper's kind chooses, with a flagged card and no paper-set values. Also the words after a photo, the reading's shape, and WhatsApp and Telegram photos.
+
+## Oct 28 (Phase 2, S11: Sleep)
+- `lantern/sleep.py` + `Core.sleep`:
+  - **Each night** (03:30 with `lantern --serve`; `lantern --sleep`; `POST /sleep`) every trusted routine is replayed where nothing real can happen: a sandbox copy of the site, or dry up to the first submit or move. Drift is repaired (S4) and verified as a new version.
+  - **Suggestions:** repeated unlearned goals and routines that do the same steps.
+  - **A morning digest** goes to the phone and the desktop.
+- Tests: `tests/test_sleep.py` (3):
+  - the portal redesigned overnight (v2) is healed on a sandbox copy, the real portal gets nothing, the digest reaches the phone, and the morning run takes 0 model calls with no healing;
+  - a routine whose repair fails "needs you";
+  - suggestions and the schedule.
