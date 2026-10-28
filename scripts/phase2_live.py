@@ -6,8 +6,9 @@
     python scripts/phase2_live.py --out report.json
 
 Runs in a fresh rehearsal folder (a copy of demo/home with its own memory, zones and key; your real
-~/.lantern is not touched). The model is the real one; email is the fake outbox, and the private lane is the
-offline stand-in unless LANTERN_GLIMMER_URL is set. Approvals are tapped on the simulated phone.
+~/.lantern is not touched). The model is the real one; email is the fake outbox, and the private lane is off
+unless LANTERN_GLIMMER_URL is set (so public reads go to Muse Spark, as on any computer without Glimmer).
+Approvals are tapped on the simulated phone.
 
 It costs real money. Each task has a $0.25 limit (LANTERN_TASK_BUDGET_USD), the run stops starting new checks
 once it has spent --max-usd (default $1.00), and the totals it prints are measured from the usage rows.
@@ -91,6 +92,9 @@ class Live:
 
 def start(cfg, client, workers: int = 3) -> Live:
     core, hub, phone = demo.build(cfg, client=client, workers=workers)
+    if not os.environ.get("LANTERN_GLIMMER_URL"):   # no local model here: the lane is off, as on any such machine,
+        from lantern.router import OffGlimmer       # so public reads go to Muse Spark (not the rehearsal stand-in)
+        core.router.backend = OffGlimmer()
     live = Live(core, hub, phone)
     core.subscribe(live.events.append)
     hub.question_delay = 0.5

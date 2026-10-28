@@ -24,6 +24,8 @@ from typing import Any, Callable
 from . import models
 
 TYPES = ("yes_no", "choice", "number", "date", "text")
+NOT_FOUND = "NOT FOUND"
+NOT_FOUND_HINT = f"If the document doesn't answer the question, answer exactly: {NOT_FOUND}"
 MAX_TEXT = 4000
 MAX_DOC = 60_000
 
@@ -207,8 +209,11 @@ class Reader:
         hint = {"yes_no": "Answer yes or no.", "number": "Answer with the number only.",
                 "date": "Answer with the date only, as YYYY-MM-DD.", "text": "Answer in at most five sentences.",
                 "choice": "Answer with exactly one of: " + " | ".join(map(str, options or []))}[kind]
-        raw = backend.ask(READER_RULES.split("Answer only with")[0] + hint,
+        raw = backend.ask(READER_RULES.split("Answer only with")[0] + hint + " " + NOT_FOUND_HINT,
                           f"Question: {question}\n<document>\n{doc}\n</document>")
+        if NOT_FOUND in str(raw).upper():   # the local lane's "found": false. Live, a not-found sentence was
+            return Answer("" if kind == "text" else None, False,   # taken as the answer and quoted to the user.
+                          looks_like_instructions(doc), getattr(backend, "name", "private lane"))
         value = raw
         if kind != "text":   # small models add words around the answer; keep only what fits the type
             m = re.search(r"\d{4}-\d{2}-\d{2}" if kind == "date" else r"-?\d[\d,]*(?:\.\d+)?" if kind == "number"

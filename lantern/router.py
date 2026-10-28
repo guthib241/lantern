@@ -127,8 +127,8 @@ class FakeGlimmer:
             overlap = len(words & set(re.findall(r"[a-z0-9]+", line.lower())))
             if overlap:
                 scored.append((overlap, line.strip()))
-        if not scored:
-            return "The document doesn't seem to answer that."
+        if not scored:   # a caller that asks for a marker gets it, as a model following that instruction would
+            return "NOT FOUND" if "NOT FOUND" in system else "The document doesn't seem to answer that."
         best = max(scored, key=lambda s: s[0])[1]
         return f"From the private file: {best}"
 

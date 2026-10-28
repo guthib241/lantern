@@ -277,6 +277,25 @@ def test_with_a_local_model_public_reads_cost_nothing_and_instructions_are_still
     env.core.shutdown()
 
 
+def test_a_local_reader_that_finds_nothing_gives_the_planner_nothing_to_quote(tmp_path):
+    """Seen live: the local lane's "the document doesn't seem to answer that" came back as found, behind a handle,
+    and the agent wrote it into its reply as the confirmation reference."""
+    scripts = {"notes": [
+        ([call("read_file", "c1", path=str(tmp_path / "docs" / "notes.txt"))], ""),
+        ([call("ask_reader", "c2", doc="$doc1", question="Quokka zebra?", answer_type="text")], ""),
+        finish("c3", "not in the notes"), ([], "The notes don't say."),
+    ]}
+    env = make_core(tmp_path, scripts, local=True)
+    (env.docs / "notes.txt").write_text(FILE_TEXT)
+    env.core.submit("find the quokka zebra in my notes")
+    assert env.core.wait_idle(10)
+    out = outputs(env, "notes")["c2"]
+    assert out["found"] is False and out["answer"] is None and "$h" not in json.dumps(out)
+    assert "doesn't answer" in out["note"] and env.reader.requests == []      # still on this computer, $0
+    assert "NOT FOUND" in env.glimmer.calls[0][0]                               # the lane was told how to say so
+    env.core.shutdown()
+
+
 def test_a_recipient_from_content_is_flagged_red_and_denying_sends_nothing(tmp_path):
     scripts = {"report": [   # a planner that does what the content says (as if it were compromised)
         ([call("read_file", "c1", path=str(tmp_path / "docs" / "notes.txt"))], ""),

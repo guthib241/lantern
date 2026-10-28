@@ -3,6 +3,7 @@ pass and fail; a broken step heals into a new version. Plus the whole story agai
 learn a filled application, run it again with no model calls, flip the portal's layout, heal, run at $0 again.
 Every model is scripted (FakeClient / a scripted chat client); nothing reaches the real API."""
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -569,6 +570,30 @@ def test_a_routine_that_cant_heal_falls_back_to_the_agent_when_nothing_was_sent(
     assert any(e["type"] == "routine_fallback" and e["step"] == "s2" for e in events)
     assert page.clicks == [] and len(chat.of("routine_repair")) == 2      # tried twice, the second a rung up
     assert [r["reasoning_effort"] for r in chat.of("routine_repair")] == ["low", "high"]
+    core.shutdown()
+
+
+def test_a_reworded_forward_button_is_repaired_and_only_back_left_is_none(tmp_path):
+    """Seen live (phase2_live check 6): on the v2 review page, "Continue to payment" had become "GO TO FEES" and Muse
+    Spark answered "none" 5 times out of 5, so 17 good repairs were thrown away and the agent redid the form. With
+    the redesign guidance it picked "GO TO FEES" 5/5, and still "none" 5/5 when only Back and Cancel were left."""
+    def literal(kw):   # a model that takes labels literally unless told a redesign rewords them
+        q = json.loads(kw["messages"][1]["content"])
+        labels = [c["label"] for c in json.loads(q["page_buttons"]["content"])]
+        forward = [x for x in labels if not re.search(r"previous|back|cancel", x, re.I)]
+        if "judge by the job" in kw["messages"][0]["content"] and forward:
+            return {"target": forward[0]}
+        return {"target": "none"}
+    chat = Chat(routine_repair=literal)
+    core, page = mini_core(tmp_path, Routed({}), chat)
+    step = {"say": "Continue to the payment page."}
+    got = core.compiler.repair(step, "button", "Continue to payment", [{"label": "← PREVIOUS"}, {"label": "GO TO FEES"}],
+                               client=Both(None, chat), ladder=None, task_id=None)
+    assert got == "GO TO FEES" and len(chat.of("routine_repair")) == 1
+    got = core.compiler.repair(step, "button", "Continue to payment",
+                               [{"label": "← PREVIOUS"}, {"label": "CANCEL APPLICATION"}],
+                               client=Both(None, chat), ladder=None, task_id=None)
+    assert got is None and len(chat.of("routine_repair")) == 2                 # "none": no second try
     core.shutdown()
 
 

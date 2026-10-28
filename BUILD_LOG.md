@@ -490,3 +490,8 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - S14 on Modal: `scripts/s14_weights.py` (weights in a Volume: 59.6 GB, 244 s), `scripts/s14_modal.py` (vLLM eval, TRL QLoRA). Baseline and training wait on a payment method on the Modal workspace (every GPU function is refused without one).
 - S15 meeting recording → tasks and reminders: `lantern/meeting.py`, `POST /meeting`, `POST /meeting/confirm`. Live on a synthetic two-voice recording: A/B separated, 3 items, $0.0053.
 - Tests: `tests/test_s14.py` (5), `tests/test_meeting.py` (2).
+
+## Oct 28 (live session B, part 2: S4 heal bug)
+- `phase2_live.py --only 6` rerun live: FAIL, $0.3027 (the agent's run 14 calls; v1 routine 0 calls; on v2, 17 of 18 steps re-targeted, then "none" for "Continue to payment" → "GO TO FEES", so no heal; the agent redid the form; a not-found reading was quoted in the reply).
+- Fixed: repair prompt (redesigns reword labels; judge by the job), the local reader's `NOT FOUND` → `found: false`, no handle for a not-found answer, live script with the private lane off. Tests: `test_a_reworded_forward_button_is_repaired_and_only_back_left_is_none`, `test_a_local_reader_that_finds_nothing_gives_the_planner_nothing_to_quote`.
+- Rerun live: **PASS**, $0.1045, 174 s: agent 13 calls ($0.0528) → routine v1 0 calls ($0) → v2 portal: 21 repairs, healed to v2 ($0.0273) → healed routine 0 calls ($0).
