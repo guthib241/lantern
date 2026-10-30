@@ -21,7 +21,8 @@ in the browser can't drive Lantern through localhost.
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/run,
-  POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft
+  POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft,
+  POST /agents/{name}/face {emoji}|{generate}, GET /agents/{name}/face   the icon file (T4c)
   POST /avatar/design {brief, style}   one preview image; POST /avatar/design/{id}/accept
   GET  /avatar/manifest, GET /avatar/file/{id}/{expression}   the active avatar (T4a)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
@@ -136,6 +137,11 @@ class PackDraftIn(BaseModel):
 class AvatarDesignIn(BaseModel):
     brief: str = ""
     style: str = ""
+
+
+class AgentFaceIn(BaseModel):
+    emoji: str | None = None
+    generate: bool = False
 
 
 def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
@@ -375,7 +381,7 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             pack = core.packs.get(name)
         except KeyError:
             raise HTTPException(404, f"no agent called {name!r}")
-        return {**pack.as_dict(), "disabled": pack.disabled}
+        return {**pack.as_dict(), "disabled": pack.disabled, "face": core.packs.face(name)}
 
     @app.post("/agents/install", dependencies=[Depends(auth)])
     def install_agent(body: dict, replace: bool = False):
@@ -429,6 +435,28 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(422, str(e))
         return Response(content=raw, media_type="application/json",
                         headers={"Content-Disposition": f'attachment; filename="{name}.lantern-agent.json"'})
+
+    @app.post("/agents/{name}/face", dependencies=[Depends(auth)])
+    def set_agent_face(name: str, body: AgentFaceIn):
+        """Give an agent a face: a short emoji (free), or one drawn icon (approval,
+        about $0.01). Blocks until the draw card is approved or declined."""
+        try:
+            return core.make_agent_face(name, emoji=body.emoji, generate=body.generate)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # no key, network: say so plainly
+            raise HTTPException(502, f"agent face failed: {type(e).__name__}: {str(e)[:120]}")
+
+    @app.get("/agents/{name}/face", dependencies=[Depends(auth)])
+    def agent_face_file(name: str):
+        from .agentpacks import PackError
+        try:
+            path = core.packs.face_path(name)
+        except (KeyError, PackError):
+            raise HTTPException(404, "no face for that agent")
+        return Response(content=path.read_bytes(), media_type="image/webp")
 
     @app.post("/avatar/design", dependencies=[Depends(auth)])
     def design_avatar(body: AvatarDesignIn):

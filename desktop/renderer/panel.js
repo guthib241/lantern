@@ -66,6 +66,14 @@
     if (loaders[name]) loaders[name]();
   }
   for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab));
+  // The avatar window's agent faces open a task's timeline here (T4c).
+  if (window.lantern.onShowTask) window.lantern.onShowTask((id) => {
+    openSteps.add(Number(id));
+    showTab('tasks');
+    renderTasks();
+    const el = document.getElementById(`task-${Number(id)}`);
+    if (el) el.scrollIntoView({ block: 'center' });
+  });
   // Ctrl/Cmd+1…7 switch sections, like any native app with a tab bar.
   window.addEventListener('keydown', (e) => {
     const n = Number(e.key);
@@ -133,7 +141,7 @@
                                    ontoggle: (e) => (e.target.open ? openSteps.add(t.id) : openSteps.delete(t.id)) },
         h('summary', {}, `${t.steps.length} step${t.steps.length === 1 ? '' : 's'}`),
         h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))));
-      box.append(h('article', { class: 'task' },
+      box.append(h('article', { class: 'task', id: `task-${t.id}` },
         h('div', { class: 'head' },
           h('span', { class: `state ${t.status}`, 'aria-hidden': 'true' }, STATE_MARK[t.status] || ''),
           h('div', {},
@@ -635,6 +643,8 @@
   let agentPacks = [];
   let agentRunTask = {};    // pack name -> task id of its latest run, for the Watch/Stop line
   let agentRunOpen = null;  // pack name with its run form open
+  let agentFaceOpen = null; // pack name with its face form open ("Make a face")
+  let agentFaceURL = {};    // pack name -> object URL of its drawn icon
   let agentDraft = null;    // {fields, from} a draft being edited, or null
   let draftRefs = {};       // field name -> input element in the draft editor
 
@@ -647,8 +657,22 @@
       list.append(h('p', { class: 'empty' }, `Can't reach Lantern (${e.message})`));
       return;
     }
+    await loadAgentFaces();
     renderAgents();
     renderAgentDraft();
+  }
+
+  async function loadAgentFaces() {
+    const next = {};
+    for (const pack of agentPacks) {
+      if (pack.face && pack.face.icon && pack.name) {
+        try {   // the icon needs the token header, so it loads as a blob, never a bare <img src>
+          const blob = await api.blob(`/agents/${encodeURIComponent(pack.name)}/face`);
+          next[pack.name] = URL.createObjectURL(blob);
+        } catch (e) { /* no icon on disk yet: the emoji or the Face button shows */ }
+      }
+    }
+    agentFaceURL = next;
   }
 
   function agentTaskStatus(name) {
@@ -666,8 +690,19 @@
     for (const pack of agentPacks) list.append(agentCard(pack));
   }
 
+  function agentFaceThumb(pack, face) {
+    if (face.kind === 'icon' && agentFaceURL[pack.name]) {
+      return h('img', { class: 'agent-face', src: agentFaceURL[pack.name], alt: '' });
+    }
+    if (face.kind === 'emoji') {
+      return h('span', { class: 'agent-face emoji', role: 'img', 'aria-label': 'Agent face' }, face.emoji);
+    }
+    return null;
+  }
+
   function agentCard(pack) {
     const c = LanternAgents.cardView(pack);
+    const face = LanternAgents.faceView(pack);
     const run = agentTaskStatus(c.name);
     const refs = {};
     const form = agentRunOpen === c.name && c.runnable
@@ -680,8 +715,19 @@
         h('div', { class: 'row-btns' },
           h('button', { class: 'tinted', onclick: () => startAgentRun(pack, refs) }, 'Start')))
       : null;
+    const faceRefs = {};
+    const faceForm = agentFaceOpen === c.name && !pack.disabled
+      ? h('div', { class: 'agent-form' },
+        h('label', {}, 'An emoji for this agent',
+          (() => { const el = h('input', { value: '', placeholder: '📦', 'aria-label': 'Emoji for this agent', maxlength: '8' });
+                   faceRefs.emoji = el; return el; })()),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'forget', onclick: () => saveAgentFace(pack, faceRefs.emoji.value) }, 'Save emoji'),
+          h('button', { class: 'tinted', onclick: () => drawAgentFace(pack) }, 'Draw one (~$0.01)')))
+      : null;
     return h('article', { class: 'task agent' },
       h('div', { class: 'head' },
+        agentFaceThumb(pack, face),
         h('div', {},
           h('div', { class: 'goal' }, c.title, c.disabled ? h('span', { class: 'chip' }, 'off') : null),
           c.sub ? h('div', { class: 'status' }, c.sub) : null)),
@@ -693,13 +739,46 @@
           h('button', { class: 'tinted', onclick: () => showTab('tasks') }, 'Watch'),
           run.live ? h('button', { class: 'stop-big', onclick: stopEverything }, 'Stop') : null)) : null,
       form,
+      faceForm,
       h('div', { class: 'actions' },
         c.runnable && agentRunOpen !== c.name
           ? h('button', { class: 'forget', onclick: () => { agentRunOpen = c.name; renderAgents(); } }, 'Run') : null,
+        !pack.disabled && agentFaceOpen !== c.name
+          ? h('button', { class: 'forget', onclick: () => { agentFaceOpen = c.name; renderAgents(); } },
+            face.kind === 'none' ? 'Make a face' : 'Change face') : null,
         h('button', { class: 'forget', onclick: () => shareAgent(pack) }, 'Share'),
         c.disabled
           ? h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, true) }, 'Enable')
           : h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, false) }, 'Disable')));
+  }
+
+  async function saveAgentFace(pack, text) {
+    const parsed = LanternAgents.parseEmoji(text);
+    if (!parsed.ok) {
+      toast(parsed.error);
+      return;
+    }
+    try {   // an emoji is free: no model call, no approval
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/face`, { emoji: parsed.emoji });
+      agentFaceOpen = null;
+      toast(`“${pack.title || pack.name}” now looks like ${parsed.emoji}.`);
+    } catch (e) {
+      toast(`Couldn't set it: ${e.message}`);
+      return;
+    }
+    loadAgents();
+  }
+
+  async function drawAgentFace(pack) {
+    try {   // one Muse Image icon, behind an approval showing the cost
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/face`, { generate: true });
+      agentFaceOpen = null;
+      toast(r.made ? `Drew a face for “${pack.title || pack.name}”.` : `Not drawn: ${r.reason || 'declined'}.`);
+    } catch (e) {
+      toast(`Couldn't draw it: ${e.message}`);
+      return;
+    }
+    loadAgents();
   }
 
   async function startAgentRun(pack, refs) {

@@ -193,7 +193,7 @@ class Core:
             raise ValueError("goal is empty")
         task = self.memory.start_task(goal)
         self._queue.put((task.id, goal, None))
-        self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": None})
         return task.id
 
     def submit_pack(self, name: str, inputs: dict) -> int:
@@ -216,7 +216,7 @@ class Core:
         self._queue.put((task.id, goal,
                          lambda: self.agent.run(goal, task_id=task.id, instructions_suffix=suffix,
                                                 allowed_tools=allowed, taint=True)))
-        self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": found.name})
         return task.id
 
     def _work(self) -> None:
@@ -441,6 +441,42 @@ class Core:
                        for e in avatar_mod.EXPRESSIONS)
         return {"accepted": True, "verified": verified, "id": design_id,
                 "cost_usd": sheet.cost_usd, "model_calls": len(rest)}
+
+    def make_agent_face(self, name: str, *, emoji: str | None = None, generate: bool = False) -> dict:
+        """Give an agent a face for the avatar window: a short emoji (free, kept at
+        once) or one drawn Muse Image icon (about $0.01, behind an approval).
+        The icon is a separate file; the shared pack file stays data-only."""
+        from .agentpacks import PackError as _PackError
+        from .agentpacks import face_prompt, validate_emoji
+        try:
+            pack = self.packs.get(name)
+        except KeyError:
+            raise KeyError(name) from None
+        if emoji is not None and generate:
+            raise ValueError("give an emoji or ask to draw, not both")
+        if emoji is not None:
+            try:
+                face = self.packs.set_face_emoji(name, validate_emoji(emoji))
+            except _PackError as e:
+                raise ValueError(str(e)) from None
+            return {"made": True, "face": face, "cost_usd": 0.0, "model_calls": 0}
+        if not generate:
+            raise ValueError("say what the face is: an emoji, or generate=true to draw one")
+        payload = {"name": name, "images": 1, "cost_usd": round(models.image_cost(1), 4)}
+        summary = (f"Draw a face for agent '{pack.title}' (one Muse Image icon, "
+                   f"about ${models.image_cost(1):.2f}).")
+        commit = self.toolbox.gate.ask("agent_face", summary, payload)
+        if commit is None:
+            return {"made": False, "reason": "user declined", "name": name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"made": False, "reason": str(e), "name": name}
+        image, _ = avatar_mod.render_single(self.client, face_prompt(pack))
+        face = self.packs.save_face_icon(name, image)
+        cost = models.image_cost(1)
+        self.memory.log_usage(None, models.IMAGE, cost_usd=cost)
+        return {"made": True, "verified": True, "face": face, "cost_usd": cost, "model_calls": 1}
 
     def pack_draft(self, task_id: int) -> dict:
         """Draft a pack from a finished task (Muse Spark, structured output).

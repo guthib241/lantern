@@ -47,6 +47,29 @@ grey.
 Skins live in one small file (`desktop/renderer/lib/skins.js`), one function
 per skin, so new ones can be added without touching the avatar window itself.
 
+## Agent faces
+
+When agent packs run, Lantern visibly turns into its agents: while pack tasks
+run, the avatar window shows one small face per running agent beside the main
+avatar, each with a green activity dot. Clicking a face opens that task's
+timeline in the panel; right-clicking stops everything (the existing kill
+switch — there is no per-task stop yet). When the last one finishes, the faces
+fold back into the main avatar. Faces sit in a plain row, so they need no
+`prefers-reduced-motion` exception: the row never moves, and the global
+reduced-motion rule stills the dot.
+
+A face is either an emoji or one drawn icon. Give an agent one in the Agents
+tab with **Make a face**: type an emoji and save it (free, kept at once), or
+have Lantern draw an icon (one Muse Image picture, about $0.01, behind an
+approval showing the cost). The icon is stored next to the pack as
+`~/.lantern/agents/<name>.webp`; the emoji lives in the laptop's pack wrapper
+next to it. Sharing a pack (`GET /agents/{name}/export`) sends only the
+data-only pack file, never the face — hand over the `.webp` yourself if you
+want someone else to have the icon too.
+
+Every drawn icon prompt carries "no logos, no text, no brand marks", like the
+avatar prompts, and its cost is logged to memory like any other model call.
+
 ## Cost
 
 Each image costs $0.01. The preview is one image; finishing a face is six

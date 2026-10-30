@@ -56,6 +56,17 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
 .island[data-mode="reminder"] .lead { background: #ff9f0a; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---- running agents: one small face per pack task, stacked beside the main avatar ---- */
+.faces { display: flex; gap: 10px; }
+.faces[hidden] { display: none; }
+.face { position: relative; width: 46px; height: 46px; border-radius: 50%; cursor: pointer;
+        display: grid; place-items: center; font-size: 24px; background: #2c2c2e; color: #fff;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, .92), 0 0 18px rgba(255, 179, 71, .55); }
+.face img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.face .dot { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%;
+             background: #30d158; border: 2px solid #000; animation: facedot 1.6s ease-in-out infinite; }
+@keyframes facedot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

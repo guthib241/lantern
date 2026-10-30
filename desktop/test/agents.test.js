@@ -39,6 +39,18 @@ test('pack files: JSON parses, junk is refused, names end in .lantern-agent.json
   assert.ok(G.packFileText(PACK).endsWith('\n'));
 });
 
+test('faces: drawn icons and emoji from the server, short emoji from the form', () => {
+  assert.deepEqual(G.faceView({ face: { icon: true } }), { kind: 'icon' });
+  assert.deepEqual(G.faceView({ face: { emoji: '📦' } }), { kind: 'emoji', emoji: '📦' });
+  for (const pack of [{}, { face: null }, { face: {} }, { face: { emoji: '' } }]) {
+    assert.deepEqual(G.faceView(pack), { kind: 'none' });
+  }
+  assert.deepEqual(G.parseEmoji(' 📦 '), { ok: true, emoji: '📦' });
+  assert.equal(G.parseEmoji('').ok, false);
+  assert.equal(G.parseEmoji(null).ok, false);
+  assert.equal(G.parseEmoji('x'.repeat(9)).ok, false);
+});
+
 test('draft round-trips through editable fields', () => {
   const fields = G.draftFields({ ...PACK, extra: 1 });
   assert.equal(fields.tools, 'list_dir\nsearch_files\norganize_files');

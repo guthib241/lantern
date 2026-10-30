@@ -119,6 +119,14 @@ def read_manifest(out_dir: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"expressions": {}}
 
 
+def render_single(client: Any, prompt: str) -> tuple[bytes, str]:
+    """One unchained Muse Image turn (an icon, not the expression sheet).
+    Returns (webp bytes, response id)."""
+    response = client.responses.create(model=models.IMAGE, tools=[{"type": "image_generation", "size": SIZE}],
+                                       input=prompt)
+    return _image(response), response.id
+
+
 def generate(client: Any, out_dir: str | Path, *, brief: str | None = None, reference: tuple[bytes, str] | None = None,
              only: list[str] | None = None, on_cost: Callable[[float], None] | None = None,
              on_progress: Callable[[str], None] | None = None) -> Sheet:

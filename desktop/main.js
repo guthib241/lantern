@@ -197,6 +197,10 @@ ipcMain.on('avatar:hover', (_e, over) => {
 });
 ipcMain.on('panel:toggle', () => togglePanel());
 ipcMain.on('panel:show', () => togglePanel(true));
+ipcMain.on('panel:show-task', (_e, id) => {   // an agent face opens its task's timeline
+  togglePanel(true);
+  if (panel) panel.webContents.send('panel:show-task', id);
+});
 ipcMain.on('quick:hide', () => toggleQuick(false));
 ipcMain.on('avatar:menu', () => {
   Menu.buildFromTemplate([

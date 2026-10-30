@@ -103,3 +103,25 @@ test('mock agents: list, run, disable, export, draft', async (t) => {
   assert.equal(draft.name, 'tidy-downloads');
   await assert.rejects(api.get('/agents/no-such-agent'), /no agent/);
 });
+
+test('mock agents: faces (emoji and drawn), and runs name their pack', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  assert.ok((await api.get('/agents')).agents.every((a) => a.face === null));
+  assert.deepEqual(await api.post('/agents/tidy-downloads/face', { emoji: '📦' }),
+    { made: true, face: { emoji: '📦' }, cost_usd: 0, model_calls: 0 });
+  assert.equal((await api.get('/agents/tidy-downloads')).face.emoji, '📦');
+  assert.deepEqual(await api.post('/agents/tidy-downloads/face', { generate: true }),
+    { made: true, verified: true, face: { icon: true }, cost_usd: 0.01, model_calls: 1 });
+  await assert.rejects(api.post('/agents/tidy-downloads/face', {}), /emoji or generate/);
+  await assert.rejects(api.get('/agents/tidy-downloads/face'), /no face for that agent/);
+  const seen = [];
+  const stop = api.events((e) => seen.push(e));
+  const { task_id } = await api.post('/agents/tidy-downloads/run', { inputs: {} });
+  for (let i = 0; i < 40 && !seen.some((e) => e.type === 'queued' && e.task_id === task_id); i++) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  stop();
+  assert.equal(seen.find((e) => e.type === 'queued' && e.task_id === task_id).pack, 'tidy-downloads');
+});

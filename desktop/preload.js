@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('lantern', {
   hover: (over) => ipcRenderer.send('avatar:hover', !!over),
   togglePanel: () => ipcRenderer.send('panel:toggle'),
   showPanel: () => ipcRenderer.send('panel:show'),
+  showTask: (id) => ipcRenderer.send('panel:show-task', id),   // an agent face opens its task's timeline
+  onShowTask: (fn) => ipcRenderer.on('panel:show-task', (_e, id) => fn(id)),
   avatarMenu: () => ipcRenderer.send('avatar:menu'),
   openAgentFile: () => ipcRenderer.invoke('agent:open'),   // pick a .lantern-agent.json file to install
   saveAgentFile: ({ name, text }) => ipcRenderer.invoke('agent:save', { name, text }),   // share a pack as a file

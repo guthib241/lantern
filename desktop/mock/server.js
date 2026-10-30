@@ -155,10 +155,10 @@ function createMock() {
     phoneSay(reply);
   }
 
-  function submit(goal) {
+  function submit(goal, pack) {
     const id = nextTask++;
     tasks.push({ id, goal, status: 'active', summary: null, created_at: now(), updated_at: now(), usage: { calls: 0, cost_usd: 0 } });
-    emit({ type: 'queued', task_id: id, goal });
+    emit({ type: 'queued', task_id: id, goal, pack: pack || null });
     story(id, goal);
     return id;
   }
@@ -296,11 +296,11 @@ function createMock() {
         emit({ type: 'reminders', changed: 'cancelled', id: r.id });
         return send(200, { cancelled: r.id });
       }
-      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export))?)?$/);
+      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face))?)?$/);
       if (g && req.headers['x-lantern-token'] === TOKEN) {
         // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
         if (req.method === 'GET' && !g[1]) {
-          return send(200, { agents: [...agents.values()].map((a) => ({ ...a.pack, disabled: a.disabled })) });
+          return send(200, { agents: [...agents.values()].map((a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null })) });
         }
         if (req.method === 'POST' && url.pathname === '/agents/install') {
           let data = {};
@@ -320,14 +320,28 @@ function createMock() {
         }
         const item = g[1] && agents.get(g[1]);
         if (!item) return send(404, { detail: `no agent called '${g[1] || ''}'` });
-        if (req.method === 'GET' && !g[2]) return send(200, { ...item.pack, disabled: item.disabled });
+        if (req.method === 'GET' && !g[2]) return send(200, { ...item.pack, disabled: item.disabled, face: item.face || null });
         if (req.method === 'GET' && g[2] === 'export') return send(200, item.pack);
         if (req.method === 'POST' && g[2] === 'run') {
           if (item.disabled) return send(400, { detail: `agent '${g[1]}' is disabled` });
           let inputs = {};
           try { inputs = body ? JSON.parse(body).inputs || {} : {}; } catch { return send(400, { detail: 'bad JSON' }); }
           const goal = `[agent:${g[1]}] ` + item.pack.goal.replace(/\{(\w+)\}/g, (_, k) => inputs[k] || `{${k}}`);
-          return send(200, { task_id: submit(goal) });
+          return send(200, { task_id: submit(goal, g[1]) });
+        }
+        if (g[2] === 'face') {
+          if (req.method === 'GET') return send(404, { detail: 'no face for that agent' });   // the mock keeps no bytes
+          let b = {};
+          try { b = body ? JSON.parse(body) : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          if (typeof b.emoji === 'string' && b.emoji.trim()) {
+            item.face = { emoji: b.emoji.trim() };
+            return send(200, { made: true, face: item.face, cost_usd: 0, model_calls: 0 });
+          }
+          if (b.generate) {
+            item.face = { icon: true };
+            return send(200, { made: true, verified: true, face: item.face, cost_usd: 0.01, model_calls: 1 });
+          }
+          return send(400, { detail: 'give an emoji or generate=true' });
         }
         if (req.method === 'POST' && (g[2] === 'disable' || g[2] === 'enable')) {
           item.disabled = g[2] === 'disable';

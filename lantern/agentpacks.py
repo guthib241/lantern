@@ -41,6 +41,8 @@ MCP_TOOL = re.compile(r"^[a-z0-9_-]{1,24}\.[A-Za-z0-9_*-]+$")
 KEYS = {"format", "name", "title", "description", "author", "version",
         "inputs", "goal", "instructions", "tools"}
 INPUT_KEYS = {"key", "question", "example"}
+EMOJI_MAX = 8             # an emoji face is a glance, not a sentence
+FACE_ICON_SUFFIX = ".webp"   # the generated icon lives next to the pack as <name>.webp
 
 
 class PackError(ValueError):
@@ -184,6 +186,25 @@ def _refuse_secrets(pack: Pack) -> None:
             raise PackError("that pack holds something that looks like a secret; refusing it")
 
 
+def validate_emoji(value: Any) -> str:
+    """An emoji face: short plain text, secrets scrubbed. Raises PackError."""
+    if not isinstance(value, str) or not value.strip():
+        raise PackError("a face emoji can't be empty; type one or ask Lantern to draw an icon")
+    text = value.strip()
+    if len(text) > EMOJI_MAX:
+        raise PackError(f"a face emoji is at most {EMOJI_MAX} characters")
+    if SCRUBBER.scrub(text).count:
+        raise PackError("that face holds something that looks like a secret; refusing it")
+    return text
+
+
+def face_prompt(pack: Pack) -> str:
+    """One small icon for this agent, in words. No logos, no text, no brand marks."""
+    return (f"Small round app icon for a helpful AI agent called '{pack.title}': {pack.description} "
+            "Centred symbol on a plain soft dark background, flat vector style, high contrast. "
+            "No logos, no text, no brand marks, no letters, no watermark.")
+
+
 def canonical_bytes(data: dict) -> bytes:
     """The file's bytes: deterministic, so exports round-trip and the install
     approval can bind to their SHA-256."""
@@ -211,8 +232,15 @@ class PackStore:
                     pack, disabled = self._load(path)
                 except (PackError, ValueError, OSError):
                     continue   # a hand-edited file that no longer validates stays unlisted
-                out.append({**pack.as_dict(), "disabled": disabled})
+                out.append({**pack.as_dict(), "disabled": disabled, "face": self._listed_face(path, pack.name)})
         return out
+
+    def _listed_face(self, path: Path, name: str) -> dict | None:
+        """The face for a list entry: the generated icon wins over a stored emoji."""
+        if (self.dir / f"{name}{FACE_ICON_SUFFIX}").exists():
+            return {"icon": True}
+        emoji = self._stored_face(path)
+        return {"emoji": emoji} if emoji else None
 
     def get(self, name: str) -> Pack:
         """The pack, with its disabled flag. Raises KeyError if not installed."""
@@ -229,11 +257,32 @@ class PackStore:
             raise PackError(f"{path.name} is not an agent pack file")
         return validate(raw["pack"]), bool(raw.get("disabled", False))
 
+    @staticmethod
+    def _stored_face(path: Path) -> str | None:
+        """The emoji face kept in the store wrapper (never in the shared pack file)."""
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        face = raw.get("face") if isinstance(raw, dict) else None
+        emoji = face.get("emoji") if isinstance(face, dict) else None
+        return emoji if isinstance(emoji, str) and emoji else None
+
+    def _write(self, pack: Pack, *, disabled: bool, face: dict | None) -> None:
+        """Store the wrapper: the pack plus local-only state (disabled, face)."""
+        wrapper: dict[str, Any] = {"format": STORE_FORMAT, "disabled": disabled, "pack": pack.as_dict()}
+        if face:
+            wrapper["face"] = face
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self._path(pack.name).write_text(json.dumps(wrapper, ensure_ascii=False, indent=2,
+                                                    sort_keys=True) + "\n", encoding="utf-8")
+
     def install(self, data: dict, *, replace: bool = False) -> Pack:
         """Validate and store `<name>.json`. Refuses to overwrite a different
         author's pack with the same name unless `replace=True`."""
         pack = validate(data)
         path = self._path(pack.name)
+        face = self._stored_face(path) if path.exists() else None
         if path.exists():
             try:
                 old, _ = self._load(path)
@@ -242,9 +291,7 @@ class PackStore:
             if old.author != pack.author and not replace:
                 raise PackError(f"an agent called {pack.name!r} by {old.author} is already installed "
                                 f"(pass replace=True to take its place)")
-        self.dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"format": STORE_FORMAT, "disabled": False, "pack": pack.as_dict()},
-                                   ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        self._write(pack, disabled=False, face={"emoji": face} if face else None)
         stored = self.get(pack.name)   # verify: read it back
         if stored.as_dict() != pack.as_dict():
             raise PackError(f"agent {pack.name!r} didn't store correctly")
@@ -261,14 +308,53 @@ class PackStore:
         if not path.exists():
             raise KeyError(f"no agent called {name!r}")
         pack, _ = self._load(path)
-        path.write_text(json.dumps({"format": STORE_FORMAT, "disabled": disabled, "pack": pack.as_dict()},
-                                   ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        face = self._stored_face(path)
+        self._write(pack, disabled=disabled, face={"emoji": face} if face else None)
         pack.disabled = disabled
         return pack
 
     def export(self, name: str) -> bytes:
-        """The exact pack file, to share."""
+        """The exact pack file, to share. Faces stay on this laptop: the export
+        holds the data-only pack, never the emoji or the icon file."""
         return canonical_bytes(self.get(name).as_dict())
+
+    # ---- faces: how an agent looks in the avatar window while it runs ------------
+    def face(self, name: str) -> dict | None:
+        """`{"emoji": str}` or `{"icon": True}`, else None. Raises KeyError if unknown."""
+        self.get(name)   # KeyError if not installed
+        if (self.dir / f"{name}{FACE_ICON_SUFFIX}").exists():
+            return {"icon": True}
+        emoji = self._stored_face(self._path(name))
+        return {"emoji": emoji} if emoji else None
+
+    def set_face_emoji(self, name: str, emoji: str) -> dict:
+        """Keep a short emoji as this agent's face. No model call, no approval."""
+        pack = self.get(name)   # KeyError if not installed
+        face = {"emoji": validate_emoji(emoji)}
+        self._write(pack, disabled=pack.disabled, face=face)
+        return face
+
+    def save_face_icon(self, name: str, image: bytes) -> dict:
+        """Keep Muse Image's icon (`<name>.webp`) as this agent's face. Verifies on disk."""
+        self.get(name)   # KeyError if not installed
+        if not image:
+            raise PackError(f"no icon was drawn for agent {name!r}")
+        self.dir.mkdir(parents=True, exist_ok=True)
+        path = self.dir / f"{name}{FACE_ICON_SUFFIX}"
+        path.write_bytes(image)
+        if path.read_bytes() != image:   # verify: read it back
+            raise PackError(f"agent {name!r}'s icon didn't store correctly")
+        return {"icon": True}
+
+    def face_path(self, name: str) -> Path:
+        """The icon file, for serving. Raises KeyError on a bad name or a missing file."""
+        if not isinstance(name, str) or not NAME.match(name):
+            raise PackError(f"no agent called {name!r}")
+        base = self.dir.resolve() if self.dir.exists() else self.dir
+        path = (self.dir / f"{name}{FACE_ICON_SUFFIX}").resolve()
+        if path.parent != base or not path.exists():
+            raise KeyError(f"no icon for agent {name!r}")
+        return path
 
 
 def tool_allowed(allowed: set[str] | None, name: str) -> bool:

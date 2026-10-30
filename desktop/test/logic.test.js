@@ -364,6 +364,23 @@ test('avatar face: server design first, then bundled art, then the glow', () => 
   assert.equal(V.pickSource(null, { expressions: {} }), 'glow');
   assert.equal(C.card({ action: 'finish_avatar', summary: 'Finish this avatar design (neon): 6 more expressions.' }, 0).title,
     'Make this your avatar?');
+  assert.equal(C.card({ action: 'agent_face', summary: "Draw a face for agent 'Hello' (one Muse Image icon, about $0.01)." }, 0).title,
+    "Draw this agent's face?");
+});
+
+test('running agents grow on queued with a pack and shrink on done/stopped', () => {
+  let s = run([{ type: 'queued', task_id: 1, goal: 'a', ts: 1 }]);
+  assert.deepEqual(s.agents, []);   // a plain task shows no face
+  s = S.reduce(s, { type: 'queued', task_id: 2, goal: '[agent:tidy] Tidy.', pack: 'tidy', ts: 2 });
+  assert.deepEqual(s.agents, [{ task_id: 2, pack: 'tidy' }]);
+  s = S.reduce(s, { type: 'queued', task_id: 2, goal: '[agent:tidy] Tidy.', pack: 'tidy', ts: 3 });
+  assert.equal(s.agents.length, 1);   // the same task twice is still one face
+  s = S.reduce(s, { type: 'queued', task_id: 3, goal: '[agent:box] Box.', pack: 'box', ts: 4 });
+  assert.equal(s.agents.length, 2);
+  s = S.reduce(s, { type: 'done', id: 2, status: 'done', ts: 5 });
+  assert.deepEqual(s.agents, [{ task_id: 3, pack: 'box' }]);   // its face folds back into the main avatar
+  s = S.reduce(s, { type: 'stopped', ts: 6 });
+  assert.deepEqual(s.agents, []);   // the kill switch clears every face
 });
 
 test('widget storage: no key can reach the index, and the cap holds', () => {

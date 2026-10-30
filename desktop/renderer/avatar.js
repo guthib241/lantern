@@ -3,6 +3,7 @@
 (async function () {
   const $ = (id) => document.getElementById(id);
   const spriteEl = $('sprite');
+  const facesEl = $('faces');
   const island = $('island');
   const cfg = await window.lantern.config();
   const api = new LanternApi.Api(cfg.apiBase, cfg.token);
@@ -75,10 +76,92 @@
 
   let current = null;   // the activity on screen (for the buttons)
 
+  // ---- running agents: one small face per pack task (T4c) ----------------------------------
+  let facesKey = ' ';         // "task:pack,..." of what's on screen; repaint only when it changes
+  let agentFaces = {};        // pack name -> {icon: url} | {emoji}
+
+  async function loadAgentFaces() {
+    try {
+      const list = await api.get('/agents');
+      const next = {};
+      for (const a of (list.agents || [])) {
+        if (!a || !a.name) continue;
+        if (a.face && a.face.icon) {
+          next[a.name] = { icon: `/agents/${encodeURIComponent(a.name)}/face` };
+        } else if (a.face && a.face.emoji) {
+          next[a.name] = { emoji: String(a.face.emoji) };
+        }
+      }
+      agentFaces = next;
+    } catch (e) {
+      agentFaces = {};
+    }
+  }
+
+  async function iconURL(path) {
+    try {
+      const blob = await api.blob(path);
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      return '';   // no icon on disk (yet): the letter stays
+    }
+  }
+
+  function paintFaces(runs, key) {
+    facesEl.textContent = '';
+    facesEl.hidden = !runs.length;
+    if (!runs.length) return;
+    loadAgentFaces().then(() => {
+      if (key !== facesKey) return;   // another task started or finished while loading: repaint, don't mix
+      for (const r of runs) {
+        const el = document.createElement('div');
+        el.className = 'face';
+        el.setAttribute('role', 'button');
+        el.setAttribute('aria-label', `Agent ${r.pack}, task ${r.task_id}: open its timeline`);
+        el.title = `${r.pack} · task ${r.task_id}: click for its timeline, right-click to stop`;
+        const face = agentFaces[r.pack];
+        if (face && face.emoji) el.textContent = face.emoji;   // server text, never HTML
+        else el.textContent = String(r.pack).slice(0, 1).toUpperCase() || '?';
+        if (face && face.icon) {
+          iconURL(face.icon).then((url) => {
+            if (!url || key !== facesKey || !el.isConnected) return;
+            el.textContent = '';
+            const img = document.createElement('img');
+            img.alt = '';
+            img.src = url;
+            el.appendChild(img);
+          });
+        }
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.setAttribute('aria-hidden', 'true');
+        el.appendChild(dot);
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (window.lantern.showTask) window.lantern.showTask(r.task_id);
+          else window.lantern.showPanel();
+        });
+        el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); window.lantern.stop(); });
+        el.addEventListener('mouseenter', () => window.lantern.hover(true));
+        el.addEventListener('mouseleave', () => window.lantern.hover(false));
+        facesEl.appendChild(el);
+      }
+    });
+  }
+
+  function renderFaces() {
+    const runs = state.agents || [];
+    const key = runs.map((r) => `${r.task_id}:${r.pack}`).join(',');
+    if (key === facesKey) return;
+    facesKey = key;
+    paintFaces(runs, key);
+  }
+
   function render() {
     const t = now();
     const a = LanternActivity.activity(state, t);
     setSprite(LanternExpression.pick(state, t), a.mode);
+    renderFaces();   // repaints only when the running-agents set changes
     current = a;
     island.hidden = a.mode === 'idle';
     if (island.hidden) return;
@@ -125,8 +208,8 @@
   setInterval(() => loadSkin().then(render), 30000);   // the panel saves the skin; pick it up shortly after
   loadSkin().then(() => loadPortraits()).then(render);
 
-  // Click-through everywhere except the face and the island.
-  for (const el of [spriteEl, island]) {
+  // Click-through everywhere except the face, the agent faces and the island.
+  for (const el of [spriteEl, facesEl, island]) {
     el.addEventListener('mouseenter', () => { window.lantern.hover(true); if (el === island) { hovering = true; render(); } });
     el.addEventListener('mouseleave', () => { window.lantern.hover(false); if (el === island) { hovering = false; render(); } });
     el.addEventListener('contextmenu', (e) => { e.preventDefault(); window.lantern.avatarMenu(); });

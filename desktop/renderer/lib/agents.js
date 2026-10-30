@@ -107,5 +107,22 @@
     };
   }
 
-  return { FORMAT, MAX_VALUE, cardView, runPayload, parsePackFile, packFileName, packFileText, draftFields, packFromFields };
+  /** The server's face descriptor ({emoji} | {icon} | null) -> what the card shows. Pure. */
+  function faceView(pack) {
+    const f = (pack && pack.face) || null;
+    if (f && typeof f.emoji === 'string' && f.emoji) return { kind: 'emoji', emoji: f.emoji };
+    if (f && f.icon) return { kind: 'icon' };
+    return { kind: 'none' };
+  }
+
+  /** An emoji typed for "Make a face" -> {ok, emoji} or {ok:false, error}. */
+  function parseEmoji(text) {
+    const emoji = String(text == null ? '' : text).trim();
+    if (!emoji) return { ok: false, error: 'Type an emoji first, or ask Lantern to draw one.' };
+    if ([...emoji].length > 8) return { ok: false, error: 'One short emoji is enough for a face.' };
+    return { ok: true, emoji };
+  }
+
+  return { FORMAT, MAX_VALUE, cardView, runPayload, parsePackFile, packFileName, packFileText,
+           draftFields, packFromFields, faceView, parseEmoji };
 });
