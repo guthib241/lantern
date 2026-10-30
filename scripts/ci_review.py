@@ -54,7 +54,7 @@ SCHEMA = {
 
 
 def git(*args: str) -> str:
-    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, check=True).stdout
+    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=True).stdout
 
 
 def resolve_base(base: str, head: str) -> str:
