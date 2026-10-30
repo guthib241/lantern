@@ -100,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     client = None
     if a.spark:
+        from lantern.config import load_env
+        load_env()   # the repo's .env (gitignored), like Lantern itself
         if not os.environ.get("MODEL_API_KEY"):
             raise SystemExit("--spark needs MODEL_API_KEY")
         from openai import OpenAI
