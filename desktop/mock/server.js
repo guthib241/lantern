@@ -25,6 +25,20 @@ function createMock() {
   let nextTask = 1;
   const reminders = [];   // {id, text, due_at, due, repeat, status}
   let nextReminder = 1;
+  const agents = new Map([   // name -> {pack, disabled}: two samples shaped like agents/*.lantern-agent.json
+    ['tidy-downloads', { disabled: false, pack: {
+      format: 'lantern-agent/1', name: 'tidy-downloads', title: 'Tidy Downloads',
+      description: 'Sorts a messy folder into subfolders, one approval for the whole plan.',
+      author: 'lantern', version: '1.0.0',
+      inputs: [{ key: 'folder', question: 'Which folder to tidy?', example: 'Downloads' }],
+      goal: 'Tidy {folder} into subfolders by type.', instructions: 'List the folder, then organize it.',
+      tools: ['list_folders', 'list_dir', 'search_files', 'organize_files', 'move_file'] } }],
+    ['hello-agent', { disabled: false, pack: {
+      format: 'lantern-agent/1', name: 'hello-agent', title: 'Hello agent',
+      description: 'A tiny sample agent for the panel.', author: 'lantern', version: '1.0.0',
+      inputs: [], goal: 'Say hello.', instructions: 'Reply with one friendly line.',
+      tools: ['search_files'] } }],
+  ]);
   const settings = { persona: 'smug' };
 
   const now = () => Date.now() / 1000;
@@ -266,6 +280,45 @@ function createMock() {
         r.status = 'cancelled';
         emit({ type: 'reminders', changed: 'cancelled', id: r.id });
         return send(200, { cancelled: r.id });
+      }
+      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export))?)?$/);
+      if (g && req.headers['x-lantern-token'] === TOKEN) {
+        // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
+        if (req.method === 'GET' && !g[1]) {
+          return send(200, { agents: [...agents.values()].map((a) => ({ ...a.pack, disabled: a.disabled })) });
+        }
+        if (req.method === 'POST' && url.pathname === '/agents/install') {
+          let data = {};
+          try { data = body ? JSON.parse(body) : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          if (!data || typeof data.name !== 'string' || !data.name) return send(400, { detail: 'not an agent pack' });
+          const old = agents.get(data.name);
+          const replace = url.searchParams.get('replace') === 'true';
+          if (old && old.pack.author !== data.author && !replace) {
+            return send(200, { installed: false, reason: `an agent called '${data.name}' is already installed (pass replace=true)`, name: data.name });
+          }
+          agents.set(data.name, { disabled: false, pack: data });
+          return send(200, { installed: true, verified: true, name: data.name });
+        }
+        if (req.method === 'POST' && url.pathname === '/agents/draft') {
+          const sample = agents.get('tidy-downloads').pack;
+          return send(200, { ...sample, author: '', version: '1.0.0' });
+        }
+        const item = g[1] && agents.get(g[1]);
+        if (!item) return send(404, { detail: `no agent called '${g[1] || ''}'` });
+        if (req.method === 'GET' && !g[2]) return send(200, { ...item.pack, disabled: item.disabled });
+        if (req.method === 'GET' && g[2] === 'export') return send(200, item.pack);
+        if (req.method === 'POST' && g[2] === 'run') {
+          if (item.disabled) return send(400, { detail: `agent '${g[1]}' is disabled` });
+          let inputs = {};
+          try { inputs = body ? JSON.parse(body).inputs || {} : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          const goal = `[agent:${g[1]}] ` + item.pack.goal.replace(/\{(\w+)\}/g, (_, k) => inputs[k] || `{${k}}`);
+          return send(200, { task_id: submit(goal) });
+        }
+        if (req.method === 'POST' && (g[2] === 'disable' || g[2] === 'enable')) {
+          item.disabled = g[2] === 'disable';
+          return send(200, { name: g[1], disabled: item.disabled });
+        }
+        return send(404, { detail: 'not found' });
       }
       const m = url.pathname.match(/^\/approvals\/([\w-]+)$/);
       const key = m ? `${req.method} /approvals/:id` : `${req.method} ${url.pathname}`;

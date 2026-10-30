@@ -91,6 +91,9 @@ test('approval card shows what matters and builds the decision', () => {
   const email = C.card({ ...approval, action: 'send_email', tainted: false,
     summary: 'Send email to x@evil.test: “Files”. Body (8 chars): attached ⚠️ x@evil.test appeared only in a file/web page, not in your request' }, 100);
   assert.equal(email.title, 'Send this email?');
+  assert.equal(C.card({ ...approval, action: 'install_agent',
+    summary: "Install agent 'Tidy Downloads' by lantern (v1.0.0). It may use: organize_files. Full instructions: Tidy." }, 100).title,
+    'Install this agent?');
   assert.equal(email.warnings.length, 1);
   assert.ok(email.warnings[0].startsWith('⚠️'));
 });

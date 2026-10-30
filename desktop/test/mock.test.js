@@ -69,3 +69,23 @@ test('mock reminders: set, listed, cancel', async (t) => {
   assert.equal((await api.get('/reminders')).length, 0);
   await assert.rejects(api.post(`/reminders/${list[0].id}/cancel`), /pending/);
 });
+
+test('mock agents: list, run, disable, export, draft', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  const list = await api.get('/agents');
+  assert.ok(list.agents.some((a) => a.name === 'tidy-downloads'));
+  const one = await api.get('/agents/tidy-downloads');
+  assert.equal(one.title, 'Tidy Downloads');
+  const { task_id } = await api.post('/agents/tidy-downloads/run', { inputs: { folder: 'Downloads' } });
+  assert.equal(typeof task_id, 'number');
+  assert.deepEqual(await api.post('/agents/hello-agent/disable'), { name: 'hello-agent', disabled: true });
+  await assert.rejects(api.post('/agents/hello-agent/run', { inputs: {} }), /disabled/);
+  assert.deepEqual(await api.post('/agents/hello-agent/enable'), { name: 'hello-agent', disabled: false });
+  const exported = await api.raw('/agents/tidy-downloads/export');
+  assert.equal(JSON.parse(exported).name, 'tidy-downloads');
+  const draft = await api.post('/agents/draft', { task_id });
+  assert.equal(draft.name, 'tidy-downloads');
+  await assert.rejects(api.get('/agents/no-such-agent'), /no agent/);
+});

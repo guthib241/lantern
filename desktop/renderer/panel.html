@@ -23,6 +23,7 @@
       <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></symbol>
       <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></symbol>
       <symbol id="i-lantern" viewBox="0 0 24 24"><path d="M9.8 4.7a2.2 2.2 0 0 1 4.4 0"/><path d="M8.2 6.6h7.6M9.2 20.4h5.6"/><rect x="6.8" y="6.6" width="10.4" height="13.8" rx="4.4"/><path d="M12 10.2c1.4 1.4 1.9 2.5 1.9 3.5a1.9 1.9 0 0 1-3.8 0c0-1 .5-2.1 1.9-3.5z"/></symbol>
+      <symbol id="i-agents" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12.2h6M12 9.2v6"/></symbol>
     </defs>
   </svg>
 
@@ -122,6 +123,21 @@
       <iframe id="widget-host" class="widget-host" sandbox="allow-scripts" src="widget-host.html" title="Widget"></iframe>
     </section>
 
+    <section data-panel="agents" aria-label="Agents">
+      <div class="large-title"><p class="eyebrow">Shareable agents</p><h1>Agents</h1></div>
+      <div class="group">
+        <div class="row drop" id="agent-drop">
+          <span class="row-icon purple"><svg class="ico"><use href="#i-agents"/></svg></span>
+          <div class="row-text"><b>Add an agent</b><small>Pick a .lantern-agent.json file, or drop it here</small></div>
+          <button class="tinted" id="agent-add" type="button">Add…</button>
+        </div>
+      </div>
+      <input type="file" id="agent-file" accept=".lantern-agent.json,application/json" hidden>
+      <div id="agent-draft"></div>
+      <div id="agent-list" class="tasks"></div>
+      <p class="footnote" id="agent-hint">A pack is data, never code: it fills in a goal, lists its tools, and asks before anything changes.</p>
+    </section>
+
     <section data-panel="setup" aria-label="Setup">
       <div class="large-title"><p class="eyebrow">This computer</p><h1>Setup</h1></div>
       <h2 class="section">Personality</h2>
@@ -155,6 +171,7 @@
     <button role="tab" data-tab="phone"><svg class="ico"><use href="#i-phone"/></svg><span>Phone</span></button>
     <button role="tab" data-tab="costs"><svg class="ico"><use href="#i-costs"/></svg><span>Costs</span></button>
     <button role="tab" data-tab="widgets"><svg class="ico"><use href="#i-widgets"/></svg><span>Widgets</span></button>
+    <button role="tab" data-tab="agents"><svg class="ico"><use href="#i-agents"/></svg><span>Agents</span></button>
     <button role="tab" data-tab="setup"><svg class="ico"><use href="#i-setup"/></svg><span>Setup</span></button>
   </nav>
 
@@ -198,6 +215,7 @@
   <script src="lib/setup.js"></script>
   <script src="lib/today.js"></script>
   <script src="lib/receipt.js"></script>
+  <script src="lib/agents.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

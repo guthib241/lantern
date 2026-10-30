@@ -3,7 +3,7 @@
 // the sprite, and a panel (chat, approvals, privacy, phone, costs, widgets). Renderers are
 // sandboxed with context isolation; they talk to the local Lantern server on 127.0.0.1 with
 // the per-install token from ~/.lantern/token. Ctrl/Cmd+Shift+X is the global STOP.
-const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, dialog, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -175,6 +175,22 @@ function lockDown() {
 
 ipcMain.handle('config', () => config);
 ipcMain.handle('stop', () => stopEverything());
+// Agent packs: installing picks a .lantern-agent.json file; sharing saves the exact bytes.
+ipcMain.handle('agent:open', async () => {
+  const r = await dialog.showOpenDialog(panel, {
+    title: 'Add an agent', filters: [{ name: 'Lantern agent (.lantern-agent.json)', extensions: ['json'] }],
+    properties: ['openFile'],
+  });
+  if (r.canceled || !r.filePaths.length) return { cancelled: true };
+  return { cancelled: false, path: r.filePaths[0], text: fs.readFileSync(r.filePaths[0], 'utf8') };
+});
+ipcMain.handle('agent:save', async (_e, { name, text }) => {
+  const r = await dialog.showSaveDialog(panel, { title: 'Share this agent', defaultPath: String(name || 'agent.lantern-agent.json') });
+  if (r.canceled || !r.filePath) return { cancelled: true };
+  fs.writeFileSync(r.filePath, String(text == null ? '' : text), 'utf8');   // verify: read it back
+  if (fs.readFileSync(r.filePath, 'utf8') !== String(text == null ? '' : text)) throw new Error('the file did not save correctly');
+  return { cancelled: false, path: r.filePath };
+});
 ipcMain.handle('camera:allow-once', () => { cameraUntil = Date.now() + 5000; return true; });
 ipcMain.on('avatar:hover', (_e, over) => {
   if (avatar) avatar.setIgnoreMouseEvents(!over, { forward: true });

@@ -1,0 +1,111 @@
+/* Agent packs in the desktop panel: cards, the run form, drafts. Pure: no DOM, no fetch.
+ * Panel.js calls api.* and renders; this module only shapes data, so node --test covers it. */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.LanternAgents = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  const FORMAT = 'lantern-agent/1';
+  const MAX_VALUE = 500;   // run-time values are plain text, like lantern/agentpacks.py
+
+  /** What a card shows: title, who made it, what it may use, whether it can run. */
+  function cardView(pack) {
+    const p = pack || {};
+    const tools = Array.isArray(p.tools) ? p.tools.filter((t) => typeof t === 'string') : [];
+    const inputs = Array.isArray(p.inputs) ? p.inputs : [];
+    const sub = [p.author, p.version ? `v${p.version}` : ''].filter(Boolean).join(' · ');
+    return {
+      name: String(p.name || ''),
+      title: String(p.title || p.name || 'Untitled agent'),
+      description: String(p.description || ''),
+      author: String(p.author || ''),
+      version: String(p.version || ''),
+      sub,
+      tools,
+      inputs,
+      disabled: !!p.disabled,
+      runnable: !p.disabled && !!p.name,
+    };
+  }
+
+  /** Values from the run form -> {ok, inputs} or {ok:false, error}. Every declared
+   *  input is needed: the server renders each {blank} of the goal from one. */
+  function runPayload(pack, values) {
+    const inputs = (pack && pack.inputs) || [];
+    const given = values || {};
+    const out = {};
+    for (const input of inputs) {
+      const text = String(given[input.key] == null ? '' : given[input.key]).trim();
+      if (!text) return { ok: false, error: `“${input.question || input.key}” needs an answer.` };
+      if (text.length > MAX_VALUE) return { ok: false, error: `“${input.key}” is too long (at most ${MAX_VALUE} characters).` };
+      out[input.key] = text;
+    }
+    return { ok: true, inputs: out };
+  }
+
+  /** A dropped or picked file -> {ok, data} or {ok:false, error}. The server validates
+   *  the pack itself; this only checks it parses as a JSON object. */
+  function parsePackFile(text) {
+    let data;
+    try {
+      data = JSON.parse(String(text == null ? '' : text));
+    } catch {
+      return { ok: false, error: 'That file is not JSON.' };
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return { ok: false, error: 'That file is not an agent pack (it should be one JSON object).' };
+    }
+    return { ok: true, data };
+  }
+
+  /** The exact bytes to share: the pack file, for the save dialog. */
+  function packFileName(pack) {
+    const name = String((pack && pack.name) || 'agent').trim() || 'agent';
+    return `${name}.lantern-agent.json`;
+  }
+
+  function packFileText(pack) {
+    return `${JSON.stringify(pack, null, 2)}\n`;
+  }
+
+  /** A server draft -> editable form fields (all text; tools one per line). */
+  function draftFields(draft) {
+    const d = draft || {};
+    const inputs = Array.isArray(d.inputs) ? d.inputs : [];
+    return {
+      name: String(d.name || ''),
+      title: String(d.title || ''),
+      description: String(d.description || ''),
+      author: String(d.author || ''),
+      version: String(d.version || '1.0.0'),
+      goal: String(d.goal || ''),
+      instructions: String(d.instructions || ''),
+      tools: (Array.isArray(d.tools) ? d.tools : []).join('\n'),
+      inputs: inputs.map((i) => ({ key: i.key || '', question: i.question || '', example: i.example || '' })),
+    };
+  }
+
+  /** Edited draft fields -> the pack JSON to POST to /agents/install. */
+  function packFromFields(fields) {
+    const f = fields || {};
+    const tools = String(f.tools || '').split(/[\n,]+/).map((t) => t.trim()).filter(Boolean);
+    return {
+      format: FORMAT,
+      name: String(f.name || '').trim(),
+      title: String(f.title || '').trim(),
+      description: String(f.description || '').trim(),
+      author: String(f.author || '').trim(),
+      version: String(f.version || '').trim() || '1.0.0',
+      inputs: (Array.isArray(f.inputs) ? f.inputs : [])
+        .filter((i) => i && (i.key || i.question))
+        .map((i) => ({ key: String(i.key || '').trim(), question: String(i.question || '').trim(),
+                       example: String(i.example || '').trim() }))
+        .filter((i) => i.key && i.question),
+      goal: String(f.goal || '').trim(),
+      instructions: String(f.instructions || '').trim(),
+      tools,
+    };
+  }
+
+  return { FORMAT, MAX_VALUE, cardView, runPayload, parsePackFile, packFileName, packFileText, draftFields, packFromFields };
+});

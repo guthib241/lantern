@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('lantern', {
   togglePanel: () => ipcRenderer.send('panel:toggle'),
   showPanel: () => ipcRenderer.send('panel:show'),
   avatarMenu: () => ipcRenderer.send('avatar:menu'),
+  openAgentFile: () => ipcRenderer.invoke('agent:open'),   // pick a .lantern-agent.json file to install
+  saveAgentFile: ({ name, text }) => ipcRenderer.invoke('agent:save', { name, text }),   // share a pack as a file
   allowCameraOnce: () => ipcRenderer.invoke('camera:allow-once'),   // one check-in snapshot, after a click
   hideQuick: () => ipcRenderer.send('quick:hide'),
   onQuickShown: (fn) => ipcRenderer.on('quick:shown', () => fn()),

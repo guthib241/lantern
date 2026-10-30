@@ -33,6 +33,20 @@
     get(path) { return this.request('GET', path); }
     post(path, body) { return this.request('POST', path, body === undefined ? {} : body); }
 
+    async raw(path) {
+      const headers = { 'X-Lantern-Token': this.token };
+      const r = await this.fetch(this.base + path, { method: 'GET', headers });
+      const text = await r.text();
+      if (!r.ok) {
+        let detail = text;
+        try { detail = JSON.parse(text).detail || text; } catch { /* keep the raw text */ }
+        const err = new Error(detail);
+        err.status = r.status;
+        throw err;
+      }
+      return text;
+    }
+
     events(onEvent, onState) {
       let delay = 500;
       const open = () => {

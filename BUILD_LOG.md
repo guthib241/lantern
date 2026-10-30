@@ -303,3 +303,6 @@ Real FreeCAD 1.1.0: all FreeCAD tests and all 3 demo tasks pass, with Muse Spark
 
 ## Oct 30, 2026: T3a agent packs (back end)
 Shareable agents as data-only JSON (`lantern/agentpacks.py`: validation, `PackStore` in `~/.lantern/agents/`, tool-allowlist matching, drafting via Muse Spark structured output in the FreeCAD connector's shape). Install needs an approval bound to the file's SHA-256; runs render `{blanks}` into `[agent:<name>]` goals, append instructions after "Now:" (prefix byte-stable), enforce the allowlist in `Toolbox.call`, and start tainted. `Core.submit(pack=, inputs=)`, `pack_install`, `pack_draft`, and the `/agents` server routes; example packs `agents/cad-enclosure` and `agents/tidy-downloads` (send-to-phone skipped: T2 isn't merged). 30 new tests in `tests/test_agentpacks.py`. Docs: `docs/AGENT_PACKS.md`.
+
+## Oct 30, 2026: T3b desktop Agents tab
+Agents tab in the desktop panel (`desktop/renderer/panel.*` + new `lib/agents.js`): cards with tools and Run/Share/Disable, a per-input run form that hands off to the Today timeline with Watch/Stop, Add via file picker or drop (install approval card as usual), Share through Electron's save dialog (exact export bytes), and Make-an-agent drafts from finished tasks. Mock server speaks the /agents routes. 5 new panel tests; `npm test` 32/32.

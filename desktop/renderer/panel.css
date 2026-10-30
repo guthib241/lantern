@@ -199,6 +199,24 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 8
 .interrupted { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px; margin-top: 12px; font-size: 13.5px; }
 .interrupted ul { margin: 6px 0 8px; padding-left: 18px; color: var(--label-2); }
 
+/* ---- agents ---- */
+.agent .goal .chip { margin-left: 8px; vertical-align: 1px; }
+.agent-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.agent-form { display: grid; gap: 10px; margin-top: 12px; }
+.agent-form label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; color: var(--label-2); }
+.agent-form input, .agent-form textarea { width: 100%; box-sizing: border-box; border: 0; border-radius: 9px;
+  background: var(--fill); padding: 9px 11px; font-size: 14px; font-weight: 400; color: var(--label); }
+.agent-form textarea { resize: vertical; }
+.agent-run { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px;
+  font-size: 13.5px; font-weight: 600; }
+.agent .row-btns { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; margin-top: 4px; }
+.agent-run .row-btns { margin-top: 0; }
+.stop-big { border: 0; border-radius: 12px; min-height: 46px; padding: 10px 26px; font-weight: 700; font-size: 16px;
+  color: #fff; background: var(--red-fill); }
+.stop-big:hover { filter: brightness(1.06); }
+.stop-big:active { transform: scale(.98); }
+.row.drop.over { background: var(--fill); border-radius: var(--radius); outline: 2px dashed var(--tint); }
+
 /* ---- reminders ---- */
 .reminder .when { flex: none; font-weight: 600; font-size: 13px; color: var(--orange-text); font-variant-numeric: tabular-nums; }
 .reminder .what { flex: 1; min-width: 0; word-break: break-word; }

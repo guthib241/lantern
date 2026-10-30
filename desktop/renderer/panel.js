@@ -55,7 +55,7 @@
 
   // ---- tabs ---------------------------------------------------------------------------------
   const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets,
-                    setup: () => { loadSettings(); loadDoctor(); } };
+                    agents: loadAgents, setup: () => { loadSettings(); loadDoctor(); } };
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
   function showTab(name) {
@@ -66,7 +66,7 @@
     if (loaders[name]) loaders[name]();
   }
   for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab));
-  // Ctrl/Cmd+1…6 switch sections, like any native app with a tab bar.
+  // Ctrl/Cmd+1…7 switch sections, like any native app with a tab bar.
   window.addEventListener('keydown', (e) => {
     const n = Number(e.key);
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && n >= 1 && n <= tabButtons.length) {
@@ -147,6 +147,8 @@
           t.undoneBy ? h('span', { class: 'undone' }, `Undone in #${t.undoneBy}`) : null,
           ['failed', 'cancelled', 'interrupted'].includes(t.status)
             ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
+          ['done', 'failed'].includes(t.status)
+            ? h('button', { class: 'forget', onclick: () => draftFromTask(t.id), title: 'Turn this finished task into a shareable agent' }, 'Make an agent') : null,
           !live ? h('button', { class: 'forget', onclick: () => showReceipt(t.id) }, 'Receipt') : null,
           !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)));
     });
@@ -161,7 +163,7 @@
     $('kbd-ask').textContent = keyName(cfg.askHotkey);
     $('welcome-ask').textContent = keyName(cfg.askHotkey);
     $('kbd-stop').textContent = keyName('CommandOrControl+Shift+X');
-    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – 6';
+    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – ' + tabButtons.length;
   }
   function seen() {
     try { return window.localStorage.getItem('lantern.welcomed') === '1'; } catch (e) { return false; }
@@ -521,6 +523,242 @@
     }
   });
 
+  // ---- agents (shareable packs; routes are lantern/server.py's /agents) ------------------------------------
+  let agentPacks = [];
+  let agentRunTask = {};    // pack name -> task id of its latest run, for the Watch/Stop line
+  let agentRunOpen = null;  // pack name with its run form open
+  let agentDraft = null;    // {fields, from} a draft being edited, or null
+  let draftRefs = {};       // field name -> input element in the draft editor
+
+  async function loadAgents() {
+    const list = $('agent-list');
+    try {
+      agentPacks = (await api.get('/agents')).agents || [];
+    } catch (e) {
+      list.textContent = '';
+      list.append(h('p', { class: 'empty' }, `Can't reach Lantern (${e.message})`));
+      return;
+    }
+    renderAgents();
+    renderAgentDraft();
+  }
+
+  function agentTaskStatus(name) {
+    const id = agentRunTask[name];
+    const t = id != null && state.tasks[id];
+    return t ? { id, status: t.status, live: t.status === 'running' || t.status === 'queued' } : null;
+  }
+
+  function renderAgents() {
+    const list = $('agent-list');
+    list.textContent = '';
+    if (!agentPacks.length) {
+      list.append(h('p', { class: 'empty' }, 'No agents yet. Add a .lantern-agent.json file above to get started.'));
+    }
+    for (const pack of agentPacks) list.append(agentCard(pack));
+  }
+
+  function agentCard(pack) {
+    const c = LanternAgents.cardView(pack);
+    const run = agentTaskStatus(c.name);
+    const refs = {};
+    const form = agentRunOpen === c.name && c.runnable
+      ? h('div', { class: 'agent-form' },
+        c.inputs.map((i) => {
+          const el = h('input', { value: '', placeholder: i.example || '', 'aria-label': i.question || i.key });
+          refs[i.key] = el;
+          return h('label', {}, i.question || i.key, el);
+        }),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'tinted', onclick: () => startAgentRun(pack, refs) }, 'Start')))
+      : null;
+    return h('article', { class: 'task agent' },
+      h('div', { class: 'head' },
+        h('div', {},
+          h('div', { class: 'goal' }, c.title, c.disabled ? h('span', { class: 'chip' }, 'off') : null),
+          c.sub ? h('div', { class: 'status' }, c.sub) : null)),
+      c.description ? h('p', { class: 'reply' }, c.description) : null,
+      c.tools.length ? h('div', { class: 'agent-tools' }, c.tools.map((t) => h('span', { class: 'chip' }, t))) : null,
+      run ? h('div', { class: 'agent-run' },
+        h('span', {}, run.live ? `Running as task #${run.id}` : `Last run: #${run.id} · ${run.status}`),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'tinted', onclick: () => showTab('tasks') }, 'Watch'),
+          run.live ? h('button', { class: 'stop-big', onclick: stopEverything }, 'Stop') : null)) : null,
+      form,
+      h('div', { class: 'actions' },
+        c.runnable && agentRunOpen !== c.name
+          ? h('button', { class: 'forget', onclick: () => { agentRunOpen = c.name; renderAgents(); } }, 'Run') : null,
+        h('button', { class: 'forget', onclick: () => shareAgent(pack) }, 'Share'),
+        c.disabled
+          ? h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, true) }, 'Enable')
+          : h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, false) }, 'Disable')));
+  }
+
+  async function startAgentRun(pack, refs) {
+    const values = {};
+    for (const i of pack.inputs || []) values[i.key] = refs[i.key] ? refs[i.key].value : '';
+    const payload = LanternAgents.runPayload(pack, values);
+    if (!payload.ok) {
+      toast(payload.error);
+      return;
+    }
+    try {
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/run`, { inputs: payload.inputs });
+      agentRunTask[pack.name] = r.task_id;
+      agentRunOpen = null;
+      renderAgents();
+      showTab('tasks');   // the live timeline is the Today task view; Stop is in the header
+    } catch (e) {
+      toast(`Couldn't start it: ${e.message}`);
+    }
+  }
+
+  async function setAgentEnabled(pack, on) {
+    try {
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/${on ? 'enable' : 'disable'}`);
+      loadAgents();
+    } catch (e) {
+      toast(`Couldn't change it: ${e.message}`);
+    }
+  }
+
+  async function shareAgent(pack) {
+    if (!window.lantern.saveAgentFile) {
+      toast('Sharing needs the newest Lantern app.');
+      return;
+    }
+    try {
+      const text = await api.raw(`/agents/${encodeURIComponent(pack.name)}/export`);   // the exact file bytes
+      const r = await window.lantern.saveAgentFile({ name: LanternAgents.packFileName(pack), text });
+      if (r && !r.cancelled) toast(`Saved ${r.path || 'the agent file'}.`);
+    } catch (e) {
+      toast(`Couldn't share it: ${e.message}`);
+    }
+  }
+
+  // ---- install: the Add… button, or a file dropped on the row -----------------------------------
+  // Returns true when the pack was installed (so the draft editor can clear itself).
+  async function installPackText(text, replace) {
+    const parsed = LanternAgents.parsePackFile(text);
+    if (!parsed.ok) {
+      toast(parsed.error);
+      return false;
+    }
+    try {
+      const r = await api.post(`/agents/install${replace ? '?replace=true' : ''}`, parsed.data);
+      if (r.installed) {
+        toast(`Agent “${r.name}” installed.`);
+        loadAgents();
+        return true;
+      }
+      if (!replace && /already installed|take its place/i.test(r.reason || '')) {
+        if (window.confirm(`${r.reason} Install anyway, replacing it?`)) return installPackText(text, true);
+        return false;
+      }
+      toast(`Couldn't install it: ${r.reason || 'the server refused it'}`);
+      return false;
+    } catch (e) {
+      toast(`Couldn't install it: ${e.message}`);   // a bad pack explains itself here
+      return false;
+    }
+  }
+
+  async function pickAgentFile() {
+    if (window.lantern.openAgentFile) {
+      const r = await window.lantern.openAgentFile();
+      if (r && !r.cancelled) installPackText(r.text || '');
+      return;
+    }
+    $('agent-file').click();   // older app: the hidden file input
+  }
+
+  $('agent-add').addEventListener('click', pickAgentFile);
+  $('agent-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) f.text().then((t) => installPackText(t));
+  });
+  for (const ev of ['dragenter', 'dragover']) {
+    $('agent-drop').addEventListener(ev, (e) => { e.preventDefault(); $('agent-drop').classList.add('over'); });
+  }
+  for (const ev of ['dragleave', 'drop']) {
+    $('agent-drop').addEventListener(ev, (e) => { e.preventDefault(); $('agent-drop').classList.remove('over'); });
+  }
+  $('agent-drop').addEventListener('drop', (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) f.text().then((t) => installPackText(t));
+  });
+
+  // ---- draft: turn a finished task into a new agent ----------------------------------------------
+  async function draftFromTask(id) {
+    let draft;
+    try {
+      draft = await api.post('/agents/draft', { task_id: id });
+    } catch (e) {
+      toast(`Couldn't draft it: ${e.message}`);
+      return;
+    }
+    agentDraft = { fields: LanternAgents.draftFields(draft), from: id };
+    agentRunOpen = null;
+    showTab('agents');
+    renderAgents();
+    renderAgentDraft();
+    window.scrollTo({ top: 0 });
+  }
+
+  function draftField(label, key, rows) {
+    const el = rows ? h('textarea', { rows }, draftRefs[key] || agentDraft.fields[key] || '')
+                    : h('input', { value: agentDraft.fields[key] || '' });
+    draftRefs[key] = el;
+    return h('label', {}, label, el);
+  }
+
+  function renderAgentDraft() {
+    const box = $('agent-draft');
+    box.textContent = '';
+    draftRefs = {};
+    if (!agentDraft) return;
+    const inputs = agentDraft.fields.inputs || [];
+    box.append(h('article', { class: 'task agent draft-form' },
+      h('div', { class: 'head' }, h('div', {},
+        h('div', { class: 'goal' }, 'New agent'),
+        h('div', { class: 'status' }, `Drafted from task #${agentDraft.from} · edit it, then install`))),
+      h('div', { class: 'agent-form' },
+        draftField('Name (lowercase, dashes)', 'name'),
+        draftField('Title', 'title'),
+        draftField('What it does', 'description'),
+        draftField('Author', 'author'),
+        draftField('Version', 'version'),
+        draftField('Goal (use {blanks} for the fill-ins)', 'goal', 3),
+        draftField('Instructions', 'instructions', 4),
+        draftField('Tools (one per line)', 'tools', 3)),
+      inputs.length ? h('div', { class: 'agent-tools' },
+        inputs.map((i) => h('span', { class: 'chip' }, `{${i.key}} ${i.question}`))) : null,
+      h('p', { class: 'hint' }, 'Installing asks first, bound to the exact file. The draft never picks a model.'),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'tinted', onclick: saveAgentDraft }, 'Review & install'),
+        h('button', { class: 'forget', onclick: () => { agentDraft = null; renderAgentDraft(); } }, 'Discard'))));
+  }
+
+  async function saveAgentDraft() {
+    if (!agentDraft) return;
+    for (const key of ['name', 'title', 'description', 'author', 'version', 'goal', 'instructions', 'tools']) {
+      agentDraft.fields[key] = draftRefs[key] ? draftRefs[key].value : '';
+    }
+    const data = LanternAgents.packFromFields({ ...agentDraft.fields, inputs: agentDraft.fields.inputs });
+    const replace = agentPacks.some((p) => p.name === data.name);
+    if (replace && !window.confirm(`An agent called “${data.name}” is already installed. Replace it?`)) return;
+    if (await installPackText(JSON.stringify(data), replace || undefined)) {
+      agentDraft = null;
+      renderAgentDraft();
+    }
+  }
+
+  async function stopEverything() {
+    const r = await window.lantern.stop();
+    toast(r && r.stopped ? `Stopped. ${r.denied_approvals || 0} approval(s) denied.` : 'Could not reach Lantern to stop it.');
+  }
+
   // ---- live events -------------------------------------------------------------------------------------------
   function renderAll() {
     renderApprovals();
@@ -530,6 +768,11 @@
   api.events((e) => {
     state = LanternState.reduce(state, { ts: now(), ...e });
     renderAll();
+    // A tracked agent run finished or stopped: refresh its Watch/Stop line, unless the
+    // user is mid-form (re-rendering would wipe what they typed).
+    if ((e.type === 'done' || e.type === 'stopped') && tab === 'agents' && !agentRunOpen && !agentDraft) {
+      renderAgents();
+    }
     if (e.type === 'approval' && e.event === 'requested') window.lantern.showPanel();
     if (e.type === 'done' && tab === 'privacy') loadPrivacy();
     if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);

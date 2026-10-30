@@ -34,3 +34,12 @@ up a surprise bill.
   field, an unknown tool, a `{blank}` with no matching input, an oversized
   file, or anything that looks like a secret — all refused.
 - **No deletes.** Disabling an agent flips a flag in its file; the file stays.
+
+## In the desktop panel
+
+The **Agents** tab lists installed packs with their tools. **Run** asks one
+question per input, then starts an ordinary task you watch on the Today tab
+(**Stop** there stops it too). **Add…** installs a `.lantern-agent.json` file
+(approved on the card first); **Share** saves the exact file to send someone.
+On a finished task, **Make an agent** drafts a new pack from what it did —
+you edit the blanks and install it like any other pack.
