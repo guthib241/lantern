@@ -47,13 +47,14 @@ class Config:
     media_dir: str = str(HOME / "media")
     envmap_path: str = str(HOME / "envmap.db")
     widgets_dir: str = str(HOME / "widgets")
+    agents_dir: str = str(HOME / "agents")
     mcp_config: str = str(HOME / "mcp.json")
     encrypt: bool = True                  # memory + audit log encrypted at rest (key in the OS keychain)
     timeout: float = 120.0                # seconds per model call (LANTERN_TIMEOUT)
 
 
 PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
-               "envmap_path", "widgets_dir", "mcp_config")
+               "envmap_path", "widgets_dir", "agents_dir", "mcp_config")
 
 
 SETTABLE = ("persona",)   # what the desktop's Preferences may change

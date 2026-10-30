@@ -1,0 +1,29 @@
+{
+  "author": "lantern",
+  "description": "Sorts a messy folder into subfolders, one approval for the whole plan.",
+  "format": "lantern-agent/1",
+  "goal": "Tidy {folder} into subfolders by {grouping}.",
+  "inputs": [
+    {
+      "example": "Downloads",
+      "key": "folder",
+      "question": "Which folder to tidy?"
+    },
+    {
+      "example": "file type",
+      "key": "grouping",
+      "question": "Group files by what?"
+    }
+  ],
+  "instructions": "List the folder, search for the files in it, then call organize_files once with the whole plan. Each move goes into a subfolder of the tidied folder.",
+  "name": "tidy-downloads",
+  "title": "Tidy Downloads",
+  "tools": [
+    "list_folders",
+    "list_dir",
+    "search_files",
+    "organize_files",
+    "move_file"
+  ],
+  "version": "1.0.0"
+}

@@ -63,6 +63,7 @@ class Toolbox:
         self.link_opener = webbrowser.open  # open_link's browser hook, so tests can swap it
         self.freecad = None     # integrations.freecad.connector.FreeCADConnector: tiers + verify loop for CAD
         self.tainted = False  # set once untrusted content reached the model in this task
+        self.allowed_tools: set[str] | None = None  # an agent pack's allowlist for this task (None = everything)
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
         self.cancel = threading.Event()  # the agent swaps in its own (STOP / kill switch)
@@ -70,6 +71,7 @@ class Toolbox:
 
     def begin_task(self, task_id: int | None = None, goal: str = "") -> None:
         self.tainted = False
+        self.allowed_tools = None
         self.untrusted_emails = set()
         self.task_id = task_id
         if self.router is not None and hasattr(self.router, "set_task"):
@@ -620,6 +622,9 @@ class Toolbox:
 
     # ---- dispatch ----------------------------------------------------------
     def call(self, name: str, args: dict) -> dict:
+        from .agentpacks import tool_allowed
+        if not tool_allowed(self.allowed_tools, name):
+            raise ToolError(f"this agent pack may not use {name}")
         if self.mcp is not None and name in self.mcp.tools:
             return self.mcp_call(name, args)
         fn = getattr(self, name, None)

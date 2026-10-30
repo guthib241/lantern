@@ -18,7 +18,8 @@ from typing import Any, Callable
 from . import config as config_mod
 from . import models
 from .agent import Agent
-from .approvals import ApprovalBus, BusGate
+from .agentpacks import PackError, PackStore, draft_pack, pack_suffix
+from .approvals import ApprovalBus, ApprovalError, BusGate
 from .audit import AuditLog, GuardedClient
 from .budget import BudgetGuard, Limits
 from .crypto import cipher_for
@@ -113,6 +114,7 @@ class Core:
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
         self.envmap = EnvMap(self.policy, cfg.envmap_path)
         self.widgets = Widgets(Path(cfg.widgets_dir))
+        self.packs = PackStore(Path(getattr(cfg, "agents_dir", Path(cfg.db_path).expanduser().parent / "agents")))
         self.mcp = mcp if mcp is not None else MCPHub.from_file(cfg.mcp_config).start()
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
                                forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
@@ -178,12 +180,37 @@ class Core:
                    "task_id": self.current_task})
 
     # ---- tasks -----------------------------------------------------------------
-    def submit(self, goal: str) -> int:
+    def submit(self, goal: str, pack: str | None = None, inputs: dict | None = None) -> int:
+        if pack is not None:   # the pack renders the goal from its blanks; `goal` is unused
+            return self.submit_pack(pack, inputs or {})
         goal = goal.strip()
         if not goal:
             raise ValueError("goal is empty")
         task = self.memory.start_task(goal)
         self._queue.put((task.id, goal, None))
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+        return task.id
+
+    def submit_pack(self, name: str, inputs: dict) -> int:
+        """Run an installed agent pack: the goal is rendered from its blanks,
+        its instructions run last, its tools are allowlisted and the task starts
+        tainted. Stopping uses the kill switch; watching uses the task timeline."""
+        try:
+            found = self.packs.get(name)
+        except KeyError:
+            raise KeyError(name) from None
+        if found.disabled:
+            raise ValueError(f"agent {name!r} is disabled")
+        try:
+            rendered = found.render_goal(inputs)
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        goal = f"[agent:{found.name}] {rendered}"
+        suffix, allowed = pack_suffix(found), set(found.tools)
+        task = self.memory.start_task(goal)
+        self._queue.put((task.id, goal,
+                         lambda: self.agent.run(goal, task_id=task.id, instructions_suffix=suffix,
+                                                allowed_tools=allowed, taint=True)))
         self.emit({"type": "queued", "task_id": task.id, "goal": goal})
         return task.id
 
@@ -333,6 +360,42 @@ class Core:
         return {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
                 "created_at": t.created_at, "updated_at": t.updated_at,
                 "usage": self.memory.task_usage(t.id), "undoable": undoable(self.memory, t.id)}
+
+    # ---- agent packs (shareable agents; T3a) --------------------------------------
+    def pack_install(self, data: dict, *, replace: bool = False) -> dict:
+        """Install a pack after the user approves the exact file (bound to its SHA-256)."""
+        import hashlib
+        from .agentpacks import canonical_bytes, validate
+        pack = validate(data)   # PackError if invalid: no approval asked for a bad pack
+        raw = canonical_bytes(pack.as_dict())
+        payload = {"name": pack.name, "sha256": hashlib.sha256(raw).hexdigest()}
+        summary = (f"Install agent '{pack.title}' by {pack.author} (v{pack.version}). "
+                   f"It may use: {', '.join(pack.tools)}. "
+                   f"Full instructions: {pack.instructions}")
+        commit = self.toolbox.gate.ask("install_agent", summary, payload, tainted=False)
+        if commit is None:
+            return {"installed": False, "reason": "user declined", "name": pack.name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"installed": False, "reason": str(e), "name": pack.name}
+        try:
+            stored = self.packs.install(pack.as_dict(), replace=replace)
+        except PackError as e:
+            return {"installed": False, "reason": str(e), "name": pack.name}
+        return {"installed": True, "verified": stored.as_dict() == pack.as_dict(), "name": pack.name}
+
+    def pack_draft(self, task_id: int) -> dict:
+        """Draft a pack from a finished task (Muse Spark, structured output).
+        The draft is validated; saving it goes through install (with approval)."""
+        from .agentpacks import PackError as _PackError
+        try:
+            data, _ = draft_pack(self.client, self.memory, task_id)
+        except KeyError:
+            raise ValueError(f"no task #{task_id}") from None
+        except _PackError as e:
+            raise ValueError(str(e)) from None
+        return data
 
     # ---- forgetting (real deletes: secure_delete + VACUUM; Lantern's own files overwritten) -------
     def forget_task(self, task_id: int) -> dict:

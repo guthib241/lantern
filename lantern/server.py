@@ -20,6 +20,8 @@ in the browser can't drive Lantern through localhost.
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
+  GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/run,
+  POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
   POST /checkin {image: data URL, concept}   SAM 3.1 camera check-in (objects only, nothing stored)
   POST /tasks/{id}/retry            run a failed task's goal again (an interrupted one is resumed)
@@ -41,10 +43,11 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
 from . import __version__, models
+from .agentpacks import PackError
 from .approvals import ApprovalError
 from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
 from .core import Core
@@ -114,6 +117,14 @@ class ProfileIn(BaseModel):
     key: str
     value: str
     section: str = "profile"
+
+
+class PackRunIn(BaseModel):
+    inputs: dict = {}
+
+
+class PackDraftIn(BaseModel):
+    task_id: int
 
 
 def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
@@ -333,6 +344,71 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             return {"name": name, "html": core.widgets.get(name)}
         except WidgetError as e:
             raise HTTPException(404 if "no widget" in str(e) else 422, str(e))
+
+    @app.get("/agents", dependencies=[Depends(auth)])
+    def list_agents():
+        return {"agents": core.packs.list()}
+
+    @app.get("/agents/{name}", dependencies=[Depends(auth)])
+    def get_agent(name: str):
+        try:
+            pack = core.packs.get(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        return {**pack.as_dict(), "disabled": pack.disabled}
+
+    @app.post("/agents/install", dependencies=[Depends(auth)])
+    def install_agent(body: dict, replace: bool = False):
+        """Install a pack file. Blocks until the install card is approved or declined."""
+        try:
+            return core.pack_install(body, replace=replace)
+        except PackError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/draft", dependencies=[Depends(auth)])
+    def draft_agent(body: PackDraftIn):
+        """Draft a pack from a finished task. The panel lets the user edit it;
+        saving goes through install (with approval)."""
+        try:
+            return core.pack_draft(body.task_id)
+        except ValueError as e:
+            raise HTTPException(404 if str(e).startswith("no task") else 502, str(e))
+
+    @app.post("/agents/{name}/run", dependencies=[Depends(auth)])
+    def run_agent(name: str, body: PackRunIn):
+        try:
+            return {"task_id": core.submit("", pack=name, inputs=body.inputs)}
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/{name}/disable", dependencies=[Depends(auth)])
+    def disable_agent(name: str):
+        try:
+            pack = core.packs.disable(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        return {"name": pack.name, "disabled": True}
+
+    @app.post("/agents/{name}/enable", dependencies=[Depends(auth)])
+    def enable_agent(name: str):
+        try:
+            pack = core.packs.enable(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        return {"name": pack.name, "disabled": False}
+
+    @app.get("/agents/{name}/export", dependencies=[Depends(auth)])
+    def export_agent(name: str):
+        try:
+            raw = core.packs.export(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
+        return Response(content=raw, media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.lantern-agent.json"'})
 
     whatsapp = hub.channels.get("whatsapp") if hub else None
     if isinstance(whatsapp, WhatsAppChannel):

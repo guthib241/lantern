@@ -127,12 +127,14 @@ class Agent:
             return str(result["model"])
         return "on this computer"
 
-    def run(self, goal: str, task_id: int | None = None) -> Result:
-        """Run one task to completion. Pass task_id to run a task the server already created."""
+    def run(self, goal: str, task_id: int | None = None, instructions_suffix: str = "",
+            allowed_tools: set[str] | None = None, taint: bool = False) -> Result:
+        """Run one task to completion. Pass task_id to run a task the server already created.
+        A pack task passes its instructions suffix, tool allowlist and taint=True."""
         task = self.memory.get_task(task_id) if task_id else self.memory.start_task(goal)
         self.cancel.clear()
         try:
-            return self._run(task.id, goal)
+            return self._run(task.id, goal, instructions_suffix, allowed_tools, taint)
         except Exception as e:
             from .reliability import explain
             why = explain(e)  # a sentence the user can act on ("no internet", "check MODEL_API_KEY")
@@ -143,9 +145,14 @@ class Agent:
                                    "cost_usd": self.memory.task_usage(task.id)["cost_usd"], "steps": 0})
             raise
 
-    def _run(self, task_id: int, goal: str) -> Result:
+    def _run(self, task_id: int, goal: str, instructions_suffix: str = "",
+             allowed_tools: set[str] | None = None, taint: bool = False) -> Result:
         if hasattr(self.toolbox, "begin_task"):
             self.toolbox.begin_task(task_id, goal)
+        if allowed_tools is not None:
+            self.toolbox.allowed_tools = set(allowed_tools)
+        if taint:   # a shared pack was written by someone else: treat it as untrusted from the start
+            self.toolbox.tainted = True
         if hasattr(self.client, "set_task"):  # GuardedClient tags audit rows with the task
             self.client.set_task(task_id)
         self.memory.log_step(task_id, "plan", {"goal": goal})
@@ -155,6 +162,8 @@ class Agent:
         # Built once per task and sent on every turn: with previous_response_id the Responses API does not
         # carry instructions over, and an identical string keeps the prompt cache warm.
         instructions = self.instructions()
+        if instructions_suffix:
+            instructions += "\n\n" + instructions_suffix
         response = self._create(
             task_id,
             instructions=instructions,
