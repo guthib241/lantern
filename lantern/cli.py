@@ -183,7 +183,7 @@ def run_demo(a) -> None:
         return
     from .server import serve
     print("   Try: " + " · ".join(b.goal for b in demo.STORY + demo.EXTRAS))
-    return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
+    return serve(core, config_mod.HOME, port=a.port, hub=hub.start(), phone=bool(getattr(a, "phone", False)))
 
 
 def safe_console() -> None:
@@ -256,7 +256,11 @@ def main(argv=None) -> None:
     p.add_argument("--demo", action="store_true", help="with --serve: rehearsal mode (scripted model, demo/home, nothing sent)")
     p.add_argument("--demo-run", action="store_true", help="play the 3-minute demo story offline and print it")
     p.add_argument("--demo-dir", metavar="DIR", help="empty folder for the rehearsal's data (default: a new temp folder)")
+    p.add_argument("--phone", action="store_true", help="also serve the paired phone app on the LAN (docs/PHONE.md)")
     a = p.parse_args(argv)
+    import os as _os
+    if _os.environ.get("LANTERN_PHONE", "").strip().lower() in ("1", "true", "yes", "on"):
+        a.phone = True
 
     if a.demo or a.demo_run:
         return run_demo(a)
@@ -389,7 +393,7 @@ def main(argv=None) -> None:
                 ch.send_text(a.channel_test)
                 print(f"sent via {ch.name}")
             return
-        return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
+        return serve(core, config_mod.HOME, port=a.port, hub=hub.start(), phone=bool(a.phone))
 
     agent = build_agent(cfg, mem)
 

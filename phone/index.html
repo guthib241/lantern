@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#1c1c1e">
+<title>Lantern</title>
+<link rel="stylesheet" href="/m/style.css">
+<link rel="manifest" href="/m/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/m/icons/lantern.svg">
+<link rel="apple-touch-icon" href="/m/icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+</head>
+<body>
+<header class="topbar">
+  <img class="face" id="face" src="/m/face" alt="Lantern">
+  <div class="title"><b>Lantern</b><small id="status">connecting…</small></div>
+  <div class="menu">
+    <button class="iconbtn" id="menu-btn" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false">⋯</button>
+    <div class="menu-list" id="menu" hidden role="menu">
+      <button type="button" id="menu-reminders" role="menuitem">Reminders</button>
+      <button type="button" id="menu-stop" role="menuitem">Stop everything</button>
+      <button type="button" id="menu-unpair" role="menuitem">Unpair this phone</button>
+    </div>
+  </div>
+</header>
+<p class="banner" id="offline" hidden>You are offline. New messages will send when you reconnect.</p>
+
+<main>
+  <section class="screen" id="screen-pair" hidden aria-label="Pair this phone">
+    <div class="card">
+      <h1>Pair this phone</h1>
+      <p>On Lantern&rsquo;s Settings, choose &ldquo;Pair a phone&rdquo; and type the 6-digit code here.</p>
+      <form id="pair-form">
+        <label class="field"><span>6-digit code</span>
+          <input id="pair-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="••••••" aria-label="6-digit pairing code">
+        </label>
+        <label class="field"><span>This phone&rsquo;s name</span>
+          <input class="name" id="pair-name" maxlength="60" value="My phone" aria-label="This phone's name">
+        </label>
+        <p class="error" id="pair-error" aria-live="assertive"></p>
+        <button class="primary" type="submit">Pair</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="screen" id="screen-chat" aria-label="Chat with Lantern">
+    <div class="thread" id="thread" aria-live="polite"></div>
+    <div class="empty" id="empty">
+      <div class="glow" aria-hidden="true"><img src="/m/face" alt=""></div>
+      <p><b>Ask for anything.</b></p>
+      <p>A form, an email, your files, a reminder.</p>
+    </div>
+    <div id="working" hidden>
+      <div class="task"><div class="them"><div class="bubble typing" aria-label="Lantern is working"><i></i><i></i><i></i></div></div></div>
+    </div>
+    <div id="reminders-box" hidden>
+      <h2>Reminders</h2>
+      <ul class="reminders" id="reminders"></ul>
+    </div>
+  </section>
+</main>
+
+<div class="composer" id="composer" hidden>
+  <form id="ask">
+    <input id="goal" autocomplete="off" maxlength="2000" placeholder="Message Lantern" aria-label="Message Lantern">
+    <button type="submit" aria-label="Send">↑</button>
+  </form>
+</div>
+
+<div class="sheet-backdrop" id="sheet-bg" hidden></div>
+<section class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  <h2 id="sheet-title">Needs your OK</h2>
+  <div class="facts" id="sheet-facts"></div>
+  <div class="untrusted" id="sheet-untrusted" hidden></div>
+  <p class="meta" id="sheet-meta"></p>
+  <div class="row">
+    <button class="deny" id="sheet-deny" type="button">Deny</button>
+    <button class="allow" id="sheet-allow" type="button">Allow</button>
+  </div>
+</section>
+
+<script src="/m/app.js" defer></script>
+</body>
+</html>

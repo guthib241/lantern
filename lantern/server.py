@@ -49,7 +49,9 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.requests import HTTPConnection
 from pydantic import BaseModel, Field
 
 from . import __version__, models
@@ -57,11 +59,46 @@ from .approvals import ApprovalError
 from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
 from .core import Core
 from .forms import Vault, VaultError
+from .pairing import PairingError, PairingStore
+from . import phone as phone_view
 from .policy import ZONES, PolicyError
 from .sam import IDEAS, CheckInError
 from .widgets import WidgetError
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+PHONE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+             "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+PHONE_DIR = REPO_ROOT / "phone"
+
+
+FORWARDED = ("forwarded", "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip")
+
+
+def client_is_local(conn: HTTPConnection) -> bool:
+    """Is this request (or websocket) from this computer? Test clients count as local. A request that came through
+    a proxy or tunnel (cloudflared, Tailscale Funnel, ngrok) arrives from 127.0.0.1 but carries forwarding headers:
+    it is from somewhere else, so it is not local."""
+    if any(h in conn.headers for h in FORWARDED):
+        return False
+    try:
+        host = (conn.client.host if conn.client else "") or ""
+    except Exception:
+        host = ""
+    return host in LOCAL_HOSTS or host in ("testclient", "test-client", "")
+
+
+def lan_ip() -> str:
+    """This computer's LAN address for the startup line (best effort)."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
 
 
 def load_token(home: Path) -> str:
@@ -196,7 +233,36 @@ class MeetingConfirmIn(BaseModel):
     picks: list[int] = Field(default_factory=list)
 
 
-def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
+class PairRedeemIn(BaseModel):
+    code: str = ""
+    name: str = "phone"
+
+
+class PhoneTaskIn(BaseModel):
+    goal: str
+
+
+def _submit_goal(core: Core, goal: str) -> int:
+    """Queue a goal exactly like POST /task (undo words become an undo task)."""
+    from .tools import EXTERNAL_PREFIX
+    from .undo import WORDS as undo_words
+    goal = (goal or "").strip()
+    if undo_words.match(goal):
+        try:
+            return core.undo_last()
+        except ValueError as e:
+            raise HTTPException(409, f"Nothing to undo: {e}")
+    if goal.startswith(EXTERNAL_PREFIX):
+        pass
+    try:
+        return core.submit(goal)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
+               pairing: PairingStore | None = None, phone_mode: bool = False,
+               phone_dir: Path | str | None = None) -> FastAPI:
     app = FastAPI(title="Lantern", version=__version__, docs_url=None, redoc_url=None)
     app.add_middleware(
         CORSMiddleware,
@@ -207,6 +273,190 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     def auth(x_lantern_token: str = Header(default="")) -> None:
         if not secrets.compare_digest(x_lantern_token, token):
             raise HTTPException(401, "missing or wrong X-Lantern-Token")
+
+    store = pairing
+    if store is None:
+        try:
+            home = Path(core.cfg.db_path).expanduser().parent
+        except Exception:
+            from . import config as config_mod
+            home = config_mod.HOME
+        store = PairingStore(home / "devices.json")
+    app.state.pairing = store
+    app.state.phone_mode = bool(phone_mode)
+
+    def device_auth(x_lantern_device: str = Header(default="")) -> dict:
+        found = app.state.pairing.verify(x_lantern_device or "")
+        if found is None:
+            raise HTTPException(401, "unknown or revoked device; pair again from the desktop")
+        return found
+
+    LAN_OPEN = ("/health", "/pair", "/m", "/m/")
+    LAN_PREFIXES = ("/m/", "/webhook/")
+
+    @app.middleware("http")
+    async def lan_guard(request: Request, call_next):
+        if app.state.phone_mode and not client_is_local(request):
+            path = request.url.path
+            open_path = (path in LAN_OPEN or path == "/pair"
+                         or any(path.startswith(p) for p in LAN_PREFIXES)
+                         or path.startswith("/m?") or path == "/m/events")
+            if not open_path:
+                return PlainTextResponse("localhost only", status_code=403)
+            if path == "/pair/start" or path.startswith("/devices"):
+                return PlainTextResponse("localhost only", status_code=403)
+        resp = await call_next(request)
+        if request.url.path == "/m" or request.url.path.startswith("/m/"):
+            resp.headers["Content-Security-Policy"] = PHONE_CSP
+        return resp
+
+    @app.post("/pair/start", dependencies=[Depends(auth)])
+    def pair_start(request: Request):
+        code, expires_in = app.state.pairing.start()
+        return {"code": code, "expires_in": expires_in, "url": "/m"}
+
+    @app.post("/pair")
+    def pair_redeem(body: PairRedeemIn):
+        try:
+            device_token, device_id = app.state.pairing.redeem(body.code, body.name)
+        except PairingError as e:
+            raise HTTPException(409 if "wrong" in str(e).lower() else 400, str(e))
+        return {"device_token": device_token, "device_id": device_id}
+
+    @app.get("/devices", dependencies=[Depends(auth)])
+    def devices():
+        return {"devices": app.state.pairing.list()}
+
+    @app.post("/devices/{device_id}/revoke", dependencies=[Depends(auth)])
+    def device_revoke(device_id: str):
+        try:
+            return app.state.pairing.revoke(device_id)
+        except KeyError:
+            raise HTTPException(404, "no such device")
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    # ---- phone API (paired device token; WhatsApp-level privacy) ---------------------------
+    @app.post("/m/api/task")
+    def phone_task(body: PhoneTaskIn, _dev: dict = Depends(device_auth)):
+        return {"task_id": _submit_goal(core, body.goal)}
+
+    @app.get("/m/api/tasks")
+    def phone_tasks(limit: int = 20, _dev: dict = Depends(device_auth)):
+        return phone_view.tasks_view(core, limit)
+
+    @app.get("/m/api/tasks/{task_id}")
+    def phone_task_view(task_id: int, _dev: dict = Depends(device_auth)):
+        try:
+            return phone_view.task_view(core, task_id)
+        except KeyError:
+            raise HTTPException(404, "no such task")
+
+    @app.get("/m/api/approvals")
+    def phone_approvals(_dev: dict = Depends(device_auth)):
+        import time as _t
+        return [phone_view.approval_view(a, _t.time()) for a in core.bus.pending()]
+
+    @app.post("/m/api/approvals/{approval_id}")
+    def phone_decide(approval_id: str, body: DecisionIn, _dev: dict = Depends(device_auth)):
+        try:
+            a = core.bus.decide(approval_id, body.nonce, body.approve, by="phone",
+                                expected_hash=body.expected_hash)
+        except ApprovalError as e:
+            raise HTTPException(409, str(e))
+        return {**phone_view.approval_view(a), "status": "approved" if body.approve else "denied"}
+
+    @app.get("/m/api/reminders")
+    def phone_reminders(_dev: dict = Depends(device_auth)):
+        return [r.public() for r in core.memory.reminders()]
+
+    @app.post("/m/api/reminders/{reminder_id}/cancel")
+    def phone_cancel_reminder(reminder_id: int, _dev: dict = Depends(device_auth)):
+        try:
+            core.memory.get_reminder(reminder_id)
+        except KeyError:
+            raise HTTPException(404, "no such reminder")
+        if not core.cancel_reminder(reminder_id):
+            raise HTTPException(409, "that reminder isn't pending")
+        return {"cancelled": reminder_id}
+
+    @app.post("/m/api/stop")
+    def phone_stop(_dev: dict = Depends(device_auth)):
+        return core.stop()
+
+    @app.websocket("/m/events")
+    async def phone_events(ws: WebSocket, device: str = Query(default="")):
+        if app.state.pairing.verify(device or "") is None:
+            await ws.close(code=4401)
+            return
+        await ws.accept()
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+
+        def sink(event: dict) -> None:
+            loop.call_soon_threadsafe(_put, q, event)
+
+        def filtered(event: dict) -> dict:
+            kind = event.get("type")
+            if kind == "approval" and isinstance(event.get("approval"), dict):
+                if event.get("event") == "requested":
+                    return {"type": "approval", "event": "requested",
+                            "approval": phone_view.approval_view(event["approval"]),
+                            "task_id": event.get("task_id")}
+                return {"type": "approval", "event": event.get("event"),
+                        "approval": {"id": event["approval"].get("id"), "status": event["approval"].get("status")},
+                        "task_id": event.get("task_id")}
+            if kind == "done":
+                view: dict = {"type": "done", "id": event.get("id"), "status": event.get("status"),
+                              "task_id": event.get("id")}
+                reply = (event.get("reply_public") or "").strip() if "reply_public" in event else None
+                if reply is None:
+                    try:
+                        reply = phone_view.task_view(core, int(event.get("id")))["reply"] if event.get("id") else ""
+                    except Exception:
+                        reply = str(event.get("summary") or "")
+                view["reply"] = reply or ""
+                return view
+            return _jsonable(event)
+
+        async def pump() -> None:
+            import time as _t
+            await ws.send_json({"type": "hello", "version": __version__,
+                                "pending": [phone_view.approval_view(a, _t.time()) for a in core.bus.pending()]})
+            while True:
+                event = await q.get()
+                await ws.send_json(filtered(event))
+
+        async def until_closed() -> None:
+            while (await ws.receive())["type"] != "websocket.disconnect":
+                pass
+
+        unsubscribe = core.subscribe(sink)
+        tasks = [asyncio.create_task(pump()), asyncio.create_task(until_closed())]
+        try:
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in tasks:
+                t.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            unsubscribe()
+
+    @app.get("/m/face")
+    def phone_face():
+        candidates = [REPO_ROOT / "desktop" / "assets" / "avatar" / "idle.webp",
+                      REPO_ROOT / "desktop" / "assets" / "avatar" / "idle.png"]
+        for path in candidates:
+            if path.is_file():
+                media = "image/webp" if path.suffix == ".webp" else "image/png"
+                return FileResponse(path, media_type=media)
+        raise HTTPException(404, "no face yet")
+
+    @app.get("/m")
+    def phone_index():
+        index = (Path(phone_dir) if phone_dir else PHONE_DIR) / "index.html"
+        if not index.is_file():
+            raise HTTPException(404, "phone app not built")
+        return FileResponse(index, media_type="text/html", headers={"Content-Security-Policy": PHONE_CSP})
 
     @app.get("/health")
     def health():
@@ -673,8 +923,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     async def talk(ws: WebSocket, token_q: str = Query(default="", alias="token")):
         """S15 live talk: the panel streams microphone PCM here; the realtime transcription comes back as
         {"type": "partial"|"final"|"error"|"done", "text"}. The key stays on this side (talk.py)."""
-        if not secrets.compare_digest(token_q, token):
-            await ws.close(code=4401)
+        if not secrets.compare_digest(token_q, token) or (app.state.phone_mode and not client_is_local(ws)):
+            await ws.close(code=4401)   # the desktop's sockets stay on this computer, even with --phone
             return
         await ws.accept()
         from .talk import TalkError, relay
@@ -715,8 +965,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
 
     @app.websocket("/events")
     async def events(ws: WebSocket, token_q: str = Query(default="", alias="token")):
-        if not secrets.compare_digest(token_q, token):
-            await ws.close(code=4401)
+        if not secrets.compare_digest(token_q, token) or (app.state.phone_mode and not client_is_local(ws)):
+            await ws.close(code=4401)   # the desktop's sockets stay on this computer, even with --phone
             return
         await ws.accept()
         loop = asyncio.get_running_loop()
@@ -750,6 +1000,10 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             await asyncio.gather(*tasks, return_exceptions=True)
             unsubscribe()
 
+    directory = Path(phone_dir) if phone_dir else PHONE_DIR
+    if directory.is_dir():
+        app.mount("/m/", StaticFiles(directory=str(directory), html=True), name="phone-static")
+
     return app
 
 
@@ -763,13 +1017,18 @@ def _jsonable(obj):
     return json.loads(json.dumps(obj, default=str))
 
 
-def serve(core: Core, home: Path, host: str = "127.0.0.1", port: int = 8765, hub: ChannelHub | None = None) -> None:
-    if host not in LOCAL_HOSTS:
+def serve(core: Core, home: Path, host: str = "127.0.0.1", port: int = 8765, hub: ChannelHub | None = None,
+            phone: bool = False) -> None:
+    if host not in LOCAL_HOSTS and not phone:
         raise SystemExit("Lantern's server only listens on 127.0.0.1")
+    if phone:
+        host = "0.0.0.0"
     import uvicorn
     token = load_token(home)
     print(f"🏮 Lantern server on http://{host}:{port}  (token in {home / 'token'})")
+    if phone:
+        print(f"   📱 phone: http://{lan_ip()}:{port}/m  (same Wi-Fi, or your own tunnel for HTTPS)")
     if hub:
         print(f"   channels: {', '.join(sorted(hub.channels)) or 'none'}"
               + ("  ·  WhatsApp webhook: https://<your tunnel>/webhook/whatsapp" if "whatsapp" in hub.channels else ""))
-    uvicorn.run(create_app(core, token, hub), host=host, port=port, log_level="warning")
+    uvicorn.run(create_app(core, token, hub, phone_mode=phone), host=host, port=port, log_level="warning")

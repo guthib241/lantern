@@ -231,6 +231,17 @@
         <div class="row"><div class="segmented" id="persona" role="radiogroup" aria-label="Lantern's personality"></div></div>
       </div>
       <p class="footnote" id="persona-note">How Lantern talks to you. It never changes what Lantern is allowed to do.</p>
+      <h3 class="section">Pair a phone</h3>
+      <div class="group">
+        <div class="row">
+          <div class="row-text"><b>Phone app</b><small>Same Wi-Fi with <code>lantern --serve --phone</code>, or your own tunnel for HTTPS. The phone sees what WhatsApp sees: never private replies.</small></div>
+          <button class="tinted" id="pair-start" type="button">Pair a phone</button>
+        </div>
+        <div class="row" id="pair-code-row" hidden>
+          <div class="row-text"><b id="pair-code">······</b><small id="pair-url">/m · expires in 5 min</small></div>
+        </div>
+        <div id="pair-devices"></div>
+      </div>
       <h3 class="section">Keyboard</h3>
       <div class="group">
         <div class="row"><span class="row-text">Quick Ask</span><kbd id="kbd-ask">⌘ ⇧ Space</kbd></div>

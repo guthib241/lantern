@@ -541,3 +541,17 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - Known limit: the "already sent today" mark lives in memory, so a restart after 21:00 sends the daily summary again.
 - The Muse Code run cost about $2.63 of Muse Spark tokens (14.5M cached input, 226K input, 40K output).
 
+
+## Oct 30 (paired phone PWA)
+- Built with Muse Code (OpenCode on Muse Spark 1.3). Files: `lantern/pairing.py` (new: 6-digit codes, 5-min expiry, single use, 5-try burn, devices.json mode 0600 with hashes only), `lantern/phone.py` (new: WhatsApp-level privacy filter for tasks/approvals/steps), `lantern/server.py` (pairing routes, `/m/api/*`, `/m/events` device websocket, static `/m` with CSP, LAN guard, `serve(..., phone=True)` + LAN URL line), `lantern/cli.py` (`--phone` / `LANTERN_PHONE=1`, demo+phone keyless), `phone/` (new PWA: `index.html` with strict CSP meta and no inline script, `app.js` plain JS, `style.css` light/dark, `manifest.webmanifest`, `sw.js` shell-only cache, `icons/` own lantern SVG + Pillow-made PNG 192/512), `desktop/renderer/panel.html` + `panel.js` (Settings "Pair a phone" row: code+URL display, device list with Revoke), `docs/PHONE.md` (new), `tests/test_pairing_phone.py` (new, 16 tests).
+- Privacy: phone gets `reply_public`-equivalent only (private tasks show the placeholder), folded steps without args/file text, approval cards with nonce+payload_hash but never the raw payload; decisions go through the same `ApprovalBus.decide` nonce/hash check.
+- `python -m pyflakes lantern scripts tests` clean; new tests 16 passed; server/channel/phone suites 55 passed; `cd desktop && npm test` 46 passed; `lantern --serve --demo --phone` verified keyless via TestClient (health demo, /m 200, pair round-trip, device task list 200).
+- No new libraries (Pillow PNGs use the existing dependency).
+- Lantern on the phone (paired web app, `phone/`, `lantern/pairing.py`, `lantern/phone.py`, `--phone`), built with Muse Code (OpenCode on Muse Spark 1.3), about $1.50 of tokens. Fixes from review:
+  - The LAN guard only covered HTTP: the desktop's `/events` and `/talk` websockets now refuse non-local clients too.
+  - A request that arrives through a tunnel or proxy (forwarding headers such as `X-Forwarded-For` or `CF-Connecting-IP`) no longer counts as local, so a tunnel can't reach the desktop's routes.
+  - On the phone: one untrusted-content warning on the approval sheet instead of two; Lantern's face in the empty chat; `frame-ancestors` sent as a header only.
+  - Tests: `test_tunnelled_requests_and_desktop_sockets_are_not_local_when_phone_on`.
+- Checked in a phone-sized browser (390×844, light and dark) against `lantern --serve --demo --phone`: pair with the code → send "Tidy my Downloads folder." → approve from the bottom sheet → verified reply. No horizontal scroll.
+- Not checked on a real phone yet; HTTPS (needed to install to the home screen on most phones) needs the owner's own tunnel (docs/PHONE.md).
+

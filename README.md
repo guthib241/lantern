@@ -123,6 +123,25 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
   - Lantern's face reacts (thinking, proud, worried, listening, healed…): each reaction is a Muse Image edit of one portrait, made once and cached.
   - Light and dark mode; Ctrl/Cmd+1…9 go to the first nine sections; WCAG 2.1 AA (axe-core) in the e2e.
 
+## On your phone
+
+| Pair once | Ask, in a chat | Approve from a sheet |
+|---|---|---|
+| ![Pair the phone](docs/screenshots/phone-pair.png) | ![Phone chat](docs/screenshots/phone-chat.png) | ![Approval sheet on the phone](docs/screenshots/phone-approval.png) |
+
+- **WhatsApp:**
+  - Approval cards are written in code: the action with a 🔴/🟡 marker, short facts, a ⚠️ line when it came from a page or file, and the expiry.
+  - "menu" opens a list: Status, Reminders, Undo, Today's summary, Stop (Stop asks first).
+  - After a task, Muse Spark can suggest up to 2 next steps, with the full text shown. There are none after a task that read untrusted content.
+  - A short daily summary arrives at 21:00, written by Muse Spark from Lantern's own records.
+- **The phone app** (`lantern --serve --phone`, then "Pair a phone" in Settings):
+  - Chat-only, like Today, with approvals as a bottom sheet, plus Reminders and Stop in the menu.
+  - Pairing is a single-use 6-digit code. Devices can be revoked, and only hashes of device tokens are stored.
+  - The phone sees what WhatsApp sees, never private replies.
+  - The desktop's own routes stay on the laptop, even through a tunnel.
+  - Setup, HTTPS via your own tunnel, and revoking are in [docs/PHONE.md](docs/PHONE.md).
+- Both were built with **Muse Code** (OpenCode on Muse Spark 1.3), then reviewed and tested here.
+
 ## Safety model (enforced in code, not in prompts)
 
 - **Privacy zones** (`~/.lantern/zones.json`):

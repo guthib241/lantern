@@ -55,7 +55,7 @@
 
   // ---- tabs ---------------------------------------------------------------------------------
   const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, learn: loadRoutines, teach: loadLessons,
-                    widgets: loadWidgets, reminders: () => loadReminders(), setup: () => { loadSettings(); loadDoctor(); } };
+                    widgets: loadWidgets, reminders: () => loadReminders(), setup: () => { loadSettings(); loadPairing(); loadDoctor(); } };
   if (cfg.platform === 'darwin') document.body.classList.add('mac');   // traffic lights over the sidebar; vibrancy
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
@@ -623,6 +623,46 @@
       },
     }, PERSONA_NAMES[p] || p)));
   }
+
+  // ---- pair a phone (lantern/pairing.py) ----------------------------------------------------------
+  async function loadPairing() {
+    const box = $('pair-devices');
+    if (!box) return;
+    box.textContent = '';
+    try {
+      const { devices } = await api.get('/devices');
+      if (!devices.length) box.append(h('p', { class: 'empty' }, 'No phones paired.'));
+      for (const d of devices) {
+        box.append(h('div', { class: 'row' },
+          h('div', { class: 'row-text' }, h('b', {}, d.name || 'phone'),
+            h('small', {}, d.revoked ? 'revoked' : `paired · ${d.id}`)),
+          d.revoked ? null : h('button', { class: 'forget', onclick: () => revokeDevice(d) }, 'Revoke')));
+      }
+    } catch (e) { box.append(h('p', { class: 'empty' }, 'Pairing needs this Lantern.')); }
+  }
+
+  async function revokeDevice(d) {
+    try {
+      await api.post(`/devices/${d.id}/revoke`);
+      toast('Phone unpaired.');
+    } catch (e) {
+      toast(`Couldn't revoke it: ${e.message}`);
+    }
+    loadPairing();
+  }
+
+  const pairBtn = $('pair-start');
+  if (pairBtn) pairBtn.addEventListener('click', async () => {
+    try {
+      const r = await api.post('/pair/start');
+      $('pair-code-row').hidden = false;
+      $('pair-code').textContent = r.code.split('').join(' ');
+      $('pair-url').textContent = `${r.url} · expires in ${Math.round(r.expires_in / 60)} min`;
+      toast('Type the code on the phone.');
+    } catch (e) {
+      toast(`Couldn't start pairing: ${e.message}`);
+    }
+  });
 
   // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------
   let upcoming = [];
