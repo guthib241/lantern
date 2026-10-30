@@ -109,6 +109,7 @@ class FreeCADBackend:
                 self.kill()
                 raise BackendError(f"FreeCAD didn't answer within {timeout:.0f} s (stopped it)") from None
             if msg is None:
+                self.kill()   # let it finish exiting, so the next call starts a fresh worker (Windows lags here)
                 raise BackendError("FreeCAD stopped unexpectedly")
             if msg.get("id") == want_id:
                 return msg
@@ -121,11 +122,17 @@ class FreeCADBackend:
             if self.proc is None or self.proc.poll() is not None:
                 self.start()   # first use, or restart once after a crash
             msg_id, self._next = self._next, self._next + 1
-            try:
-                self.proc.stdin.write(json.dumps({"id": msg_id, "op": op, "args": args}) + "\n")
-                self.proc.stdin.flush()
-            except (BrokenPipeError, OSError) as e:
-                raise BackendError(f"FreeCAD isn't running ({e})") from e
+            line = json.dumps({"id": msg_id, "op": op, "args": args}) + "\n"
+            for attempt in (1, 2):
+                try:
+                    self.proc.stdin.write(line)
+                    self.proc.stdin.flush()
+                    break
+                except (BrokenPipeError, OSError) as e:   # Windows says EINVAL (Errno 22) for a dead pipe
+                    self.kill()
+                    if attempt == 2:
+                        raise BackendError(f"FreeCAD isn't running ({e})") from e
+                    self.start()
             msg = self._reply(msg_id, self.timeout)
         if not msg.get("ok"):
             raise BackendError(msg.get("error") or "FreeCAD refused the operation")
@@ -134,7 +141,11 @@ class FreeCADBackend:
     def kill(self) -> None:
         if self.proc and self.proc.poll() is None:
             self.proc.kill()
-            self.proc.wait(5)
+        if self.proc:
+            try:
+                self.proc.wait(5)
+            except subprocess.TimeoutExpired:
+                pass
 
     def close(self) -> None:
         if self.proc and self.proc.poll() is None:

@@ -74,3 +74,12 @@ def test_core_wires_the_connector_when_mcp_has_freecad(tmp_path):
         plain.shutdown()
     assert "freecad.check_model" in BASE_RULES
     assert "FreeCAD" in (Path(__file__).resolve().parents[2] / "docs" / "THIRD_PARTY.md").read_text(encoding="utf-8")
+
+
+def test_demo_compares_files_as_paths_not_text(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("run_demo", Path(__file__).resolve().parents[2] / "demo/freecad/run_demo.py")
+    demo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(demo)
+    assert demo.same_path(str(tmp_path / "real" / "x.stl"), f"{tmp_path}/real/./x.stl")
+    assert not demo.same_path(None, "x.stl") and not demo.same_path(str(tmp_path / "a.stl"), str(tmp_path / "b.stl"))
