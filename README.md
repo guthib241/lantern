@@ -255,6 +255,16 @@ Phase 2, measured on the live API (Oct 28):
 | Owner's words → Cedar rules (S6 / S13) | 4–7 s | $0.005–0.008 |
 
 A full rehearsal of the story on the live API costs about **$0.25**, so recording-day retakes are cheap.
+
+**S14, Wonder teaches Glimmer (a small experiment, not a general improvement).** One narrow job: choosing which learned routine a request means, or none, with the exact prompt Lantern uses. Muse Wonder labelled 357 requests (344 kept after checking); Muse Glimmer was LoRA-tuned on 251 of them (QLoRA, 2 epochs, 32 steps, one A100 on Modal) and tested on 93 requests about 6 routines it never saw in training:
+
+| | Base Glimmer | Tuned Glimmer |
+|---|---|---|
+| Correct (of 93) | 93 | 90 (all 3 misses: one unseen routine asked in new words) |
+| Tokens per answer (median) | 277 | 15 |
+| Time for all 93 (batched, A100) | 38 s | 8 s |
+
+So the tuned model answers about 18× shorter, at a cost of 3 answers on unfamiliar wording; the base model's reasoning is what got those right. Muse Spark scored 93/93 on the same set. Data $2.37 (Meta API), GPU about $1 (Modal).
 Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), and the spending limits keep a runaway loop from eating the credit (checked live: a $0.002 task limit stopped the task after one call).
 
 ## Tests

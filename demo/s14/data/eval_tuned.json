@@ -1,0 +1,665 @@
+{
+ "model_dir": "/vol/merged/s14-routine-choice",
+ "correct": 90,
+ "of": 93,
+ "none_correct": 48,
+ "none_of": 48,
+ "unreadable": 0,
+ "seconds": {
+  "load": 233,
+  "generate": 8
+ },
+ "predictions": [
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 21,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 21,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 21,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 21,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 18,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 17,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 15,
+   "finish": "stop",
+   "tail": " to=user{\"routine\": \"none\", \"params\": []}"
+  }
+ ]
+}

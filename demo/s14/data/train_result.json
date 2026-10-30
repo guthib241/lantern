@@ -1,0 +1,23 @@
+{
+ "adapter": "s14-routine-choice",
+ "examples": 251,
+ "epochs": 2,
+ "rank": 16,
+ "lr": 0.0002,
+ "lora_modules": 208,
+ "lora_example": [
+  "base_model.model.model.language_model.layers.0.self_attn.k_proj",
+  "base_model.model.model.language_model.layers.0.self_attn.o_proj"
+ ],
+ "steps": 32,
+ "loss_first": [
+  1.8376737833023071
+ ],
+ "loss_last": [
+  0.1446721851825714
+ ],
+ "seconds": {
+  "load": 114,
+  "train": 386
+ }
+}
