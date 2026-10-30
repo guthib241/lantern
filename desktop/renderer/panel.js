@@ -55,22 +55,25 @@
 
   // ---- tabs ---------------------------------------------------------------------------------
   const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, learn: loadRoutines, teach: loadLessons,
-                    widgets: loadWidgets, setup: () => { loadSettings(); loadDoctor(); } };
+                    widgets: loadWidgets, reminders: () => loadReminders(), setup: () => { loadSettings(); loadDoctor(); } };
   if (cfg.platform === 'darwin') document.body.classList.add('mac');   // traffic lights over the sidebar; vibrancy
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
+  document.body.classList.add('chatting');
   function showTab(name) {
     tab = name;
     tabButtons.forEach((x) => { x.classList.toggle('on', x.dataset.tab === name); x.setAttribute('aria-selected', String(x.dataset.tab === name)); });
     document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('on', s.dataset.panel === name));
     const b = tabButtons.find((x) => x.dataset.tab === name);
-    $('section-title').textContent = b ? b.textContent.trim() : 'Lantern';
+    $('section-title').textContent = b ? b.querySelector('span').textContent.trim() : 'Lantern';
     document.title = `Lantern · ${$('section-title').textContent}`;
-    document.querySelector('main').scrollTo({ top: 0 });
+    document.body.classList.toggle('chatting', name === 'tasks');
+    const main = document.querySelector('main');
+    main.scrollTo({ top: name === 'tasks' ? main.scrollHeight : 0 });   // a conversation opens at its latest message
     if (loaders[name]) loaders[name]();
   }
   for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab));
-  // Ctrl/Cmd+1…9 go to a section, in sidebar order.
+  // Ctrl/Cmd+1…9 go to the first nine sections, in sidebar order.
   window.addEventListener('keydown', (e) => {
     const n = Number(e.key);
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && n >= 1 && n <= tabButtons.length) {
@@ -511,10 +514,22 @@
   const STATE_MARK = { done: '✓', failed: '!', cancelled: '✕', interrupted: '‖', resumed: '↻' };
   const openSteps = new Set();   // tasks whose steps the user expanded
 
+  // Today is a conversation: what you asked on the right, Lantern's answer on the left, oldest first, the
+  // composer pinned below. Everything else lives in its own section.
+  let lastThread = '';
+  function lanternFace() {
+    return face && /\.(webp|png)$/.test(face.file)
+      ? h('img', { src: `../assets/avatar/${face.file}`, alt: '' })
+      : h('svg', { class: 'ico' }, h('use', { href: '#i-lantern' }));
+  }
+
   function renderTasks() {
+    const main = document.querySelector('main');
+    const atBottom = main.scrollHeight - main.scrollTop - main.clientHeight < 80;
     const box = $('tasks');
     box.textContent = '';
-    const tasks = LanternState.recentTasks(state, 12);
+    const tasks = LanternState.recentTasks(state, 20).reverse();
+    $('chat-empty').hidden = tasks.length > 0 || state.interrupted.length > 0;
     if (state.interrupted.length) {
       const n = state.interrupted.length;
       box.append(h('div', { class: 'interrupted' },
@@ -522,38 +537,52 @@
         h('ul', {}, state.interrupted.slice(0, 4).map((t) => h('li', {}, `#${t.id} ${t.goal}`))),
         h('button', { class: 'tinted', onclick: resumeAll }, 'Resume all')));
     }
-    if (!tasks.length && !state.interrupted.length) {
-      box.append(h('p', { class: 'empty' }, 'Nothing yet today. Tap a suggestion, or ask for anything.'));
-    } else if (tasks.length) {
-      box.append(h('h2', { class: 'section' }, 'Recent'));
-    }
     tasks.forEach((t, i) => {
       const live = t.status === 'running' || t.status === 'queued';
-      const steps = h('details', { open: live || i === 0 || openSteps.has(t.id) || undefined,
-                                   ontoggle: (e) => (e.target.open ? openSteps.add(t.id) : openSteps.delete(t.id)) },
+      const steps = h('details', { open: live || openSteps.has(t.id) || undefined,
+                                   ontoggle: (e) => { if (!live) (e.target.open ? openSteps.add(t.id) : openSteps.delete(t.id)); } },
         h('summary', {}, `${t.steps.length} step${t.steps.length === 1 ? '' : 's'}`),
         h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))));
+      const said = t.reply || (live ? (t.steps.length ? t.steps[t.steps.length - 1].label + '…' : 'On it…') : '');
       box.append(h('article', { class: 'task' },
-        h('div', { class: 'head' },
-          h('span', { class: `state ${t.status}`, 'aria-hidden': 'true' }, STATE_MARK[t.status] || ''),
-          h('div', {},
-            h('div', { class: 'goal' }, t.goal || `Task #${t.id}`),
-            h('div', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`))),
-        t.steps.length ? steps : null,
-        t.reply ? h('p', { class: 'reply' }, t.reply) : null,
-        h('div', { class: 'actions' },
-          t.undoable && !t.undoneBy && !live
-            ? h('button', { class: 'forget', onclick: () => undoTask(t.id), title: 'Put the files back (asks first)' }, 'Undo') : null,
-          t.undoneBy ? h('span', { class: 'undone' }, `Undone in #${t.undoneBy}`) : null,
-          ['failed', 'cancelled', 'interrupted'].includes(t.status)
-            ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
-          !live ? h('button', { class: 'forget', onclick: () => showReceipt(t.id) }, 'Receipt') : null,
-          !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)));
+        h('div', { class: 'me' }, h('p', { class: 'goal' }, t.goal || `Task #${t.id}`)),
+        h('div', { class: 'them' },
+          h('span', { class: 'face', 'aria-hidden': 'true' }, lanternFace()),
+          h('div', { class: 'bubble' },
+            h('div', { class: 'head' },
+              h('span', { class: `state ${t.status}`, 'aria-hidden': 'true' }, STATE_MARK[t.status] || ''),
+              h('span', { class: 'status' }, `#${t.id} · ${t.status}${t.cost ? ' · ' + LanternAudit.money(t.cost) : ''}${t.verified ? ' · verified ✓' : ''}`)),
+            said ? h('p', { class: t.reply ? 'reply' : 'reply working' }, said) : null,
+            t.steps.length ? steps : null,
+            h('div', { class: 'actions' },
+              t.undoable && !t.undoneBy && !live
+                ? h('button', { class: 'forget', onclick: () => undoTask(t.id), title: 'Put the files back (asks first)' }, 'Undo') : null,
+              t.undoneBy ? h('span', { class: 'undone' }, `Undone in #${t.undoneBy}`) : null,
+              ['failed', 'cancelled', 'interrupted'].includes(t.status)
+                ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
+              !live ? h('button', { class: 'forget', onclick: () => showReceipt(t.id) }, 'Receipt') : null,
+              !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)))));
     });
+    // follow the conversation when you were already at its end, or when a new message arrived
+    const sig = tasks.map((t) => `${t.id}:${t.status}:${t.steps.length}`).join(',');
+    if (tab === 'tasks' && sig !== lastThread && (atBottom || !lastThread || tasks.length && !lastThread.includes(`${tasks[tasks.length - 1].id}:`))) {
+      main.scrollTo({ top: main.scrollHeight });
+    }
+    lastThread = sig;
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
     document.body.classList.toggle('busy', tasks.some((t) => t.status === 'running' || t.status === 'queued'));
+    badge('badge-tasks', Object.keys(state.approvals || {}).length, 'waiting for you');
     renderGlance();
   }
+
+  function badge(id, n, what) {
+    const b = $(id);
+    b.hidden = !n;
+    b.textContent = n ? String(n) : '';
+    b.setAttribute('aria-label', n ? `${n} ${what}` : '');
+  }
+
+  document.querySelector('.chat-face').append(lanternFace());
 
   // ---- welcome (first launch) and preferences ------------------------------------------------------
   const keyName = (k) => k.replace('CommandOrControl', cfg.platform === 'darwin' ? '⌘' : 'Ctrl').replace(/Shift/, '⇧')
@@ -562,7 +591,8 @@
     $('kbd-ask').textContent = keyName(cfg.askHotkey);
     $('welcome-ask').textContent = keyName(cfg.askHotkey);
     $('kbd-stop').textContent = keyName('CommandOrControl+Shift+X');
-    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – ' + tabButtons.length;
+    $('kbd-stop-inline').textContent = keyName('CommandOrControl+Shift+X');
+    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – ' + Math.min(9, tabButtons.length);
   }
   function seen() {
     try { return window.localStorage.getItem('lantern.welcomed') === '1'; } catch (e) { return false; }
@@ -619,8 +649,11 @@
     renderGlance();
     const box = $('reminders');
     box.textContent = '';
-    box.hidden = !items.length;
-    if (!items.length) return;
+    badge('badge-reminders', items.length, items.length === 1 ? 'reminder' : 'reminders');
+    if (!items.length) {
+      box.append(h('p', { class: 'empty' }, 'No reminders. Try “remind me in 20 minutes to stretch” in Today.'));
+      return;
+    }
     for (const r of items) {
       box.append(h('div', { class: 'row reminder' },
         h('span', { class: 'row-icon orange' }, bellIcon()),

@@ -42,7 +42,8 @@
     </div>
     <nav class="tabs" role="tablist" aria-label="Sections" aria-orientation="vertical">
       <p class="nav-group" aria-hidden="true">Lantern</p>
-      <button role="tab" data-tab="tasks" class="on" aria-selected="true"><svg class="ico"><use href="#i-today"/></svg><span>Today</span></button>
+      <button role="tab" data-tab="tasks" class="on" aria-selected="true"><svg class="ico"><use href="#i-today"/></svg><span>Today</span><b class="badge" id="badge-tasks" hidden></b></button>
+      <button role="tab" data-tab="reminders"><svg class="ico"><use href="#i-bell"/></svg><span>Reminders</span><b class="badge" id="badge-reminders" hidden></b></button>
       <button role="tab" data-tab="learn"><svg class="ico"><use href="#i-learn"/></svg><span>Learned</span></button>
       <button role="tab" data-tab="teach"><svg class="ico"><use href="#i-teach"/></svg><span>Teaching</span></button>
       <button role="tab" data-tab="meetings"><svg class="ico"><use href="#i-meeting"/></svg><span>Meetings</span></button>
@@ -62,7 +63,6 @@
   <div class="content">
     <header class="toolbar">
       <h1 class="window-title" id="section-title">Today</h1>
-      <button class="stop" id="stop" title="Stop everything (Ctrl/Cmd+Shift+X)"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span>Stop</span></button>
     </header>
 
     <div class="banners">
@@ -73,33 +73,28 @@
     </div>
 
     <main>
-    <section data-panel="tasks" class="on" aria-label="Today">
-      <div class="today-head">
-        <div>
-          <p class="eyebrow" id="today-date"></p>
-          <h2 class="greeting" id="today-greeting">Today</h2>
-        </div>
+    <section data-panel="tasks" class="on chat" aria-label="Today">
+      <div class="chat-empty" id="chat-empty">
+        <div class="chat-face" aria-hidden="true"></div>
+        <p class="eyebrow" id="today-date"></p>
+        <h2 class="greeting" id="today-greeting">Today</h2>
+        <p class="chat-hint">Ask for anything: a form, an email, your files, a reminder.</p>
+        <div class="suggestions" id="suggestions" aria-label="Suggestions"></div>
       </div>
-      <form id="ask" class="ask">
-        <svg class="ico lead" aria-hidden="true"><use href="#i-search"/></svg>
-        <input id="goal" autocomplete="off" placeholder="Ask Lantern to do something…" maxlength="2000" aria-label="Ask Lantern">
-        <button type="button" class="mic" id="talk" aria-label="Hold to talk" aria-pressed="false" title="Hold to talk"><svg class="ico"><use href="#i-mic"/></svg></button>
-        <button type="submit" class="send" aria-label="Go" title="Go (Return)"><svg class="ico"><use href="#i-send"/></svg></button>
-      </form>
-      <p class="talk-live" id="talk-live" aria-live="polite" hidden></p>
-      <div class="suggestions" id="suggestions" aria-label="Suggestions"></div>
-      <div class="glance" id="glance" aria-live="polite"></div>
-      <div id="reminders" class="group" hidden></div>
-      <div id="tasks" class="tasks"></div>
-      <h3 class="section">Camera check-in</h3>
-      <div class="group checkin-group">
-        <div class="row checkin">
-          <span class="row-icon teal"><svg class="ico"><use href="#i-camera"/></svg></span>
-          <div class="row-text"><b>Look around once</b><small>One snapshot, objects only, nothing stored</small></div>
-          <select id="checkin-concept" aria-label="What to look for"></select>
-          <button id="checkin" class="tinted">Check</button>
-        </div>
+      <div id="tasks" class="thread" aria-live="polite"></div>
+      <div class="composer">
+        <p class="talk-live" id="talk-live" aria-live="polite" hidden></p>
+        <form id="ask" class="ask">
+          <input id="goal" autocomplete="off" placeholder="Message Lantern" maxlength="2000" aria-label="Message Lantern">
+          <button type="button" class="mic" id="talk" aria-label="Hold to talk" aria-pressed="false" title="Hold to talk"><svg class="ico"><use href="#i-mic"/></svg></button>
+          <button type="submit" class="send" aria-label="Send" title="Send (Return)"><svg class="ico"><use href="#i-send"/></svg></button>
+        </form>
       </div>
+    </section>
+
+    <section data-panel="reminders" aria-label="Reminders">
+      <p class="lede">Reminders you set by asking ("remind me at 6 to call Ravi"), here or from your phone.</p>
+      <div id="reminders" class="group"></div>
     </section>
 
     <section data-panel="learn" aria-label="Learned">
@@ -150,6 +145,15 @@
       <p class="lede">Small tools Lantern made for you. They run sandboxed: no network, no files.</p>
       <div id="widget-list" class="widget-list"></div>
       <iframe id="widget-host" class="widget-host" sandbox="allow-scripts" src="widget-host.html" title="Widget"></iframe>
+      <h3 class="section">Camera check-in</h3>
+      <div class="group checkin-group">
+        <div class="row checkin">
+          <span class="row-icon teal"><svg class="ico"><use href="#i-camera"/></svg></span>
+          <div class="row-text"><b>Look around once</b><small>One snapshot, objects only, nothing stored</small></div>
+          <select id="checkin-concept" aria-label="What to look for"></select>
+          <button id="checkin" class="tinted">Check</button>
+        </div>
+      </div>
     </section>
 
     <section data-panel="phone" aria-label="Phone">
@@ -200,7 +204,9 @@
     </section>
 
     <section data-panel="costs" aria-label="Usage">
-      <h3 class="section first">Meta Model API</h3>
+      <h3 class="section first">Today at a glance</h3>
+      <div class="glance" id="glance" aria-live="polite"></div>
+      <h3 class="section">Meta Model API</h3>
       <div class="group">
         <div class="hero">
           <p class="hero-number" id="cost-total">…</p>
@@ -213,7 +219,14 @@
     </section>
 
     <section data-panel="setup" aria-label="Settings">
-      <h3 class="section first">Personality</h3>
+      <h3 class="section first">Stop</h3>
+      <div class="group">
+        <div class="row">
+          <div class="row-text"><b>Stop everything</b><small>Ends every running task and denies the approvals waiting. <span id="kbd-stop-inline">⌘ ⇧ X</span> works from anywhere, even with this window closed.</small></div>
+          <button class="stop" id="stop" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span>Stop</span></button>
+        </div>
+      </div>
+      <h3 class="section">Personality</h3>
       <div class="group">
         <div class="row"><div class="segmented" id="persona" role="radiogroup" aria-label="Lantern's personality"></div></div>
       </div>

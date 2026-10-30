@@ -101,13 +101,12 @@ body.mac .toolbar { -webkit-app-region: drag; }
 body.mac .toolbar button { -webkit-app-region: no-drag; }
 .window-title { flex: 1; margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
 .stop {
-  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 7px; font-size: 13px; font-weight: 600;
-  border: .5px solid var(--separator); background: var(--card); color: var(--label-2); box-shadow: var(--shadow);
-  transition: background .2s, color .2s, transform .15s var(--spring);
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  border: 0; background: var(--red-fill); color: #fff; transition: transform .15s var(--spring), filter .2s;
 }
 .stop .ico { width: 14px; height: 14px; }
+.stop:hover { filter: brightness(1.08); }
 .stop:active { transform: scale(.97); }
-body.busy .stop { background: var(--red-fill); border-color: transparent; color: #fff; }
 
 .banners { flex: none; max-height: 62vh; overflow-y: auto; }
 .banners:empty { display: none; }
@@ -197,25 +196,50 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 7
 .tile .t-note { font-size: 12px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .checkin-group .checkin select { flex: none; }
 
-/* ---- tasks ---- */
-.tasks { margin-top: 4px; }
-.tasks > h2.section { margin-top: 26px; }
-.task { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; margin-top: 8px; }
-.task .head { display: flex; gap: 10px; align-items: flex-start; }
-.task .state { width: 20px; height: 20px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font-size: 11px; font-weight: 800; margin-top: 1px; }
+/* ---- Today: a conversation (Messages-like), the composer pinned to the bottom ---- */
+body.chatting main { padding-bottom: 0; }
+main > section.chat.on { display: flex; flex-direction: column; min-height: 100%; max-width: 720px; }
+.chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px 0 24px; }
+.chat-empty[hidden] { display: none; }
+.chat-face { width: 64px; height: 64px; border-radius: 50%; overflow: hidden; display: grid; place-items: center; margin-bottom: 14px;
+             background: linear-gradient(160deg, #ffc65c, #ff8a1f); box-shadow: 0 6px 18px rgba(255, 138, 31, .28); }
+.chat-face img { width: 100%; height: 100%; object-fit: cover; }
+.chat-face .ico { width: 34px; height: 34px; color: #fff; }
+.chat-empty .greeting { font-size: 26px; }
+.chat-hint { margin: 6px 0 0; font-size: 14px; color: var(--label-2); }
+.chat-empty .suggestions { justify-content: center; max-width: 560px; padding-top: 18px; }
+.thread { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 18px; padding: 20px 0 8px; }
+.thread:empty { display: none; }
+.composer { position: sticky; bottom: 0; z-index: 2; padding: 10px 0 20px;
+            background: linear-gradient(to bottom, transparent, var(--bg) 14px); }
+.composer .ask { height: 44px; border-radius: 22px; padding: 0 5px 0 18px; }
+
+.task { display: flex; flex-direction: column; gap: 8px; }
+.task .me { align-self: flex-end; max-width: 78%; }
+.task .goal { margin: 0; padding: 8px 14px; border-radius: 18px 18px 5px 18px; background: var(--tint-fill); color: #fff;
+              font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.task .them { display: flex; gap: 8px; align-items: flex-end; max-width: 88%; }
+.task .face { width: 28px; height: 28px; flex: none; border-radius: 50%; overflow: hidden; display: grid; place-items: center;
+              background: linear-gradient(160deg, #ffc65c, #ff8a1f); }
+.task .face img { width: 100%; height: 100%; object-fit: cover; }
+.task .face .ico { width: 16px; height: 16px; color: #fff; }
+.task .bubble { min-width: 0; padding: 9px 14px 10px; border-radius: 18px 18px 18px 5px; background: var(--card); box-shadow: var(--shadow); }
+.task .head { display: flex; gap: 6px; align-items: center; }
+.task .state { width: 14px; height: 14px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font-size: 8.5px; font-weight: 800; }
 .task .state.done { background: var(--green); } .task .state.failed, .task .state.cancelled { background: var(--red); }
 .task .state.interrupted, .task .state.resumed { background: var(--gray); }
-.task .state.running, .task .state.queued { border: 2.5px solid var(--fill-2); border-top-color: var(--tint); animation: spin .9s linear infinite; }
+.task .state.running, .task .state.queued { border: 2px solid var(--fill-2); border-top-color: var(--tint); animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.task .goal { font-weight: 600; font-size: 14px; }
-.task .status { font-size: 12px; color: var(--label-2); margin-top: 1px; }
-.task details { margin-top: 8px; }
-.task summary { font-size: 12.5px; color: var(--tint-text); cursor: default; list-style: none; }
+.task .status { font-size: 11.5px; color: var(--label-2); }
+.task .reply { margin: 5px 0 0; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.task .reply.working { color: var(--label-2); }
+.task details { margin-top: 6px; }
+.task summary { font-size: 12px; color: var(--tint-text); cursor: default; list-style: none; }
 .task summary::-webkit-details-marker { display: none; }
 .task summary::after { content: " ›"; }
 .task details[open] summary::after { content: " ⌄"; }
-.steps { list-style: none; margin: 6px 0 0; padding: 0; }
-.steps li { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; }
+.steps { list-style: none; margin: 4px 0 0; padding: 0; }
+.steps li { display: flex; align-items: center; gap: 8px; padding: 2px 0; font-size: 12.5px; color: var(--label-2); }
 .steps li.bad { color: var(--red-text); }
 .chip { flex: none; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; background: var(--fill); color: var(--label-2); }
 .chip.spark { background: color-mix(in srgb, var(--indigo) 16%, transparent); color: color-mix(in srgb, var(--indigo) 55%, var(--label)); }
@@ -224,13 +248,19 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 7
 .chip.voice { background: color-mix(in srgb, var(--teal) 18%, transparent); color: color-mix(in srgb, var(--teal) 50%, var(--label)); }
 .chip.image { background: color-mix(in srgb, var(--purple) 16%, transparent); color: color-mix(in srgb, var(--purple) 55%, var(--label)); }
 .chip.sam { background: color-mix(in srgb, var(--blue) 14%, transparent); color: color-mix(in srgb, var(--blue) 55%, var(--label)); }
-.task .reply { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--fill); white-space: pre-wrap; font-size: 13.5px; }
-.task .actions { display: flex; gap: 16px; margin-top: 8px; }
-.task .forget { border: 0; background: transparent; color: var(--tint-text); font-size: 12.5px; padding: 0; }
+.task .actions { display: flex; gap: 14px; margin-top: 6px; }
+.task .actions:empty { display: none; }
+.task .forget { border: 0; background: transparent; color: var(--tint-text); font-size: 12px; padding: 0; }
 .task .forget.quiet { color: var(--label-2); }
-.task .undone { font-size: 12.5px; color: var(--label-2); }
-.interrupted { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; margin-top: 12px; font-size: 13.5px; }
+.task .undone { font-size: 12px; color: var(--label-2); }
+.interrupted { background: var(--card); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; font-size: 13.5px; }
 .interrupted ul { margin: 6px 0 8px; padding-left: 18px; color: var(--label-2); }
+
+/* ---- sidebar badges ---- */
+.tabs button .badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; font-size: 11px; font-weight: 600;
+                      display: grid; place-items: center; color: var(--label-2); background: var(--fill-2); font-variant-numeric: tabular-nums; }
+.tabs button .badge[hidden] { display: none; }
+#badge-tasks { color: #fff; background: var(--red-fill); }
 
 /* ---- reminders ---- */
 .reminder .when { flex: none; font-weight: 600; font-size: 12.5px; color: var(--orange-text); font-variant-numeric: tabular-nums; }
@@ -412,6 +442,7 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 2px 8px; borde
 .receipt .footnote { margin: 14px 2px 14px; }
 
 /* ---- toast (HUD), bottom of the content area ---- */
+body.chatting .toast { bottom: 84px; }   /* above the message box */
 .toast {
   position: fixed; left: calc(50% + 114px); bottom: 22px; transform: translateX(-50%); max-width: min(520px, calc(100% - 280px)); z-index: 20;
   padding: 9px 16px; border-radius: 10px; font-size: 13.5px; font-weight: 500; color: var(--label);
@@ -425,7 +456,8 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 2px 8px; borde
   .sidebar { padding-left: 8px; padding-right: 8px; }
   .sidebar .title-block, .nav-group, .tabs button span, .foot-label { display: none; }
   .sidebar-head { justify-content: center; padding: 2px 0 12px; }
-  .tabs button { justify-content: center; padding: 0; height: 34px; }
+  .tabs button { justify-content: center; padding: 0; height: 34px; position: relative; }
+  .tabs button .badge { position: absolute; top: 1px; right: 4px; min-width: 15px; height: 15px; font-size: 9.5px; padding: 0 4px; }
   .sidebar-foot { justify-content: center; padding: 12px 0 2px; }
   .capsule { padding: 3px 6px; font-size: 11px; }
   main, .approvals { padding-left: 18px; padding-right: 18px; }

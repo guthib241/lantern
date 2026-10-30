@@ -95,7 +95,7 @@ async function main() {
     }
     async function latestTask() {
       return panel.evaluate(() => {
-        const t = document.querySelector('#tasks .task');
+        const t = [...document.querySelectorAll('#tasks .task')].pop();
         return t ? { goal: t.querySelector('.goal').textContent, status: t.querySelector('.status').textContent,
                      reply: (t.querySelector('.reply') || {}).textContent || '',
                      steps: [...t.querySelectorAll('.steps li')].map((li) => li.textContent) } : null;
@@ -280,7 +280,7 @@ async function main() {
     const limits = await until('the spending limits', async () => panel.textContent('#cost-limits'));
     check(limits === 'Stops itself at $150.00 · $3.00 per task.', `Costs tab shows the limits enforced in code (${limits})`);
 
-    const TABS = ['tasks', 'learn', 'teach', 'meetings', 'widgets', 'phone', 'privacy', 'costs', 'setup'];
+    const TABS = ['tasks', 'reminders', 'learn', 'teach', 'meetings', 'widgets', 'phone', 'privacy', 'costs', 'setup'];
     for (const name of TABS) {
       await panel.click(`.tabs button[data-tab=${name}]`);
       await sleep(350);
@@ -302,7 +302,7 @@ async function main() {
     }
     await panel.click('.tabs button[data-tab=tasks]');
     violations = violations.concat(await a11y(avatar, 'avatar'));
-    check(violations.length === 0, `no WCAG 2.1 AA violations (axe-core) on 9 panel sections × light/dark, Quick Ask and the island` +
+    check(violations.length === 0, `no WCAG 2.1 AA violations (axe-core) on 10 panel sections × light/dark, Quick Ask and the island` +
           (violations.length ? `: ${[...new Set(violations.map((v) => v.id))].join(', ')}` : ''));
     await panel.emulateMedia({ colorScheme: 'light' });
 
@@ -311,7 +311,9 @@ async function main() {
     check(native.badge === 0, `badge clears when nothing waits (${native.line})`);
     check(!JSON.stringify(native.notified).includes('Asha'), `notifications never carry form values (${native.notified.length} sent)`);
 
-    // STOP from the panel
+    // STOP from Settings (and Ctrl/Cmd+Shift+X anywhere); Today is only the conversation
+    check(!(await panel.$('[data-panel=tasks] #stop, .toolbar #stop')), 'no Stop button on Today or in the toolbar');
+    await panel.click('.tabs button[data-tab=setup]');
     await panel.click('#stop');
     await until('the stop event', async () => /Stopped/.test(await avatar.textContent('#island-text')), 10000);
     check(true, 'STOP reaches the server and the avatar');

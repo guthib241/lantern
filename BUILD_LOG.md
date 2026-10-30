@@ -515,4 +515,14 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - `scripts/eval_privacy.py --tasks reimbursement`: the demo reimbursement form, whose custom dropdown needs computer use, so screenshots really leave. Success = the task is "done" and fill_form verified the confirmation with category=travel. Dry-run harness scripted too (clicks measured in the same layout). Test: `test_the_computer_use_task_sends_screenshots_and_each_mode_treats_them_differently`.
 - Measured live (Muse Spark, 5 runs per mode): raw 5/5, masked 5/5, decoy 5/5; 16/15/16 screenshots; user values shown 38/0/0, covered 0/36/32; 0 leaks; every payload in the audit log (46/46, 45/45, 50/50); $0.039/$0.043/$0.046 per run; $0.64 in total.
 - Desktop: an approval is now a sheet over the dimmed window (Mac style) instead of a card squeezed above Today. README hero and screenshots retaken from the e2e and the tour (1080×720 window); Meetings and Learned added to the gallery.
+- Today is now only the conversation:
+  - your request on the right, Lantern's answer on the left (steps folded), oldest first;
+  - the message box is pinned to the bottom, and the empty state is a greeting with suggestions.
+- What moved out of Today:
+  - Reminders got their own sidebar section with a count badge;
+  - the at-a-glance tiles went to Usage;
+  - the camera check-in went to Widgets;
+  - Stop went to Settings, out of the toolbar (Ctrl/Cmd+Shift+X still stops everything from anywhere).
+- Waiting approvals show as a red badge on Today.
+- e2e and axe pass on 10 sections in light and dark.
 

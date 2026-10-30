@@ -102,21 +102,26 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
 | ![Approval sheet](docs/screenshots/approval-sheet.png) | ![Island asking for approval](docs/screenshots/island-approval-cut.png) | ![Quick Ask](docs/screenshots/quick-ask.png) |
 | **What left my laptop** | **First launch** | **Setup check and preferences** |
 | ![Privacy](docs/screenshots/privacy.png) | ![Welcome](docs/screenshots/welcome.png) | ![Setup](docs/screenshots/setup.png) |
-| **Meetings: a recording becomes tasks** | **Learned routines** | **Today, dark** |
-| ![Meetings](docs/screenshots/meetings.png) | ![Learned](docs/screenshots/learned.png) | ![Today in dark mode](docs/screenshots/today-dark.png) |
+| **Today: just the conversation** | **Meetings: a recording becomes tasks** | **Reminders** |
+| ![Today in dark mode](docs/screenshots/today-dark.png) | ![Meetings](docs/screenshots/meetings.png) | ![Reminders](docs/screenshots/reminders.png) |
 
 *Screenshots of the real app (`lantern --serve --demo`), captured by the end-to-end test.*
 
 - **Live activity island:** a black capsule above Lantern's face shows each step as it happens, and grows into a small card for approvals, results and reminders. Clean approvals can be answered right there. Anything that followed untrusted content (every form submit) asks you to **Review** the full sheet.
 - **Quick Ask:** press **Ctrl/Cmd+Shift+Space** anywhere, type, press Return. ↑/↓ for suggestions and recent tasks; "stop" stops everything.
 - **Menu bar and notifications:** the lantern icon in the menu bar (system tray on Windows/Linux) shows what Lantern is doing and how many approvals wait. System notifications cover approvals (title only, never the values), reminders and failures.
-- **The panel** is a Mac-style window: a sidebar (Today, Learned, Teaching, Meetings, Widgets; then Phone, Privacy, Usage, Settings), a quiet toolbar with Stop (red while something runs), and grouped lists. On macOS it uses the system's sidebar material and inset traffic lights.
-  - Today: at-a-glance tiles, suggestions, and **push to talk**: hold the mic (or Space) and speak; Muse Voice Transcribe writes it as you talk, and letting go starts the task. The audio goes to Lantern's own server, which holds the key.
+- **The panel** is a Mac-style window with a sidebar (Today, Reminders, Learned, Teaching, Meetings, Widgets; then Phone, Privacy, Usage, Settings) and grouped lists. On macOS it uses the system's sidebar material and inset traffic lights.
+  - **Today is only the conversation:**
+    - What you asked appears on the right and Lantern's answer on the left, with its steps folded away.
+    - The message box stays at the bottom.
+    - **Push to talk:** hold the mic (or Space) and speak. Muse Voice Transcribe writes it as you talk, and letting go sends it. The audio goes to Lantern's own server, which holds the key.
+  - Everything else has its own sidebar section: Reminders (with a count), the at-a-glance tiles in Usage, and the camera check-in in Widgets.
+  - **Stop** is in Settings. Ctrl/Cmd+Shift+X stops everything from anywhere, and so does saying "stop" in Quick Ask.
   - Approvals arrive as a **sheet** over the dimmed window, form fields as a table.
   - Meetings: pick a recording; Muse Voice Transcribe labels the speakers and Muse Spark lists what was agreed. Nothing becomes a task until you tick it.
   - Learned and Teaching: the routines Lantern learned from you, and the lessons you showed it.
   - Lantern's face reacts (thinking, proud, worried, listening, healed…): each reaction is a Muse Image edit of one portrait, made once and cached.
-  - Light and dark mode; Ctrl/Cmd+1…9 switch sections; WCAG 2.1 AA (axe-core) in the e2e.
+  - Light and dark mode; Ctrl/Cmd+1…9 go to the first nine sections; WCAG 2.1 AA (axe-core) in the e2e.
 
 ## Safety model (enforced in code, not in prompts)
 

@@ -68,7 +68,7 @@ async function main() {
     console.log(`panel connected: “${(await panel.textContent('#conn')).trim()}”`);
 
     const latest = () => panel.evaluate(() => {
-      const t = document.querySelector('#tasks .task');
+      const t = [...document.querySelectorAll('#tasks .task')].pop();
       return t ? { goal: t.querySelector('.goal').textContent, status: t.querySelector('.status').textContent,
                    reply: (t.querySelector('.reply') || {}).textContent || '',
                    steps: [...t.querySelectorAll('.steps li')].map((li) => li.textContent) } : null;
