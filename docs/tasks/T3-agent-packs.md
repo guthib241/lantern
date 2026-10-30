@@ -107,3 +107,32 @@ New **Agents** tab in `desktop/renderer/panel.*`, matching the panel's existing 
 - `docs/AGENT_PACKS.md` explains the format and the safety rules in plain words;
 - one line in `BUILD_LOG.md` and a `DECISIONS.md` entry;
 - two commits: "T3a agent packs: format, store, run with tool allowlist, routes" and "T3b desktop Agents tab".
+
+## Part 3 (T3c): loop agents (packs that run on a schedule)
+**Goal:** a pack can run by itself on a schedule, e.g. "every morning at 9", "every 2 hours", "every Friday 17:00". It becomes a small bot that keeps working without the user typing anything. Do this after T3a/T3b are green.
+
+- **Optional `"schedule"` field in the pack:** `{"every": "day"|"weekday"|"week"|"hours", "at": "09:00", "hours": 2, "inputs": {...}}`.
+  - The minimum interval is 1 hour.
+  - Validate it strictly.
+  - A schedule in a pack is only a **suggestion**: it starts **off** when installed. The user turns it on in the Agents tab, with an approval card that shows how often it runs and the per-run budget.
+- **Scheduler:** reuse Lantern's reminder loop in `Core` (`reminder_tick`); don't start a second timer thread.
+  - Each due run calls `Core.submit(..., pack=name, inputs=schedule.inputs)`, so it is an ordinary task with a timeline, receipt and Stop.
+  - It never starts a run while the previous run of the same pack is still going.
+- **Safety and cost, in code:**
+  - each scheduled run has its own task budget (`LANTERN_TASK_BUDGET_USD`, default $0.10 for scheduled runs);
+  - after **3 failed or stopped runs in a row**, the loop pauses itself and tells the user;
+  - every change still needs an approval card, which reaches the phone too. Unanswered approvals time out as **declined**, never approved.
+- **Controls** in the Agents tab, on each scheduled pack:
+  - "next run at …" and "last run: ok / failed / stopped (receipt)";
+  - **Pause / Resume** and **Run now**.
+
+  The phone gets `loops` (list) and `pause <name>` keywords in `ChannelHub`.
+- **Tests:**
+  - schedule validation;
+  - the due-time math (day, weekday, week, hours; use a fake clock);
+  - a disabled schedule never runs;
+  - no overlap;
+  - pause after 3 failures;
+  - a scheduled run uses the pack's tool allowlist and is tainted;
+  - an approval timeout means declined.
+- **Commit:** "T3c loop agents: scheduled packs with per-run budget, pause on failures".
