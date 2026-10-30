@@ -115,72 +115,80 @@ def main(argv: list[str] | None = None) -> int:
                         "ms": round((time.monotonic() - t) * 1000)}
         step(f"{name}: {resp.status_code}")
 
-    # Cold start: the first authorised request starts the GPU container and waits for llama-server.
     gpu_t0 = time.monotonic()
-    resp = http.get(url + "/v1/models", headers={"Authorization": f"Bearer {token}"})
-    report["cold_start_s"] = round(time.monotonic() - gpu_t0, 1)
-    ids = [m.get("id") for m in resp.json().get("data", [])] if resp.status_code == 200 else []
-    checks["models"] = {"status": resp.status_code, "ok": gc.SERVED_MODEL in ids, "ids": ids}
-    step(f"cold start {report['cold_start_s']} s, models {ids}")
-
-    client = OpenAI(base_url=url + "/v1", api_key=token, timeout=900, max_retries=0)
-    canary = f"lanterncanary{secrets.token_hex(4)}"
-
-    t = time.monotonic()
-    r = client.chat.completions.create(
-        model=gc.SERVED_MODEL, max_tokens=1024, **ROUTER_PARAMS,
-        messages=[{"role": "system", "content": "Answer in one short sentence."},
-                  {"role": "user", "content": f"The code word is {canary}. What is 17 * 23?"}])
-    answer = (r.choices[0].message.content or "").strip()
-    checks["short_prompt"] = {"ok": "391" in answer, "s": round(time.monotonic() - t, 1),
-                              "finish": r.choices[0].finish_reason, "answer": answer[:200],
-                              "usage": r.usage.model_dump() if r.usage else None, "timings": timings_of(r)}
-    step(f"short prompt: {answer[:80]!r}")
-
-    t = time.monotonic()
-    msgs = [{"role": "user", "content": "What's the local time in Lisbon right now? Use the tool."}]
-    r = client.chat.completions.create(model=gc.SERVED_MODEL, max_tokens=1024, tools=TOOLS,
-                                       tool_choice="auto", messages=msgs, **ROUTER_PARAMS)
-    m = r.choices[0].message
-    calls = m.tool_calls or []
-    call_ok = len(calls) == 1 and calls[0].function.name == "get_local_time"
     try:
-        call_args = json.loads(calls[0].function.arguments) if calls else {}
-    except ValueError:
-        call_args, call_ok = {}, False
-    call_ok = call_ok and "lisbon" in str(call_args.get("city", "")).lower()
-    tool_check = {"ok": call_ok, "s": round(time.monotonic() - t, 1), "finish": r.choices[0].finish_reason,
-                  "n_calls": len(calls), "name": calls[0].function.name if calls else None, "args": call_args}
-    if calls:
-        msgs += [{"role": "assistant", "content": m.content or "",
-                  "tool_calls": [c.model_dump() for c in calls[:1]]},
-                 {"role": "tool", "tool_call_id": calls[0].id, "content": json.dumps({"time": "14:05", "tz": "WET"})}]
-        r2 = client.chat.completions.create(model=gc.SERVED_MODEL, max_tokens=1024, tools=TOOLS,
-                                            tool_choice="auto", messages=msgs, **ROUTER_PARAMS)
-        final = (r2.choices[0].message.content or "").strip()
-        tool_check["followup_ok"] = "14:05" in final or "2:05" in final
-        tool_check["followup"] = final[:200]
-    checks["tool_call"] = tool_check
-    step(f"tool call: {tool_check}")
+        # Cold start: the first authorised request starts the GPU container and waits for llama-server.
+        resp = http.get(url + "/v1/models", headers={"Authorization": f"Bearer {token}"})
+        report["cold_start_s"] = round(time.monotonic() - gpu_t0, 1)
+        ids = [m.get("id") for m in resp.json().get("data", [])] if resp.status_code == 200 else []
+        checks["models"] = {"status": resp.status_code, "ok": gc.SERVED_MODEL in ids, "ids": ids}
+        if resp.status_code == 401:
+            raise RuntimeError(f"the gate rejected the token in {args.token_file}: it doesn't match the Modal "
+                               "Secret (rotated on another machine?). rotate_token.py --redeploy here fixes it, "
+                               "and makes other machines' token files stale")
+        step(f"cold start {report['cold_start_s']} s, models {ids}")
 
-    t = time.monotonic()
-    r = client.chat.completions.create(
-        model=gc.SERVED_MODEL, max_tokens=1500, **ROUTER_PARAMS,
-        messages=[{"role": "user", "content": "Write about 200 words on why lanterns were carried at sea."}])
-    checks["decode"] = {"ok": bool((r.choices[0].message.content or "").strip()), "s": round(time.monotonic() - t, 1),
-                        "finish": r.choices[0].finish_reason, "timings": timings_of(r),
-                        "usage": r.usage.model_dump() if r.usage else None}
-    step(f"decode: {checks['decode']['timings']}")
+        client = OpenAI(base_url=url + "/v1", api_key=token, timeout=900, max_retries=0)
+        canary = f"lanterncanary{secrets.token_hex(4)}"
 
-    logs = modal_cli("app", "logs", gc.APP_NAME, "--tail", "1000", timeout=120)
-    checks["no_content_in_logs"] = {"ok": logs.returncode == 0 and canary not in logs.stdout + logs.stderr,
-                                    "lines_checked": len(logs.stdout.splitlines())}
-    ready = [ln.strip() for ln in logs.stdout.splitlines() if "lantern-glimmer ready" in ln]
-    report["container_ready_log"] = ready[-1] if ready else None
+        t = time.monotonic()
+        r = client.chat.completions.create(
+            model=gc.SERVED_MODEL, max_tokens=1024, **ROUTER_PARAMS,
+            messages=[{"role": "system", "content": "Answer in one short sentence."},
+                      {"role": "user", "content": f"The code word is {canary}. What is 17 * 23?"}])
+        answer = (r.choices[0].message.content or "").strip()
+        checks["short_prompt"] = {"ok": "391" in answer, "s": round(time.monotonic() - t, 1),
+                                  "finish": r.choices[0].finish_reason, "answer": answer[:200],
+                                  "usage": r.usage.model_dump() if r.usage else None, "timings": timings_of(r)}
+        step(f"short prompt: {answer[:80]!r}")
 
-    if not args.keep:
-        stop = modal_cli("app", "stop", "-y", gc.APP_NAME, timeout=300)
-        checks["stopped"] = {"ok": stop.returncode == 0}
+        t = time.monotonic()
+        msgs = [{"role": "user", "content": "What's the local time in Lisbon right now? Use the tool."}]
+        r = client.chat.completions.create(model=gc.SERVED_MODEL, max_tokens=1024, tools=TOOLS,
+                                           tool_choice="auto", messages=msgs, **ROUTER_PARAMS)
+        m = r.choices[0].message
+        calls = m.tool_calls or []
+        call_ok = len(calls) == 1 and calls[0].function.name == "get_local_time"
+        try:
+            call_args = json.loads(calls[0].function.arguments) if calls else {}
+        except ValueError:
+            call_args, call_ok = {}, False
+        call_ok = call_ok and "lisbon" in str(call_args.get("city", "")).lower()
+        tool_check = {"ok": call_ok, "s": round(time.monotonic() - t, 1), "finish": r.choices[0].finish_reason,
+                      "n_calls": len(calls), "name": calls[0].function.name if calls else None, "args": call_args}
+        if calls:
+            msgs += [{"role": "assistant", "content": m.content or "",
+                      "tool_calls": [c.model_dump() for c in calls[:1]]},
+                     {"role": "tool", "tool_call_id": calls[0].id, "content": json.dumps({"time": "14:05", "tz": "WET"})}]
+            r2 = client.chat.completions.create(model=gc.SERVED_MODEL, max_tokens=1024, tools=TOOLS,
+                                                tool_choice="auto", messages=msgs, **ROUTER_PARAMS)
+            final = (r2.choices[0].message.content or "").strip()
+            tool_check["followup_ok"] = "14:05" in final or "2:05" in final
+            tool_check["followup"] = final[:200]
+        checks["tool_call"] = tool_check
+        step(f"tool call: {tool_check}")
+
+        t = time.monotonic()
+        r = client.chat.completions.create(
+            model=gc.SERVED_MODEL, max_tokens=1500, **ROUTER_PARAMS,
+            messages=[{"role": "user", "content": "Write about 200 words on why lanterns were carried at sea."}])
+        checks["decode"] = {"ok": bool((r.choices[0].message.content or "").strip()), "s": round(time.monotonic() - t, 1),
+                            "finish": r.choices[0].finish_reason, "timings": timings_of(r),
+                            "usage": r.usage.model_dump() if r.usage else None}
+        step(f"decode: {checks['decode']['timings']}")
+
+        logs = modal_cli("app", "logs", gc.APP_NAME, "--tail", "1000", timeout=120)
+        checks["no_content_in_logs"] = {"ok": logs.returncode == 0 and canary not in logs.stdout + logs.stderr,
+                                        "lines_checked": len(logs.stdout.splitlines())}
+        ready = [ln.strip() for ln in logs.stdout.splitlines() if "lantern-glimmer ready" in ln]
+        report["container_ready_log"] = ready[-1] if ready else None
+    except Exception as e:   # still stop the app and write the report
+        report["error"] = f"{type(e).__name__}: {e}"[:500]
+        checks.setdefault("completed", {"ok": False})
+    finally:
+        if not args.keep:
+            stop = modal_cli("app", "stop", "-y", gc.APP_NAME, timeout=300)
+            checks["stopped"] = {"ok": stop.returncode == 0}
     gpu_s = time.monotonic() - gpu_t0 + (0 if not args.keep else cfg.idle_seconds)
     report["gpu_seconds"] = round(gpu_s, 1)
     report["estimated_cost_usd"] = round(gc.cost_usd(gpu_s, cfg), 4)
