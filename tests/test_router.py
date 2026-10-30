@@ -171,3 +171,17 @@ def test_config_flags():
     assert cfg.mode == "openai" and cfg.model == "muse-glimmer"
     with pytest.raises(ValueError):
         make_backend(RouterConfig(mode="openai", url=""))
+
+
+def test_the_modal_lane_reads_its_key_from_the_token_file_and_says_where_it_runs(tmp_path):
+    from lantern.router import PRIVATE_SYSTEM, RouterConfig, system_for
+    token = tmp_path / "private_token"
+    token.write_text("x" * 43 + "\n")
+    cfg = RouterConfig.from_env({"LANTERN_GLIMMER_URL": "https://ws--lantern-glimmer-gate.us-east.modal.run/v1",
+                                 "LANTERN_GLIMMER_KEY_FILE": str(token)})
+    assert cfg.mode == "openai" and cfg.api_key == "x" * 43 and cfg.timeout is None
+    assert RouterConfig.from_env({"LANTERN_GLIMMER_URL": "http://127.0.0.1:8080/v1"}).api_key == "local"
+    assert RouterConfig.from_env({"LANTERN_GLIMMER_URL": "http://127.0.0.1:8080/v1",
+                                  "LANTERN_GLIMMER_KEY_FILE": str(tmp_path / "missing")}).api_key == "local"
+    assert "own computer" in PRIVATE_SYSTEM and "own computer" not in system_for("selfhosted")
+    assert "private server" in system_for("selfhosted") and system_for("local") == PRIVATE_SYSTEM

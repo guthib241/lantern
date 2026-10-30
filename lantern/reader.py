@@ -217,7 +217,8 @@ class Reader:
     def _local(self, doc: str, question: str, kind: str, options: list[str] | None) -> Answer:
         backend = getattr(self.router, "backend", None)
         if backend is None:
-            raise ReaderError("private content can only be read on this computer, and the private lane isn't set up")
+            raise ReaderError("private content is read only by Muse Glimmer (on this computer or your private server), "
+                              "and the private lane isn't set up")
         hint = {"yes_no": "Answer yes or no.", "number": "Answer with the number only.",
                 "date": "Answer with the date only, as YYYY-MM-DD.", "text": "Answer in at most five sentences.",
                 "choice": "Answer with exactly one of: " + " | ".join(map(str, options or []))}[kind]
