@@ -125,6 +125,7 @@ class Core:
                                forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
                                mcp=self.mcp)
         self.toolbox.client = self.client
+        self.toolbox.mcp_config = cfg.mcp_config   # learn_repo writes learned servers to Lantern's mcp.json
         if "freecad" in getattr(self.mcp, "servers", {}):
             from .integrations.freecad.connector import FreeCADConnector
             self.toolbox.freecad = FreeCADConnector(self.policy, self.client, self.memory,

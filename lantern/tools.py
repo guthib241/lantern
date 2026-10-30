@@ -60,6 +60,9 @@ class Toolbox:
         self.widgets = widgets  # widgets.Widgets
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
+        self.github_get = None    # repolearn's network hook (url -> bytes); None means real GitHub
+        self.mcp_probe = None     # repolearn.probe_server hook (name, spec -> [tools]); tests swap it
+        self.mcp_config = None    # Lantern's mcp.json path (Core sets it); learned servers go there
         self.link_opener = webbrowser.open  # open_link's browser hook, so tests can swap it
         self.freecad = None     # integrations.freecad.connector.FreeCADConnector: tiers + verify loop for CAD
         self.tainted = False  # set once untrusted content reached the model in this task
@@ -599,6 +602,154 @@ class Toolbox:
             result["structured"] = out["structured"]
         return result
 
+    # ---- GitHub repos (learn_repo) ----------------------------------------------
+    def _learn_base(self):
+        """Lantern's own folder: learned servers and wrapper builds live here."""
+        from pathlib import Path as _Path
+        if self.mcp_config:
+            return _Path(self.mcp_config).expanduser().parent
+        return _Path.home() / ".lantern"
+
+    def learn_repo(self, url: str) -> dict:
+        """Read a GitHub repo, explain it, and act on what it is: install its MCP
+        server pinned to a commit (red approval), build a wrapper with Muse Code,
+        or draft an agent pack from its docs. Reading runs no code."""
+        from . import repolearn
+        try:
+            owner, name, ref = repolearn.parse_url(url)
+        except repolearn.RepoError as e:
+            raise ToolError(str(e)) from e
+        if self.client is None:
+            raise ToolError("the model client isn't set up, so I can't summarize the repo")
+        try:
+            repo = repolearn.fetch_repo(owner, name, ref, get=self.github_get)
+        except repolearn.RepoError as e:
+            raise ToolError(str(e)) from e
+        self._saw_untrusted(repo.readme + "\n" + " ".join(repo.top_files))
+        try:
+            summary, _ = repolearn.summarize(self.client, self.memory, self.task_id, repo)
+        except repolearn.RepoError as e:
+            raise ToolError(str(e)) from e
+        kind = summary.get("kind")
+        if repolearn.looks_like_mcp(repo):   # facts win over the model
+            kind = "mcp_server"
+        base = {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "license": repo.license,
+                "stars": repo.stars, "archived": repo.archived, "kind": kind,
+                "explanation": summary.get("explanation", ""),
+                "tools": summary.get("tools", []), "risks": summary.get("risks", []),
+                "readme": wrap(repo.readme[:MAX_READ_CHARS] or "(no README)", f"github:{repo.owner}/{repo.repo}",
+                               kind="github")}
+        if kind == "mcp_server":
+            return self._learn_install(repo, summary, base)
+        if kind == "library_or_app":
+            return self._learn_wrapper(repo, summary, base)
+        try:
+            pack = repolearn.draft_docs_pack(self.client, self.memory, self.task_id, repo)
+        except repolearn.RepoError as e:
+            return {**base, "pack_draft": None, "reason": str(e)}
+        return {**base, "pack_draft": pack,
+                "note": "A draft only; installing it goes through the agent install approval."}
+
+    def _learn_install(self, repo, summary: dict, base: dict, folder=None,
+                       cmds=None, spec=None) -> dict:
+        """(A): red approval, install pinned, add to mcp.json, start, list tools."""
+        import json as _json
+        from . import repolearn
+        try:
+            name = repolearn.server_name(repo.repo)
+            folder = folder or self._learn_base() / "mcp" / name
+            if cmds is None or spec is None:
+                cmds, spec = repolearn.install_plan(repo, summary.get("install_method", "none"), folder)
+        except repolearn.RepoError as e:
+            return {**base, "installed": False, "reason": str(e)}
+        method = "pip" if cmds[0][1:3] == ["-m", "venv"] else "npm"
+        if repo.sha not in _json.dumps({"commands": cmds, "spec": spec}):
+            return {**base, "installed": False, "reason": "the install plan doesn't pin the commit"}
+        card = repolearn.install_summary(repo, summary, cmds, spec, folder)
+        payload = {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "server": name,
+                   "method": method, "commands": cmds, "spec": spec}
+        commit = self._approve("learn_repo_install", card, payload)
+        if commit is None:
+            return {**base, "installed": False, "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return {**base, "installed": False, **refused}
+        if self.mcp_config is None:
+            return {**base, "installed": False, "reason": "mcp.json isn't set up on this computer"}
+        from .envmap import run_command, safe_env
+        runner = self.command_runner or run_command
+        folder.mkdir(parents=True, exist_ok=True)   # Lantern's own folder, after approval
+        for argv in cmds:
+            code, out = runner(argv, str(folder), safe_env(""), 600)
+            if code != 0:
+                tail = "\n".join(out.splitlines()[-3:]) if out else f"exit {code}"
+                return {**base, "installed": False, "verified": False,
+                        "reason": f"install failed ({' '.join(argv[:4])}…): {tail[:300]}"}
+        repolearn.add_learned_server(self.mcp_config, name, spec)
+        probe = self.mcp_probe or repolearn.probe_server
+        try:
+            tools = probe(name, spec)
+        except Exception as e:
+            repolearn.remove_server(self.mcp_config, name)   # own config entry, not a user file
+            return {**base, "installed": False, "verified": False,
+                    "reason": f"the server didn't start, so I removed it again: {str(e)[:300]}"}
+        return {**base, "installed": True, "verified": True, "server": name, "server_tools": tools,
+                "suggest_draft": (f"Offer to make an agent for it: POST /agents/draft for task "
+                                  f"#{self.task_id} would use the new {name}.* tools.")}
+
+    def _learn_wrapper(self, repo, summary: dict, base: dict) -> dict:
+        """(B): with Muse Code, build a small MCP wrapper (red approval), then install it as (A)."""
+        from . import repolearn
+        muse = repolearn.find_muse()
+        if muse is None:
+            return {**base, "wrapper": "skipped",
+                    "reason": "muse (Muse Code) isn't installed on this computer, so I can't build a wrapper"}
+        try:
+            name = repolearn.server_name(repo.repo)
+        except repolearn.RepoError as e:
+            return {**base, "wrapper": "skipped", "reason": str(e)}
+        builds = self._learn_base() / "builds" / name
+        prompt = repolearn.wrapper_prompt(repo, summary) + " Put the server in `server.py` so it runs as `python -m server`."
+        argv = [muse, "exec", *repolearn.MUSE_FLAGS, prompt]
+        card = (f"Build an MCP wrapper for {repo.owner}/{repo.repo}@{repo.sha} with Muse Code "
+                f"(up to 150 model steps, roughly a few dollars). It runs in {builds} with approvals on. "
+                f"Risks noticed: {'; '.join(summary.get('risks', [])[:5]) or 'none noted'}.")
+        payload = {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "command": argv, "cwd": str(builds)}
+        commit = self._approve("learn_repo_wrapper", card, payload)
+        if commit is None:
+            return {**base, "wrapper": "skipped", "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return {**base, "wrapper": "skipped", **refused}
+        import time as _time
+        from .envmap import run_command, safe_env
+        runner = self.command_runner or run_command
+        builds.mkdir(parents=True, exist_ok=True)   # Lantern's own folder, after approval
+        start = _time.time()
+        code, out = runner(argv, str(builds), safe_env(""), 1800)
+        self.memory.log_step(self.task_id, "note",
+                             {"muse_exec": {"repo": f"{repo.owner}/{repo.repo}", "exit": code,
+                                            "seconds": round(_time.time() - start),
+                                            "tail": "\n".join(out.splitlines()[-5:]) if out else ""}})
+        if code != 0:
+            return {**base, "wrapper": "failed", "verified": False,
+                    "reason": f"muse exec failed (exit {code}); nothing was installed"}
+        import sys as _sys
+        test_code, test_out = runner([_sys.executable, "-m", "pytest", "-q", str(builds)],
+                                     str(builds), safe_env(""), 600)
+        if test_code != 0:
+            tail = "\n".join(test_out.splitlines()[-3:]) if test_out else f"exit {test_code}"
+            return {**base, "wrapper": "failed", "verified": False,
+                    "reason": f"the wrapper's tests didn't pass: {tail[:300]}"}
+        venv = builds / "venv"
+        py = str(venv / ("Scripts" if _sys.platform == "win32" else "bin") / "python")
+        cmds = [[_sys.executable, "-m", "venv", str(venv)],
+                [py, "-m", "pip", "install", str(builds)]]
+        spec = {"command": py, "args": ["-m", "server"], "cwd": str(builds), "read_only": [],
+                "source": {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "wrapper": str(builds)}}
+        result = self._learn_install(repo, summary, base, folder=builds, cmds=cmds, spec=spec)
+        if not result.get("installed"):
+            return {**base, **{k: v for k, v in result.items() if k != "repo"}, "wrapper": "failed"}
+        return {**result, "wrapper": "built"}
+
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
         if self.tainted:  # untrusted text must not be able to plant "facts" silently
@@ -713,6 +864,9 @@ TOOL_SPECS = [
     _fn("open_link",
         "Open a web link (YouTube, a website) in the browser on this laptop. The user approves the exact link first.",
         {"url": {**S, "description": "The link to open, e.g. a shared YouTube URL"}}, ["url"]),
+    _fn("learn_repo", "Learn a GitHub repo from its link (reads it, never runs code): explain what it is; "
+        "install its MCP server pinned to a commit after approval; or draft an agent pack from its docs.",
+        {"url": {**S, "description": "https://github.com/<owner>/<repo>, optionally /tree/<ref>"}}, ["url"]),
     _fn("organize_files", "Tidy files: move many files at once (into new subfolders if needed). The user approves "
         "the whole plan once; each move is verified, and the result includes an undo plan.",
         {"moves": {"type": "array", "description": "Up to 200 moves",
