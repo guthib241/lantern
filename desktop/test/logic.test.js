@@ -396,3 +396,11 @@ test('widget storage: no key can reach the index, and the cap holds', () => {
   s.set('again', 1);
   assert.equal(s.get('again'), 1);
 });
+
+test('avatar window CSP allows blob: images (agent faces, authed server portraits)', () => {
+  const html = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'renderer', 'avatar.html'), 'utf8');
+  const csp = html.match(/img-src([^;"]*)/)[1];
+  assert.ok(csp.includes('blob:'), csp);
+  const js = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'renderer', 'avatar.js'), 'utf8');
+  assert.ok(!/cfg\.apiBase \+ v\.file/.test(js), 'server portraits must be fetched with the token, not linked directly');
+});

@@ -38,7 +38,13 @@
     try { server = await api.get('/avatar/manifest'); } catch (e) { server = null; }
     const from = LanternAvatar.pickSource(server, window.LanternAvatarManifest);
     if (from === 'server') {
-      portraits = Object.fromEntries(Object.entries(server.expressions).map(([k, v]) => [k, cfg.apiBase + v.file]));
+      // The server's files need the auth token, which an <img src> can't send: fetch each one and
+      // show it from a blob: URL (allowed by avatar.html's CSP). Old blob URLs are released first.
+      Object.values(portraits).forEach((u) => { if (String(u).startsWith('blob:')) URL.revokeObjectURL(u); });
+      const entries = await Promise.all(Object.entries(server.expressions).map(async ([k, v]) => {
+        try { return [k, URL.createObjectURL(await api.blob(v.file))]; } catch (e) { return null; }
+      }));
+      portraits = Object.fromEntries(entries.filter(Boolean));
     } else if (from === 'bundled') {
       portraits = Object.fromEntries(Object.entries(bundled).map(([k, v]) => [k, `../assets/avatar/${v.file}`]));
     } else {
