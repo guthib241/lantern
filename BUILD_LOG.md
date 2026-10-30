@@ -533,3 +533,7 @@ First real-API runs of S0–S12 (until now every Phase 2 model was scripted). Me
 - `scripts/baseten_live.py`: one text and one image (a rendered receipt) check against the live endpoint.
 - Tests: `tests/test_baseten.py` (17), scripted fakes only.
 - **Live: not measured.** The key in this environment is refused: HTTP 403 "please check the api-key you provided" for every request (Bearer, Api-Key and no header alike), so `baseten_live.py` reports both checks failed at $0. To rerun once the network secret is fixed: `LANTERN_BASETEN=on BASETEN_API_KEY=injected-by-proxy python scripts/baseten_live.py`.
+
+## Oct 30 (ports from claude/real-run and claude/modal-glimmer)
+- Router: `LANTERN_GLIMMER_KEY_FILE`, `LANTERN_GLIMMER_TIMEOUT` (600 s self-hosted), honest "private server" prompt on the self-hosted lane. real-run's `$p1` placeholder not ported (phase2-core's private handles do that job).
+- `deploy/modal/`, `tests/modal/` (83 tests), `docs/MODAL.md` from `claude/modal-glimmer`: A10 default, `--load-mode none`, CPU mode, separate app/Secret names per session. THIRD_PARTY.md lists llama.cpp, modal, huggingface_hub and the Glimmer weights.
