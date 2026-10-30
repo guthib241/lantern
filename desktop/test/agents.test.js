@@ -39,6 +39,18 @@ test('pack files: JSON parses, junk is refused, names end in .lantern-agent.json
   assert.ok(G.packFileText(PACK).endsWith('\n'));
 });
 
+test('signature badges: signed names who and the key, unsigned warns, tampered refuses', () => {
+  assert.deepEqual(
+    G.signatureBadge({ signature_status: 'signed', author: 'achan', fingerprint: '3F2A-91C0' }),
+    { kind: 'signed', text: '✓ Signed by achan · key 3F2A-91C0' });
+  assert.equal(G.signatureBadge({ signature_status: 'signed', author: 'achan' }).kind, 'signed');
+  assert.deepEqual(G.signatureBadge({ signature_status: 'unsigned' }),
+    { kind: 'unsigned', text: 'Unsigned: anyone could have changed it' });
+  assert.equal(G.signatureBadge({}).kind, 'unsigned');
+  assert.equal(G.signatureBadge(null).kind, 'unsigned');
+  assert.equal(G.signatureBadge({ signature_status: 'tampered' }).kind, 'tampered');
+});
+
 test('faces: drawn icons and emoji from the server, short emoji from the form', () => {
   assert.deepEqual(G.faceView({ face: { icon: true } }), { kind: 'icon' });
   assert.deepEqual(G.faceView({ face: { emoji: '📦' } }), { kind: 'emoji', emoji: '📦' });

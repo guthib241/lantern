@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from . import avatar as avatar_mod
 from . import config as config_mod
-from . import models
+from . import models, packsign
 from . import studio as studio_mod
 from .agent import Agent
 from .agentpacks import PackError, PackStore, draft_pack, pack_suffix
@@ -199,11 +199,15 @@ class Core:
     def submit_pack(self, name: str, inputs: dict) -> int:
         """Run an installed agent pack: the goal is rendered from its blanks,
         its instructions run last, its tools are allowlisted and the task starts
-        tainted. Stopping uses the kill switch; watching uses the task timeline."""
+        tainted. The pack is re-validated on every run, so a file edited on disk
+        afterwards is refused. Stopping uses the kill switch; watching uses the
+        task timeline."""
         try:
-            found = self.packs.get(name)
+            found = self.packs.get(name)   # re-verifies the signature, not only at install
         except KeyError:
             raise KeyError(name) from None
+        except PackError as e:
+            raise ValueError(str(e)) from None
         if found.disabled:
             raise ValueError(f"agent {name!r} is disabled")
         try:
@@ -368,15 +372,19 @@ class Core:
 
     # ---- agent packs (shareable agents; T3a) --------------------------------------
     def pack_install(self, data: dict, *, replace: bool = False) -> dict:
-        """Install a pack after the user approves the exact file (bound to its SHA-256)."""
+        """Install a pack after the user approves the exact file (bound to its SHA-256).
+
+        Trust on first use: a signed pack from a new key asks "Trust it?" and
+        approving records the key; the same author name on a different key warns."""
         import hashlib
         from .agentpacks import canonical_bytes, validate
-        pack = validate(data)   # PackError if invalid: no approval asked for a bad pack
+        pack = validate(data)   # PackError if invalid or tampered: no approval asked for a bad pack
         raw = canonical_bytes(pack.as_dict())
         payload = {"name": pack.name, "sha256": hashlib.sha256(raw).hexdigest()}
         summary = (f"Install agent '{pack.title}' by {pack.author} (v{pack.version}). "
                    f"It may use: {', '.join(pack.tools)}. "
                    f"Full instructions: {pack.instructions}")
+        summary += self._signature_line(pack)
         commit = self.toolbox.gate.ask("install_agent", summary, payload, tainted=False)
         if commit is None:
             return {"installed": False, "reason": "user declined", "name": pack.name}
@@ -388,7 +396,67 @@ class Core:
             stored = self.packs.install(pack.as_dict(), replace=replace)
         except PackError as e:
             return {"installed": False, "reason": str(e), "name": pack.name}
+        if pack.signature is not None:   # approving a new key records it; declining records nothing
+            fp = packsign.fingerprint(pack.signature["public_key"])
+            packsign.record_trust(self.packs.dir, fp, pack.author)
         return {"installed": True, "verified": stored.as_dict() == pack.as_dict(), "name": pack.name}
+
+    def _signature_line(self, pack) -> str:
+        """What the install card says about who sealed the pack (packsign; T3e)."""
+        if pack.signature is None:
+            return " Unsigned: anyone could have changed it."
+        fp = packsign.fingerprint(pack.signature["public_key"])
+        trusted = packsign.load_trusted(self.packs.dir)
+        if fp in trusted:
+            return f" ✓ Signed by {pack.author} · key {fp}."
+        line = f" New author key {fp} ({pack.author}). Trust it?"
+        if any(name == pack.author for name in trusted.values()):
+            line += f" ⚠️ {pack.author}'s packs were signed with a different key before."
+        return line
+
+    def pack_author_is_you(self, author: str) -> bool:
+        """Is this pack's author you: LANTERN_AUTHOR, or the profile's full name."""
+        from .forms import Vault
+        yours = [os.environ.get("LANTERN_AUTHOR", "")]
+        try:
+            profile = Vault(self.cfg.profile_path).load().get("profile", {})
+            yours += [profile.get("full name", ""), profile.get("name", "")]
+        except (OSError, ValueError):
+            pass
+        mine = {str(v).strip().casefold() for v in yours if str(v).strip()}
+        return bool(mine) and str(author or "").strip().casefold() in mine
+
+    def pack_sign(self, name: str) -> dict:
+        """Sign an installed pack with this laptop's key, after an approval.
+        Replaces any previous signature; the disabled flag and face stay as they are."""
+        import hashlib
+        from .agentpacks import canonical_bytes
+        try:
+            current = self.packs.get(name)   # re-validated: a changed file is refused, not signed
+        except KeyError:
+            raise KeyError(name) from None
+        unsigned = {k: v for k, v in current.as_dict().items() if k != "signature"}
+        home = Path(self.cfg.db_path).expanduser().parent
+        private_key, public_b64 = packsign.ensure_key(home)
+        fp = packsign.fingerprint(public_b64)
+        payload = {"name": name, "sha256": hashlib.sha256(canonical_bytes(unsigned)).hexdigest(),
+                   "fingerprint": fp}
+        summary = (f"Sign agent '{current.title}' by {current.author} with your key {fp}? "
+                   "Anyone you share it with will see it is from you, and whether it changed.")
+        commit = self.toolbox.gate.ask("sign_agent", summary, payload, tainted=False)
+        if commit is None:
+            return {"signed": False, "reason": "user declined", "name": name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"signed": False, "reason": str(e), "name": name}
+        signed = packsign.sign(unsigned, private_key)
+        try:
+            stored = self.packs.store_signed(name, signed)
+        except PackError as e:
+            return {"signed": False, "reason": str(e), "name": name}
+        ok = stored.as_dict() == signed   # verify: read it back
+        return {"signed": True, "verified": ok, "name": name, "fingerprint": fp}
 
     # ---- avatar studio (Lantern's face, designed in words; T4a) ------------------------
     def design_avatar(self, brief: str, style: str) -> dict:

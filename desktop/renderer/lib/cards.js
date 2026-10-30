@@ -16,6 +16,7 @@
     run_in_project: 'Run this command?',
     organize_files: 'Tidy these files?',
     install_agent: 'Install this agent?',
+    sign_agent: 'Sign this agent?',
     agent_face: "Draw this agent's face?",
     finish_avatar: 'Make this your avatar?',
     undo_moves: 'Put these files back?',

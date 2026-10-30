@@ -107,6 +107,19 @@
     };
   }
 
+  /** What the signature badge shows: who sealed the pack, or that nobody did. Pure. */
+  function signatureBadge(pack) {
+    const p = pack || {};
+    if (p.signature_status === 'signed') {
+      const fp = typeof p.fingerprint === 'string' && p.fingerprint ? ` · key ${p.fingerprint}` : '';
+      return { kind: 'signed', text: `✓ Signed by ${p.author || 'unknown'}${fp}` };
+    }
+    if (p.signature_status === 'tampered') {
+      return { kind: 'tampered', text: 'Changed after it was signed — not installed' };
+    }
+    return { kind: 'unsigned', text: 'Unsigned: anyone could have changed it' };
+  }
+
   /** The server's face descriptor ({emoji} | {icon} | null) -> what the card shows. Pure. */
   function faceView(pack) {
     const f = (pack && pack.face) || null;
@@ -124,5 +137,5 @@
   }
 
   return { FORMAT, MAX_VALUE, cardView, runPayload, parsePackFile, packFileName, packFileText,
-           draftFields, packFromFields, faceView, parseEmoji };
+           draftFields, packFromFields, faceView, parseEmoji, signatureBadge };
 });

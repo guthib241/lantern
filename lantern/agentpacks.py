@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import models
+from . import models, packsign
 from .scrubber import DEFAULT as SCRUBBER
 
 FORMAT = "lantern-agent/1"
@@ -39,7 +39,7 @@ PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
 MCP_TOOL = re.compile(r"^[a-z0-9_-]{1,24}\.[A-Za-z0-9_*-]+$")
 
 KEYS = {"format", "name", "title", "description", "author", "version",
-        "inputs", "goal", "instructions", "tools"}
+        "inputs", "goal", "instructions", "tools", "signature"}
 INPUT_KEYS = {"key", "question", "example"}
 EMOJI_MAX = 8             # an emoji face is a glance, not a sentence
 FACE_ICON_SUFFIX = ".webp"   # the generated icon lives next to the pack as <name>.webp
@@ -74,6 +74,7 @@ class Pack:
     instructions: str = ""
     tools: list[str] = field(default_factory=list)
     disabled: bool = False
+    signature: dict | None = None   # Ed25519 trust seal (packsign.py); None when unsigned
 
     def render_goal(self, inputs: dict | None) -> str:
         """Fill the `{blanks}` in the goal. Values are plain text: at most
@@ -94,10 +95,13 @@ class Pack:
         return out
 
     def as_dict(self) -> dict:
-        return {"format": FORMAT, "name": self.name, "title": self.title,
-                "description": self.description, "author": self.author, "version": self.version,
-                "inputs": [i.as_dict() for i in self.inputs],
-                "goal": self.goal, "instructions": self.instructions, "tools": list(self.tools)}
+        d = {"format": FORMAT, "name": self.name, "title": self.title,
+             "description": self.description, "author": self.author, "version": self.version,
+             "inputs": [i.as_dict() for i in self.inputs],
+             "goal": self.goal, "instructions": self.instructions, "tools": list(self.tools)}
+        if self.signature is not None:
+            d["signature"] = dict(self.signature)
+        return d
 
     def heading(self) -> str:
         """The heading under which the pack's instructions run. The agent's own
@@ -124,6 +128,7 @@ def validate(data: dict) -> Pack:
         raise PackError("a pack can't pick a model (no 'model' field allowed)")
     if unknown := sorted(set(data) - KEYS):
         raise PackError(f"unknown field{'s' if len(unknown) != 1 else ''}: {', '.join(unknown)}")
+    signature = _checked_signature(data.get("signature"))
     if data.get("format") != FORMAT:
         raise PackError(f"format must be {FORMAT!r}")
     name = data.get("name")
@@ -171,9 +176,24 @@ def validate(data: dict) -> Pack:
             tools.append(tool)
         else:
             raise PackError(f"unknown tool {tool!r}")
-    pack = Pack(name, title, description, author, version, inputs, goal, instructions, tools)
+    pack = Pack(name, title, description, author, version, inputs, goal, instructions, tools,
+                signature=signature)
     _refuse_secrets(pack)
+    if signature is not None and packsign.verify(data) == packsign.TAMPERED:
+        raise PackError("this pack was changed after it was signed")
     return pack
+
+
+def _checked_signature(sig: Any) -> dict | None:
+    """The optional `signature` field: strict shape, then verified. A pack whose
+    content no longer matches its signature is refused. Raises PackError."""
+    if sig is None:
+        return None
+    try:
+        packsign.check_shape(sig)
+    except packsign.PackSignError as e:
+        raise PackError(str(e)) from None
+    return dict(sig)
 
 
 def _refuse_secrets(pack: Pack) -> None:
@@ -232,7 +252,9 @@ class PackStore:
                     pack, disabled = self._load(path)
                 except (PackError, ValueError, OSError):
                     continue   # a hand-edited file that no longer validates stays unlisted
-                out.append({**pack.as_dict(), "disabled": disabled, "face": self._listed_face(path, pack.name)})
+                info = packsign.signature_info(pack.as_dict())
+                out.append({**pack.as_dict(), "disabled": disabled, "face": self._listed_face(path, pack.name),
+                            "signature_status": info["status"], "fingerprint": info["fingerprint"]})
         return out
 
     def _listed_face(self, path: Path, name: str) -> dict | None:
@@ -292,6 +314,23 @@ class PackStore:
                 raise PackError(f"an agent called {pack.name!r} by {old.author} is already installed "
                                 f"(pass replace=True to take its place)")
         self._write(pack, disabled=False, face={"emoji": face} if face else None)
+        stored = self.get(pack.name)   # verify: read it back
+        if stored.as_dict() != pack.as_dict():
+            raise PackError(f"agent {pack.name!r} didn't store correctly")
+        return stored
+
+    def store_signed(self, name: str, data: dict) -> Pack:
+        """Keep a freshly signed pack: same name, validated, with the laptop's
+        disabled flag and face left alone. Raises PackError when refused."""
+        pack = validate(data)   # refuses a tampered file, like every other load
+        if pack.name != name:
+            raise PackError(f"signed pack is for {pack.name!r}, not {name!r}")
+        path = self._path(name)
+        if not path.exists():
+            raise KeyError(f"no agent called {name!r}")
+        face = self._stored_face(path)
+        _, disabled = self._load(path)
+        self._write(pack, disabled=disabled, face={"emoji": face} if face else None)
         stored = self.get(pack.name)   # verify: read it back
         if stored.as_dict() != pack.as_dict():
             raise PackError(f"agent {pack.name!r} didn't store correctly")

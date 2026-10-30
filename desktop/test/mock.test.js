@@ -102,6 +102,9 @@ test('mock agents: list, run, disable, export, draft', async (t) => {
   const draft = await api.post('/agents/draft', { task_id });
   assert.equal(draft.name, 'tidy-downloads');
   await assert.rejects(api.get('/agents/no-such-agent'), /no agent/);
+  const signed = await api.post('/agents/tidy-downloads/sign');
+  assert.equal(signed.signed, true);
+  assert.equal((await api.get('/agents/tidy-downloads')).signature_status, 'signed');
 });
 
 test('mock agents: faces (emoji and drawn), and runs name their pack', async (t) => {

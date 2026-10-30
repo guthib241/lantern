@@ -703,6 +703,7 @@
   function agentCard(pack) {
     const c = LanternAgents.cardView(pack);
     const face = LanternAgents.faceView(pack);
+    const sig = LanternAgents.signatureBadge(pack);
     const run = agentTaskStatus(c.name);
     const refs = {};
     const form = agentRunOpen === c.name && c.runnable
@@ -730,7 +731,8 @@
         agentFaceThumb(pack, face),
         h('div', {},
           h('div', { class: 'goal' }, c.title, c.disabled ? h('span', { class: 'chip' }, 'off') : null),
-          c.sub ? h('div', { class: 'status' }, c.sub) : null)),
+          c.sub ? h('div', { class: 'status' }, c.sub) : null,
+          h('div', { class: `agent-sig ${sig.kind}` }, sig.text))),
       c.description ? h('p', { class: 'reply' }, c.description) : null,
       c.tools.length ? h('div', { class: 'agent-tools' }, c.tools.map((t) => h('span', { class: 'chip' }, t))) : null,
       run ? h('div', { class: 'agent-run' },
@@ -813,6 +815,23 @@
     if (!window.lantern.saveAgentFile) {
       toast('Sharing needs the newest Lantern app.');
       return;
+    }
+    if (pack.mine && pack.signature_status === 'unsigned'
+        && window.confirm(`“${pack.title || pack.name}” is unsigned. Sign it with your key before sharing?`)) {
+      try {   // one approval, then the export below carries the signature
+        const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/sign`);
+        if (!r.signed) {
+          toast(`Not signed: ${r.reason || 'declined'}.`);
+          return;
+        }
+        toast(`Signed with key ${r.fingerprint}.`);
+        await loadAgents();
+        const fresh = agentPacks.find((p) => p.name === pack.name);
+        if (fresh) pack = fresh;
+      } catch (e) {
+        toast(`Couldn't sign it: ${e.message}`);
+        return;
+      }
     }
     try {
       const text = await api.raw(`/agents/${encodeURIComponent(pack.name)}/export`);   // the exact file bytes

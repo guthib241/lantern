@@ -296,11 +296,13 @@ function createMock() {
         emit({ type: 'reminders', changed: 'cancelled', id: r.id });
         return send(200, { cancelled: r.id });
       }
-      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face))?)?$/);
+      const signedView = (a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null,
+        signature_status: a.pack.signature ? 'signed' : 'unsigned', fingerprint: null, mine: false });
+      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face|sign))?)?$/);
       if (g && req.headers['x-lantern-token'] === TOKEN) {
         // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
         if (req.method === 'GET' && !g[1]) {
-          return send(200, { agents: [...agents.values()].map((a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null })) });
+          return send(200, { agents: [...agents.values()].map(signedView) });
         }
         if (req.method === 'POST' && url.pathname === '/agents/install') {
           let data = {};
@@ -320,8 +322,12 @@ function createMock() {
         }
         const item = g[1] && agents.get(g[1]);
         if (!item) return send(404, { detail: `no agent called '${g[1] || ''}'` });
-        if (req.method === 'GET' && !g[2]) return send(200, { ...item.pack, disabled: item.disabled, face: item.face || null });
+        if (req.method === 'GET' && !g[2]) return send(200, signedView(item));
         if (req.method === 'GET' && g[2] === 'export') return send(200, item.pack);
+        if (req.method === 'POST' && g[2] === 'sign') {   // the mock approves at once (no card)
+          item.pack.signature = { alg: 'ed25519', public_key: 'bW9jaw', sig: 'bW9jaw' };
+          return send(200, { signed: true, verified: true, name: g[1], fingerprint: 'MOCK-0000' });
+        }
         if (req.method === 'POST' && g[2] === 'run') {
           if (item.disabled) return send(400, { detail: `agent '${g[1]}' is disabled` });
           let inputs = {};

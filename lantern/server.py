@@ -20,8 +20,8 @@ in the browser can't drive Lantern through localhost.
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
-  GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/run,
-  POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft,
+  GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/sign,
+  POST /agents/{name}/run, POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft,
   POST /agents/{name}/face {emoji}|{generate}, GET /agents/{name}/face   the icon file (T4c)
   POST /avatar/design {brief, style}   one preview image; POST /avatar/design/{id}/accept
   GET  /avatar/manifest, GET /avatar/file/{id}/{expression}   the active avatar (T4a)
@@ -49,7 +49,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 
-from . import __version__, models
+from . import __version__, models, packsign
 from .agentpacks import PackError
 from .approvals import ApprovalError
 from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
@@ -373,15 +373,23 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
 
     @app.get("/agents", dependencies=[Depends(auth)])
     def list_agents():
-        return {"agents": core.packs.list()}
+        out = []
+        for entry in core.packs.list():
+            out.append({**entry, "mine": core.pack_author_is_you(entry.get("author", ""))})
+        return {"agents": out}
 
     @app.get("/agents/{name}", dependencies=[Depends(auth)])
     def get_agent(name: str):
         try:
-            pack = core.packs.get(name)
+            pack = core.packs.get(name)   # re-validated: a changed file answers 422, not a stale pack
         except KeyError:
             raise HTTPException(404, f"no agent called {name!r}")
-        return {**pack.as_dict(), "disabled": pack.disabled, "face": core.packs.face(name)}
+        except PackError as e:
+            raise HTTPException(422, str(e))
+        info = packsign.signature_info(pack.as_dict())
+        return {**pack.as_dict(), "disabled": pack.disabled, "face": core.packs.face(name),
+                "signature_status": info["status"], "fingerprint": info["fingerprint"],
+                "mine": core.pack_author_is_you(pack.author)}
 
     @app.post("/agents/install", dependencies=[Depends(auth)])
     def install_agent(body: dict, replace: bool = False):
@@ -408,6 +416,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, f"no agent called {name!r}")
         except ValueError as e:
             raise HTTPException(400, str(e))
+
+    @app.post("/agents/{name}/sign", dependencies=[Depends(auth)])
+    def sign_agent(name: str):
+        """Sign your own installed pack with this laptop's key. Blocks until approved."""
+        try:
+            return core.pack_sign(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
 
     @app.post("/agents/{name}/disable", dependencies=[Depends(auth)])
     def disable_agent(name: str):

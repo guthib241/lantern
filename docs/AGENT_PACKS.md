@@ -35,6 +35,28 @@ up a surprise bill.
   file, or anything that looks like a secret — all refused.
 - **No deletes.** Disabling an agent flips a flag in its file; the file stays.
 
+## Signed packs (who made it, and whether it changed)
+
+A pack can carry an Ed25519 signature. The keys live only on each laptop
+(`~/.lantern/keys/pack-signing.key`, owner-only, encrypted with Lantern's
+at-rest cipher when one is available); the private half never travels.
+Signing covers the pack's canonical bytes, so the check is one question:
+does this file still match what its author sealed?
+
+- **Badges.** Each card shows `✓ Signed by achan · key 3F2A-91C0`
+  (the first 8 hex chars of the key's SHA-256), `Unsigned: anyone could
+  have changed it`, or nothing at all — a file edited after signing is
+  refused, not listed.
+- **Trust on first use.** Installing a signed pack from a new key asks
+  `New author key 3F2A-91C0 (achan). Trust it?`; approving records the key
+  in `~/.lantern/agents/trusted_keys.json`. The same author name on a
+  different key warns in red. Unsigned packs still install.
+- **Your own packs.** `POST /agents/{name}/sign` seals a pack with your key
+  after an approval. On the Agents tab, **Share** offers to sign first when
+  the pack's author is you.
+- **Checked every run, not only at install.** The seal is re-verified on
+  every load, so a file edited on disk afterwards refuses to run.
+
 ## In the desktop panel
 
 The **Agents** tab lists installed packs with their tools. **Run** asks one
