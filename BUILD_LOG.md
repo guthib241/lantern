@@ -505,3 +505,6 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 ## Oct 30 (S14 baseline on Modal)
 - Modal GPUs enabled. Base Muse Glimmer on the S14 held-out set: **93/93** (48/48 none), median 277 tokens per answer, A100-80GB 296 s wall (load 199 s, answering 38 s), about $0.20. Result in `demo/s14/data/eval_baseline.json`. Training waits for the owner's OK.
 - S14 trained: QLoRA on 251 rows (32 steps, loss 1.84 → 0.14, A100 500 s); merged into the base (vLLM's LoRA path fails for Glimmer); held-out **base 93/93 vs tuned 90/93**, median answer 277 → 15 tokens, 93 answers in 38 s → 8 s. Modal about $1. `scripts/s14_modal.py` gained `--step merge`; results in `demo/s14/data/{train_result,eval_tuned}.json`.
+
+## Oct 30 (S15 avatar reactions)
+- Lantern's face made with Muse Image: an idle portrait and 10 reactions as Muse Image edits of it (`lantern/avatar.py` `react`, `scripts/make_avatar.py --reactions`), cached by the portrait's hash; 11 images, $0.11. `healed` after a routine heals itself, `listening` for push to talk. Tests: `tests/test_avatar.py` (2), `desktop/test/logic.test.js` (1).

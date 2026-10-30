@@ -41,6 +41,17 @@ FRAMING = (
     "Square portrait, the character centred and filling about 70% of the frame, on a plain soft warm "
     "cream-to-peach gradient background. No text, no letters, no logos, no watermark."
 )
+# Reactions: each one a Muse Image *edit* of the idle portrait (dev.meta.ai/docs/image-generation: an `input_image`
+# plus the instruction; the model changes only what's asked). Made once and cached as a file; remade only when the
+# idle portrait changes. Unlike chaining with previous_response_id, an edit doesn't depend on a stored response.
+REACTIONS: dict[str, str] = {
+    **{k: v for k, v in EXPRESSIONS.items() if k != "idle"},
+    # Seen live: the edit for "mildly annoyed … a small frown" was refused by the API's content filter (400).
+    "annoyed": "a little unimpressed: a flat, sceptical look with one eyebrow lowered, its glow slightly dimmer",
+    "juggling": "cheerfully juggling three small glowing orbs at once, focused and a little proud",
+    "healed": "proud of a repair it just made: holding up a tiny glowing wrench, a big satisfied grin, a few sparkles",
+    "listening": "listening closely: leaning in a little, eyes bright and attentive, one tiny hand raised by its side",
+}
 SIZE = "1024x1024"
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 
@@ -76,6 +87,12 @@ def canonical_prompt(brief: str | None, from_reference: bool) -> str:
 def expression_prompt(expression: str) -> str:
     return (f"The same character as in the canonical portrait: identical design, colours, style, framing and "
             f"background. Change only the expression and pose: {EXPRESSIONS[expression]}. No text.")
+
+
+def reaction_prompt(name: str) -> str:
+    return (f"Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical "
+            f"design, colours, proportions, art style, framing and background. Change only the expression and pose: "
+            f"{REACTIONS[name]}. No text, no letters, no logos, no watermark.")
 
 
 def plan(*, brief: str | None = None, from_reference: bool = False, only: list[str] | None = None,
@@ -162,3 +179,57 @@ def generate(client: Any, out_dir: str | Path, *, brief: str | None = None, refe
         write_manifest(out, entries, {"made_with": "Muse Image", "model": models.IMAGE,
                                       "canonical_response": sheet.canonical_response, "updated_at": time.time()})
     return sheet
+
+
+def react(client: Any, out_dir: str | Path, names: list[str] | None = None, *, force: bool = False,
+          on_cost: Callable[[float], None] | None = None,
+          on_progress: Callable[[str, bool | None], None] | None = None) -> dict:
+    """Make the reaction faces as edits of the idle portrait, each once: {"made", "cached", "refused", "cost_usd"}.
+    A reaction is cached while its file exists and it was edited from the current idle portrait."""
+    import hashlib
+    out = Path(out_dir)
+    manifest = read_manifest(out)
+    entries = dict(manifest.get("expressions", {}))
+    idle = entries.get("idle")
+    if not idle or not (out / idle["file"]).exists():
+        raise AvatarError("make the idle portrait first (python scripts/make_avatar.py --only idle)")
+    unknown = [n for n in names or [] if n not in REACTIONS]
+    if unknown:
+        raise AvatarError(f"unknown reaction(s) {unknown}; choose from {list(REACTIONS)}")
+    base = (out / idle["file"]).read_bytes()
+    mime = MIME.get(Path(idle["file"]).suffix.lower(), "image/webp")
+    url = f"data:{mime};base64," + base64.b64encode(base).decode()
+    of = hashlib.sha256(base).hexdigest()[:16]
+    meta = {k: v for k, v in manifest.items() if k != "expressions"}
+    made, cached, refused, cost = [], [], {}, 0.0
+    for name in names or list(REACTIONS):
+        have = entries.get(name)
+        if not force and have and have.get("edit_of") == of and (out / have["file"]).exists():
+            cached.append(name)
+            if on_progress:
+                on_progress(name, True)
+            continue
+        prompt = reaction_prompt(name)
+        try:
+            response = client.responses.create(model=models.IMAGE, tools=[{"type": "image_generation", "size": SIZE}],
+                                               input=[{"role": "user", "content": [
+                                                   {"type": "input_text", "text": prompt},
+                                                   {"type": "input_image", "image_url": url}]}])
+        except Exception as e:   # one refused edit (e.g. a content filter) mustn't stop the rest; idle shows instead
+            if getattr(e, "status_code", None) != 400:
+                raise
+            refused[name] = str(e)[:200]
+            if on_progress:
+                on_progress(name, None)
+            continue
+        (out / f"{name}.webp").write_bytes(_image(response))
+        cost += models.image_cost(1)
+        if on_cost:
+            on_cost(models.image_cost(1))
+        entries[name] = {"file": f"{name}.webp", "source": "Muse Image edit of idle (muse-image-1.0)",
+                         "edit_of": of, "prompt": prompt}
+        made.append(name)
+        write_manifest(out, entries, {**meta, "made_with": "Muse Image", "model": models.IMAGE, "updated_at": time.time()})
+        if on_progress:
+            on_progress(name, False)
+    return {"made": made, "cached": cached, "refused": refused, "cost_usd": cost}

@@ -24,6 +24,8 @@
       lastCheckin: null,  // {reaction, found, at}
       lastRetry: null,    // {at, wait_s, error}: the network wobbled and Lantern is retrying
       lastReminder: null, // {text, late, at}: a reminder just went off
+      lastHeal: null,     // {name, version, at}: a learned routine fixed itself after a page changed (S4)
+      listening: false,   // push to talk is open (live talk to the avatar)
       interrupted: [],    // [{id, goal}]: tasks cut short when Lantern stopped, waiting for "resume"
       questions: [],      // [{task_id, question, options, tainted}]: parked tasks waiting for an answer (S1)
       juggling: null,     // {on, active, running, queued, parked}: the scheduler's snapshot (S1)
@@ -207,6 +209,12 @@
         break;
       case 'checkin':
         s.lastCheckin = { reaction: e.reaction || '', found: e.found || 0, at };
+        break;
+      case 'routine_healed':
+        s.lastHeal = { name: e.name || '', version: e.version || 0, at };
+        break;
+      case 'listening':
+        s.listening = !!e.on;
         break;
       case 'forgot':
         if (e.everything) {

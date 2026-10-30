@@ -4,7 +4,9 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.LanternExpression = api;
 })(typeof self !== 'undefined' ? self : this, function () {
-  const EXPRESSIONS = ['idle', 'thinking', 'smug', 'annoyed', 'celebrating', 'needs-approval', 'sleeping', 'juggling'];
+  const EXPRESSIONS = ['idle', 'thinking', 'smug', 'annoyed', 'celebrating', 'needs-approval', 'sleeping', 'juggling',
+                       'healed', 'listening'];
+  const HEALED_FOR = 10;
   const SLEEP_AFTER = 5 * 60;   // seconds without events
   const CELEBRATE_FOR = 8;
   const SMUG_FOR = 6;
@@ -13,8 +15,10 @@
 
   /** now: seconds since epoch (same clock as event.ts). */
   function pick(state, now) {
+    if (state.listening) return 'listening';
     if (Object.keys(state.approvals || {}).length || (state.questions || []).length) return 'needs-approval';
     const since = (t) => (t ? now - t : Infinity);
+    if (state.lastHeal && since(state.lastHeal.at) < HEALED_FOR) return 'healed';
     if (since(state.lastStop) < ANNOYED_FOR) return 'annoyed';
     const done = state.lastDone;
     if (done && since(done.at) < ANNOYED_FOR && done.status === 'failed') return 'annoyed';
@@ -48,6 +52,8 @@
       thinking: 'Working on it…',
       juggling: `Juggling ${(state.juggling && state.juggling.active) || 2} tasks…`,
       sleeping: 'zzz',
+      healed: state.lastHeal ? `The page changed, so I fixed “${state.lastHeal.name}”. Saved as v${state.lastHeal.version}.` : '',
+      listening: 'Listening…',
       idle: '',
     };
     if (persona === 'helpful') {

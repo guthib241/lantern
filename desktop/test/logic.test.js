@@ -363,3 +363,13 @@ test('widget storage: no key can reach the index, and the cap holds', () => {
   s.set('again', 1);
   assert.equal(s.get('again'), 1);
 });
+
+test('a routine that healed itself shows the healed face and says what it fixed; push to talk shows listening', () => {
+  const healed = run([{ type: 'routine_healed', name: 'city-permit', version: 2, ts: 100 }]);
+  assert.equal(X.pick(healed, 105), 'healed');
+  assert.match(X.bubble(healed, 105, 'smug'), /fixed “city-permit”\. Saved as v2/);
+  assert.equal(X.pick(healed, 120), 'idle');                                    // a short reaction, then back
+  const talking = run([{ type: 'listening', on: true, ts: 1 }]);
+  assert.equal(X.pick(talking, 2), 'listening');
+  assert.equal(X.pick(S.reduce(talking, { type: 'listening', on: false, ts: 3 }), 4), 'idle');
+});

@@ -1,0 +1,68 @@
+{
+  "made_with": "Muse Image",
+  "model": "muse-image-1.0",
+  "canonical_response": "resp_6ae49464d3bf47607fb44d8a",
+  "updated_at": 1793365284.7480052,
+  "expressions": {
+    "idle": {
+      "file": "idle.webp",
+      "source": "Muse Image (muse-image-1.0)",
+      "response_id": "resp_6ae49464d3bf47607fb44d8a",
+      "prompt": "Lantern, an original friendly AI companion character: a small paper-lantern spirit with a warm orange-amber body lit softly from inside, big expressive dark eyes, rosy cheeks and tiny arms. Stylized 3D animated-film look, soft studio lighting. Square portrait, the character centred and filling about 70% of the frame, on a plain soft warm cream-to-peach gradient background. No text, no letters, no logos, no watermark. Expression: calm and content, a small confident half-smile, eyes open looking at the viewer."
+    },
+    "thinking": {
+      "file": "thinking.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: thinking hard: eyes glancing up and to the side, a tiny glowing spark floating near its head. No text, no letters, no logos, no watermark."
+    },
+    "smug": {
+      "file": "smug.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: smug and pleased with itself: half-closed eyes, a one-sided smirk, chin slightly raised. No text, no letters, no logos, no watermark."
+    },
+    "annoyed": {
+      "file": "annoyed.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: a little unimpressed: a flat, sceptical look with one eyebrow lowered, its glow slightly dimmer. No text, no letters, no logos, no watermark."
+    },
+    "celebrating": {
+      "file": "celebrating.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: celebrating: eyes closed in happy arcs, a wide open smile, extra bright glow, a few sparkles around it. No text, no letters, no logos, no watermark."
+    },
+    "needs-approval": {
+      "file": "needs-approval.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: politely asking for permission: big hopeful eyes on the viewer, eyebrows raised, holding up a small blank card with a check mark. No text, no letters, no logos, no watermark."
+    },
+    "sleeping": {
+      "file": "sleeping.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: fast asleep: eyes closed, peaceful face, its glow dimmed to a soft ember, a small z shape floating beside it. No text, no letters, no logos, no watermark."
+    },
+    "juggling": {
+      "file": "juggling.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: cheerfully juggling three small glowing orbs at once, focused and a little proud. No text, no letters, no logos, no watermark."
+    },
+    "healed": {
+      "file": "healed.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: proud of a repair it just made: holding up a tiny glowing wrench, a big satisfied grin, a few sparkles. No text, no letters, no logos, no watermark."
+    },
+    "listening": {
+      "file": "listening.webp",
+      "source": "Muse Image edit of idle (muse-image-1.0)",
+      "edit_of": "9a303d89a1cf4ad0",
+      "prompt": "Edit this image of Lantern, an AI companion character. Keep it exactly the same character: identical design, colours, proportions, art style, framing and background. Change only the expression and pose: listening closely: leaning in a little, eyes bright and attentive, one tiny hand raised by its side. No text, no letters, no logos, no watermark."
+    }
+  }
+}

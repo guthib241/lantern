@@ -123,6 +123,46 @@ def test_import_metamuse_and_vibes_exports(tmp_path, capsys):
         mod.main([str(src / "notes.txt"), "--out", str(out)])
 
 
-def test_desktop_ships_an_empty_manifest_until_muse_art_exists():
+def test_desktop_ships_the_avatar_manifest_script():
     js = (ROOT / "desktop" / "assets" / "avatar" / "manifest.js").read_text()
     assert "window.LanternAvatarManifest" in js
+
+
+def test_reactions_are_edits_of_the_idle_portrait_made_once(tmp_path):
+    """S15: each reaction is a Muse Image edit (input_image = the idle portrait), cached until idle changes."""
+    from lantern.avatar import REACTIONS, react
+    (tmp_path / "idle.webp").write_bytes(WEBP)
+    from lantern.avatar import write_manifest
+    write_manifest(tmp_path, {"idle": {"file": "idle.webp"}}, {"made_with": "Muse Image"})
+
+    class Refuses(FakeClient):   # the API's content filter refuses one edit
+        def create(self, **kw):
+            if "unimpressed" in json.dumps(kw):
+                self.requests.append(kw)
+                raise type("BadRequest", (Exception,), {"status_code": 400})("filtered")
+            return super().create(**kw)
+    client = Refuses([image_turn(n) for n in range(len(REACTIONS))])
+    out = react(client, tmp_path)
+    assert out["refused"] == {"annoyed": "filtered"} and set(out["made"]) == set(REACTIONS) - {"annoyed"}
+    assert out["cost_usd"] == pytest.approx(models.image_cost(len(REACTIONS) - 1))
+    req = client.requests[0]
+    parts = req["input"][0]["content"]
+    assert req["model"] == models.IMAGE and req["tools"] == [{"type": "image_generation", "size": "1024x1024"}]
+    assert parts[1] == {"type": "input_image", "image_url": "data:image/webp;base64," + base64.b64encode(WEBP).decode()}
+    assert "previous_response_id" not in req and "Change only the expression" in parts[0]["text"]
+    manifest = json.loads((tmp_path / "manifest.json").read_text())["expressions"]
+    assert manifest["healed"]["source"].startswith("Muse Image edit") and (tmp_path / "healed.webp").exists()
+    again = Refuses([image_turn(99)])
+    out = react(again, tmp_path, ["healed", "annoyed"])                 # healed is cached; annoyed is tried again
+    assert out["cached"] == ["healed"] and out["refused"] == {"annoyed": "filtered"} and len(again.requests) == 1
+    (tmp_path / "idle.webp").write_bytes(WEBP + b"new")                 # a new portrait: the reaction is remade
+    assert react(Refuses([image_turn(7)]), tmp_path, ["healed"])["made"] == ["healed"]
+    with pytest.raises(AvatarError, match="unknown reaction"):
+        react(FakeClient([]), tmp_path, ["dancing"])
+
+
+def test_the_desktop_ships_muse_made_reactions():
+    manifest = json.loads((ROOT / "desktop" / "assets" / "avatar" / "manifest.json").read_text())["expressions"]
+    from lantern.avatar import REACTIONS
+    assert {"idle", *REACTIONS} <= set(manifest)
+    assert all((ROOT / "desktop" / "assets" / "avatar" / e["file"]).exists() for e in manifest.values())
