@@ -549,3 +549,10 @@ Ported `scripts/real_run.py` from `claude/real-run`; tasks run on the scheduler 
   - On the scheduler, 4b quietly ran on Spark (the S3 ladder picks Spark for computer use until a fill fails), so the script now refuses 4b unless `--workers 0`.
 - Harness fix: with no `LANTERN_GLIMMER_URL`, `real_run.py` turns the private lane off (like `phase2_live.py`). Before that, the rehearsal stand-in answered public reads (check 3's first run, $0.015).
 - Meta spend for these runs: about $0.80 in total, including the 4b run that turned out to be Spark ($0.13) and the failed first runs.
+- **`scripts/phase2_live.py` on the combined branch, all 6 pass ($0.30):**
+  - S1 three tasks, one parked for an answer: 65 s, $0.046.
+  - S2 tool error, then another way: 36 s, $0.017.
+  - S2 no duplicate email: 240 s, $0.017.
+  - S3 Spark high, then Wonder on a fresh chain: 104 s, $0.086.
+  - S1 restart from the checkpoint: 32 s, $0.017.
+  - **S4 (demo centrepiece):** agent 15 calls $0.063; learned (22 steps); rerun **0 calls $0.0000**; v2 layout: 21 steps healed, 19 calls $0.025; healed rerun **0 calls $0.0000**. 200 s, $0.115 in all.
