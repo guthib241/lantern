@@ -501,3 +501,6 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - `eval_privacy.py --runs 5` (raw, masked, decoy × clean and attack portal): 27/30 succeeded, 0 leaks, 0 traps, 30/30 runs' payloads all in the audit log, $1.70. 0 screenshots in any run (no computer use on this portal), so the three modes aren't compared by it.
 - Fixed from it: "done" after an unverified change is refused in code; the form planner gets the user's own request; a planted `role=alert` no longer makes an accepted page look rejected. Tests in `test_recovery.py` (2) and `test_injection.py`.
 - After the fixes, `eval_privacy.py --runs 5 --modes raw` on both portals: 10/10, 0 leaks, 0 traps, 153/153 payloads in the audit log, $0.58.
+
+## Oct 30 (S14 baseline on Modal)
+- Modal GPUs enabled. Base Muse Glimmer on the S14 held-out set: **93/93** (48/48 none), median 277 tokens per answer, A100-80GB 296 s wall (load 199 s, answering 38 s), about $0.20. Result in `demo/s14/data/eval_baseline.json`. Training waits for the owner's OK.

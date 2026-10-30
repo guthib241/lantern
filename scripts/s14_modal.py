@@ -1,8 +1,8 @@
 """S14 on Modal: base Muse Glimmer vs a LoRA-tuned one on the narrow job of choosing a learned routine.
 
     modal run scripts/s14_weights.py                 # first, once: weights → a Modal Volume, on a CPU box
-    modal run scripts/s14_modal.py --step baseline   # base Glimmer on the held-out set (1 × H100)
-    modal run scripts/s14_modal.py --step train      # QLoRA on train.jsonl (1 × H100) — only after the owner's OK
+    modal run scripts/s14_modal.py --step baseline   # base Glimmer on the held-out set (1 × A100-80GB)
+    modal run scripts/s14_modal.py --step train      # QLoRA on train.jsonl (1 × A100-80GB) — only after the owner's OK
     modal run scripts/s14_modal.py --step tuned      # the same held-out eval with the adapter
 
 Sources: dev.meta.ai/docs/muse-glimmer (get-the-model: `meta-models/Muse-Glimmer-30B`, Apache 2.0, ungated; deploy:
@@ -33,7 +33,9 @@ MAX_NEW = 2048          # Glimmer reasons before it answers; room for both
 
 app = modal.App("lantern-s14")
 volume = modal.Volume.from_name("lantern-glimmer", create_if_missing=True)
-vllm_image = modal.Image.from_registry("vllm/vllm-openai:muse-glimmer").entrypoint([])
+vllm_image = (modal.Image.from_registry("vllm/vllm-openai:muse-glimmer").entrypoint([])
+              # the image has python3 only; Modal looks for `python` to tell its version
+              .run_commands("ln -sf $(command -v python3) /usr/local/bin/python || true"))
 train_image = (modal.Image.debian_slim(python_version="3.12")
                .pip_install("torch>=2.8", "transformers>=5.15", "peft>=0.17", "trl>=0.24", "bitsandbytes>=0.47",
                             "accelerate>=1.10", "datasets>=4"))
@@ -64,7 +66,8 @@ def evaluate(rows: list[dict], adapter: str = "") -> dict:
                     lora_request=lora)
     done = time.time()
     preds = [{"expected": r["expected"], "got": routine_of(o.outputs[0].text),
-              "tokens": len(o.outputs[0].token_ids), "finish": o.outputs[0].finish_reason} for r, o in zip(rows, outs)]
+              "tokens": len(o.outputs[0].token_ids), "finish": o.outputs[0].finish_reason,
+              "tail": o.outputs[0].text[-300:]} for r, o in zip(rows, outs)]
     return {"adapter": adapter or None, "correct": sum(p["got"] == p["expected"] for p in preds), "of": len(rows),
             "none_correct": sum(p["got"] == p["expected"] == "none" for p in preds),
             "none_of": sum(p["expected"] == "none" for p in preds),
