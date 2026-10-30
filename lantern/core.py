@@ -125,6 +125,10 @@ class Core:
                                forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
                                mcp=self.mcp)
         self.toolbox.client = self.client
+        if "freecad" in getattr(self.mcp, "servers", {}):   # S17: CAD tools go through the connector
+            from .integrations.freecad.connector import FreeCADConnector
+            self.toolbox.freecad = FreeCADConnector(self.policy, self.client, self.memory,
+                                                    on_event=lambda k, d: self.emit({"type": k, **d}))
         self.checkin = CheckIn(self.client, self.memory, self.emit)
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,

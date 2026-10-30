@@ -85,6 +85,7 @@ class Toolbox:
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
         self.lent = None        # lend.Guard while a borrowed task runs (S13): every call checked, then approved
+        self.freecad = None     # S17: integrations.freecad.FreeCADConnector when mcp.json has a "freecad" server
         self.tainted = False  # set once untrusted content reached the model in this task
         self.request = ""     # the user's own request for this task (begin_task), for the form plan
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
@@ -620,6 +621,8 @@ class Toolbox:
         import json as _json
 
         from .mcp_client import MCPError
+        if self.freecad is not None and self.mcp.tools[function].server == "freecad":
+            return self.freecad.call(self, function, args)   # S17: tiers, exact-file red approvals, verify loop
         ref = self.mcp.tools[function]
         if not ref.read_only:
             shown = _json.dumps(args, ensure_ascii=False, default=str)

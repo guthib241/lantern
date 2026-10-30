@@ -372,6 +372,9 @@ class Scheduler:
         else:
             toolbox = Toolbox(core.policy, core.memory, gate, **parts)
         toolbox.client = client
+        if (cad := getattr(core.toolbox, "freecad", None)) is not None:   # S17: this task's own connector and client
+            toolbox.freecad = type(cad)(core.policy, client, core.memory, visual=cad.visual, max_fixes=cad.max_fixes,
+                                        on_event=events)
         toolbox.command_runner = getattr(core.toolbox, "command_runner", None)
         toolbox.on_event = events
         agent = ResumableAgent(client, core.memory, toolbox, model=core.agent.model, persona=core.agent.persona,

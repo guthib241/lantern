@@ -556,3 +556,8 @@ Ported `scripts/real_run.py` from `claude/real-run`; tasks run on the scheduler 
   - S3 Spark high, then Wonder on a fresh chain: 104 s, $0.086.
   - S1 restart from the checkpoint: 32 s, $0.017.
   - **S4 (demo centrepiece):** agent 15 calls $0.063; learned (22 steps); rerun **0 calls $0.0000**; v2 layout: 21 steps healed, 19 calls $0.025; healed rerun **0 calls $0.0000**. 200 s, $0.115 in all.
+
+## Oct 30 (S17 FreeCAD connector merged into the product line)
+- From `claude/freecad-connector` (#5): `lantern/integrations/freecad/`, `demo/freecad/`, `tests/freecad/`, `docs/FREECAD.md`, `config/mcp/freecad.example.json`. Typed CAD tools as deferred MCP tools behind tool_search; green/yellow/red tiers with zone checks and exact-file red approvals; the visual verify loop on Muse Spark; three demo tasks.
+- Merge hooks applied: `Toolbox.mcp_call` routes the `freecad` server through the connector; Core gives its toolbox one, and every scheduler task gets its own with that task's client. THIRD_PARTY lists FreeCAD (LGPL, not bundled).
+- Tests: `tests/freecad/` 59 + 1 new (Core and scheduler tasks get their connectors). Real FreeCAD is still not tested: it needs the laptop (`python demo\freecad\run_demo.py --freecad`).
