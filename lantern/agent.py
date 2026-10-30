@@ -94,6 +94,22 @@ NOT_DONE = ("Not finished as done: your last change wasn't confirmed ({why}). Fi
             "call finish with status failed and say exactly what didn't work.")
 
 
+RECAP_KEYS = ("url", "form_url", "page", "path", "verified", "submitted", "advanced", "done", "sent", "moved",
+              "reason", "error")
+
+
+def _recap_step(call: dict) -> str:
+    """One step for a recap: its name, what it acted on and whether it was confirmed. Raw results cut at 300
+    characters hid `verified: true` and made the model file a form twice (live, Oct 28, claude/real-run)."""
+    r = call.get("result")
+    if not isinstance(r, dict):
+        return str(call.get("name", "?"))
+    facts = {k: (str(r[k])[:120] if isinstance(r[k], str) else r[k]) for k in RECAP_KEYS if k in r}
+    if call.get("name") == "ask_user" and "answer" in r:
+        facts = {"the user answered": str(r["answer"])[:200]}
+    return f"{call.get('name')} {json.dumps(facts, ensure_ascii=False, default=str)}"
+
+
 @dataclass
 class Result:
     task_id: int
@@ -176,12 +192,16 @@ class Agent:
                 raise
         self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; continued "
                                               "with a recap")
-        done = "; ".join(f"{c['name']} -> {json.dumps(c['result'], ensure_ascii=False, default=str)[:300]}"
-                         for c in calls_made[-12:])
+        done = "; ".join(_recap_step(c) for c in calls_made[-16:])
+        confirmed = [c["name"] + (f" {c['result'].get('form_url')}" if c["name"] == "fill_form" else "")
+                     for c in calls_made if isinstance(c.get("result"), dict) and c["result"].get("verified")
+                     and (c["name"] != "fill_form" or c["result"].get("submitted"))
+                     and c["name"] in ("fill_form", "send_email", "move_file", "organize_files")]
+        never = f" ALREADY DONE AND CONFIRMED, never do these again: {', '.join(confirmed)}." if confirmed else ""
         return self._create(task_id, instructions=instructions, tools=self.tools,
                             input=f"{goal}\n\n[Continuing task #{task_id}: the earlier turns are not available here. "
-                                  f"Steps so far: {done or 'none'}. Check before repeating anything that changes "
-                                  "something.]")
+                                  f"Steps so far, in order: {done or 'none'}.{never} Check before repeating anything "
+                                  "that changes something.]")
 
     def run(self, goal: str, task_id: int | None = None) -> Result:
         """Run one task to completion. Pass task_id to run a task the server already created."""

@@ -34,6 +34,11 @@ TEXT_EXTS = {
     ".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".html", ".css",
     ".yaml", ".yml", ".toml", ".ini", ".log", ".xml", ".tex", ".rst", ".eml",
 }
+def form_page(url: str) -> str:
+    """A form's page without query or fragment: the same form, however the model spells its URL."""
+    return url.split("#")[0].split("?")[0].rstrip("/")
+
+
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".cache"}
 
 
@@ -86,6 +91,7 @@ class Toolbox:
         self.on_event: Callable[[str, dict], None] = lambda kind, data: None
 
     def begin_task(self, task_id: int | None = None, goal: str = "") -> None:
+        self.filed: dict[str, str] = {}   # form page -> what confirmed it, in this task (fill_form never files twice)
         self.tainted = False
         self.untrusted_emails = set()
         self.task_id = task_id
@@ -384,6 +390,14 @@ class Toolbox:
         # The page's labels and screenshots reach the model while it fills, so the task is tainted from
         # the moment the page opens: the Submit card is marked, and quick-approve shortcuts are refused.
         self.tainted = True
+        page = form_page(url)
+        why = self._already_filed(page)
+        if why:
+            # Live, Oct 28 (claude/real-run): after a lost chain the model started the portal again and filed it
+            # twice. A form submitted and verified in this task is never submitted again, whatever the model believes.
+            return {"done": True, "verified": True, "submitted": False, "already_filed": True, "form_url": page,
+                    "reason": f"this form was already submitted and confirmed in this task ({why}); it is not "
+                              "submitted again. Finish the task."}
         try:
             result = self.forms.fill(url, goal, approve=self._approve, commit=self._commit,
                                      task_id=self.task_id, cancel=self.cancel, on_event=self.on_event,
@@ -392,7 +406,31 @@ class Toolbox:
             raise ToolError(str(e)) from e
         # labels and the confirmation text come from a web page
         self._saw_untrusted((result.get("confirmation") or {}).get("content", ""))
+        result = {**result, "form_url": page}   # kept in the step log, so the guard also holds after a restart
+        if result.get("submitted") and result.get("verified"):
+            self.filed[page] = "confirmation seen on the page"
         return result
+
+    def _already_filed(self, page: str) -> str:
+        """Why `page` counts as filed in this task ("" if it doesn't): this run, or the task's step log."""
+        filed = getattr(self, "filed", None) or {}
+        if page in filed:
+            return filed[page]
+        if not self.task_id:
+            return ""
+        for step in self.memory.steps(self.task_id):
+            c = step.get("content")
+            if step.get("kind") != "tool_result":
+                continue
+            if isinstance(c, str):
+                try:
+                    c = json.loads(c)
+                except ValueError:
+                    continue
+            r = c.get("result") if isinstance(c, dict) and c.get("name") == "fill_form" else None
+            if isinstance(r, dict) and r.get("form_url") == page and r.get("submitted") and r.get("verified"):
+                return "an earlier step of this task"
+        return ""
 
     # ---- email -----------------------------------------------------------------
     def send_email(self, to: list[str], subject: str, body: str, attachments: list[str] | None = None,

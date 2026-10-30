@@ -52,7 +52,7 @@ Checkpoint = Callable[[int, dict, str, str], None]   # (task_id, state, phase, r
 
 # What a recap may repeat of a step's result: Lantern's own small fields, never content (that stays a handle).
 BRIEF_KEYS = ("path", "count", "moved", "of", "sent", "to", "due", "url", "reason", "error", "answer_type", "found",
-              "doc")
+              "doc", "submitted", "form_url", "already_filed")
 
 
 def chain_lost(exc: BaseException) -> bool:

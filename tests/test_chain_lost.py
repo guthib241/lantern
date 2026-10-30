@@ -65,3 +65,27 @@ def test_the_scheduler_recap_keeps_the_users_answer(tmp_path):
     recap = agent._recap(t.id, {"goal": t.goal, "calls": []}, [])
     assert "the user answered: teal" in recap
     assert "list_dir (ok: " in recap and '"path": "/docs"' in recap and '"x"' not in recap   # no content
+
+
+def test_after_a_lost_chain_the_recap_says_the_form_was_filed_and_it_is_never_filed_again(tmp_path):
+    """Live, Oct 28 (claude/real-run): the recap cut each result at 300 characters, hid `verified: true`, and the
+    model filed the portal a second time. The recap now names it, and code refuses a second submit anyway."""
+    class Forms:
+        calls = []
+
+        def fill(self, url, goal, **kw):
+            self.calls.append(url)
+            return {"done": True, "submitted": True, "verified": True, "pages": ["p"] * 40,
+                    "confirmation": {"content": "Application received. Reference AB-12."}}
+    (tmp_path / "docs").mkdir()
+    mem = Memory(str(tmp_path / "m.db"))
+    forms = Forms()
+    tools = Toolbox(Policy([Rule.make(tmp_path / "docs", WRITABLE)]), mem, lambda d: True, forms=forms)
+    client = DropsOnce([([call("fill_form", "c1", url="http://127.0.0.1:8770/apply", goal="apply")], ""),
+                        ([call("fill_form", "c2", url="http://127.0.0.1:8770/apply", goal="apply")], ""),
+                        ([call("finish", "c3", status="done", summary="filed")], ""), ([], "Done.")])
+    r = Agent(client, mem, tools).run("apply for the permit")
+    recap = client.requests[2]["input"]
+    assert "ALREADY DONE AND CONFIRMED" in recap and "fill_form http://127.0.0.1:8770/apply" in recap
+    assert '"submitted": true' in recap
+    assert r.status == "done" and forms.calls == ["http://127.0.0.1:8770/apply"]   # the second call was refused
