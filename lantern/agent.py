@@ -148,7 +148,8 @@ class Agent:
         cost = self.memory.task_usage(task_id)["cost_usd"]
         result = Result(task_id, status, summary, reply, steps, calls, cost)
         self.on_event("done", {"id": task_id, "status": status, "summary": summary, "reply": reply,
-                               "cost_usd": cost, "steps": steps})
+                               "cost_usd": cost, "steps": steps,
+                               "tainted": bool(getattr(self.toolbox, "tainted", False))})   # read untrusted content
         return result
 
     def _stop(self, task_id: int, status: str, summary: str, steps: int, calls: list) -> Result:

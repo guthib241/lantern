@@ -29,6 +29,8 @@ from .base import Channel, ChannelError, Http, Incoming, json_call, urllib_http
 GRAPH = "https://graph.facebook.com"
 DEFAULT_VERSION = "v23.0"
 MAX_BODY = 1024      # interactive message body
+MAX_LIST_BODY = 4096  # interactive list body
+MAX_FOOTER = 60    # interactive footer
 MAX_TEXT = 4096
 MAX_TITLE = 20
 
@@ -89,6 +91,37 @@ class WhatsAppChannel(Channel):
                                    for bid, title in buttons]},
         }})
 
+    def send_card(self, text: str, footer: str, buttons: list[tuple[str, str]]) -> None:
+        """An approval card: the expiry line goes in the footer (at most 60 chars)."""
+        if not 1 <= len(buttons) <= 3:
+            raise ValueError("WhatsApp reply buttons: 1 to 3")
+        interactive: dict = {
+            "type": "button",
+            "body": {"text": text[:MAX_BODY]},
+            "action": {"buttons": [{"type": "reply", "reply": {"id": bid[:256], "title": title[:MAX_TITLE]}}
+                                   for bid, title in buttons]},
+        }
+        if footer:
+            interactive["footer"] = {"text": footer[:MAX_FOOTER]}
+        self._send({"type": "interactive", "interactive": interactive})
+
+    def send_list(self, text: str, button: str, rows: list[tuple[str, str, str]],
+                  footer: str = "") -> None:
+        """An interactive list menu (Meta's interactive-list-messages shape)."""
+        if not 1 <= len(rows) <= 10:
+            raise ValueError("WhatsApp list: 1 to 10 rows")
+        interactive: dict = {
+            "type": "list",
+            "body": {"text": text[:MAX_LIST_BODY]},
+            "action": {"button": button[:MAX_TITLE], "sections": [{
+                "title": "Menu",
+                "rows": [{"id": rid[:200], "title": title[:24], **({"description": desc[:72]} if desc else {})}
+                         for rid, title, desc in rows]}]},
+        }
+        if footer:
+            interactive["footer"] = {"text": footer[:MAX_FOOTER]}
+        self._send({"type": "interactive", "interactive": interactive})
+
     # ---- media ---------------------------------------------------------------------
     def download_media(self, media_id: str) -> tuple[bytes, str]:
         meta = json_call(self.http, "GET", f"{GRAPH}/{self.version}/{media_id}", None, self._auth())
@@ -124,9 +157,14 @@ class WhatsAppChannel(Channel):
         if kind == "text":
             return Incoming(self.name, sender, "text", text=str((m.get("text") or {}).get("body", "")), msg_id=mid)
         if kind == "interactive":
-            reply = (m.get("interactive") or {}).get("button_reply") or {}
+            inner = m.get("interactive") or {}
+            reply = inner.get("button_reply") or {}
             if reply.get("id"):
                 return Incoming(self.name, sender, "button", button=str(reply["id"]), msg_id=mid)
+            if inner.get("type") == "list_reply":   # a tap on a list menu row
+                row = inner.get("list_reply") or {}
+                if row.get("id"):
+                    return Incoming(self.name, sender, "button", button=str(row["id"]), msg_id=mid)
             return None
         if kind == "button":  # a tap on a template's quick-reply button
             b = m.get("button") or {}

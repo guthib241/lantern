@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fakes import FakeClient, call
+from test_routines import Both
 from lantern import models
 from lantern.channels import (ChannelHub, FakeChannel, TelegramChannel, WhatsAppChannel, channels_from_env,
                               verify_signature)
@@ -50,13 +51,14 @@ class FakeGraph:
         return [m["text"]["body"] for m in self.sent("text")]
 
 
-def make(tmp_path, script, *, transcriber=None, converter=None, channels=None):
+def make(tmp_path, script, *, transcriber=None, converter=None, channels=None, chat=None):
     root = tmp_path / "docs"
     root.mkdir(exist_ok=True)
     cfg = Config(roots=[str(root)], db_path=str(tmp_path / "m.db"))
     cfg.audit_path, cfg.zones_file = str(tmp_path / "a.db"), str(tmp_path / "z.json")
     cfg.media_dir, cfg.profile_path = str(tmp_path / "media"), str(tmp_path / "profile.json")
-    core = Core(cfg, FakeClient(script), approval_timeout=10)
+    client = Both(FakeClient(script), chat) if chat is not None else FakeClient(script)
+    core = Core(cfg, client, approval_timeout=10)
     graph = FakeGraph()
     wa = WhatsAppChannel("tok", "PNID", "+91 98765 43210", app_secret=SECRET, verify_token=VERIFY, http=graph)
     hub = ChannelHub(core, channels or [wa], transcriber=transcriber, converter=converter).start(listen=False)
@@ -298,11 +300,16 @@ def test_outgoing_text_is_scrubbed_and_audited(tmp_path):
     assert core.audit.summary()["cloud"]["by_model"]["whatsapp"]["calls"] == 2
 
 
-def test_help_reply_describes_scope(tmp_path):
+def test_help_reply_shows_menu(tmp_path):
     core, hub, graph, http, _ = make(tmp_path, [])
     post(http, payload(text("/help")))
     settle(core, hub)
-    assert "task console" in graph.texts()[0] and core.memory.recent_tasks() == []
+    lists = [m for m in graph.sent("interactive") if m["interactive"]["type"] == "list"]
+    assert lists and lists[0]["interactive"]["action"]["button"] == "Menu"
+    rows = lists[0]["interactive"]["action"]["sections"][0]["rows"]
+    assert [r["title"] for r in rows] == ["Status", "Reminders", "Undo last task", "Today's summary",
+                                          "Stop everything"]
+    assert core.memory.recent_tasks() == []
 
 
 # ---- Telegram ------------------------------------------------------------------------------

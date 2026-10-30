@@ -82,6 +82,17 @@ class Channel:
         """buttons: [(id, title)], at most 3, titles at most 20 characters."""
         raise NotImplementedError
 
+    def send_card(self, text: str, footer: str, buttons: list[tuple[str, str]]) -> None:
+        """An approval card: like send_buttons, with a short expiry footer."""
+        self.send_buttons(f"{text}\n{footer}" if footer else text, buttons)
+
+    def send_list(self, text: str, button: str, rows: list[tuple[str, str, str]],
+                  footer: str = "") -> None:
+        """A pick-one menu: rows are (id, title, description). The base fallback
+        is numbered plain text; the owner answers by typing the number."""
+        numbered = "\n".join(f"{i}. {title}" for i, (_, title, _) in enumerate(rows, 1))
+        self.send_text(f"{text}\n{numbered}" + (f"\n{footer}" if footer else ""))
+
     def send_to(self, address: str, text: str) -> None:
         """S6: a Lantern Network message to another Lantern's address (not the owner's chat)."""
         raise NotImplementedError(f"{self.name} can't send to other addresses")

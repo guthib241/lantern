@@ -53,6 +53,21 @@ class TelegramChannel(Channel):
         self._call("sendMessage", {"chat_id": self.owner, "text": text[:4096], "reply_markup": {
             "inline_keyboard": [[{"text": title, "callback_data": bid} for bid, title in buttons]]}})
 
+    def send_list(self, text: str, button: str, rows: list[tuple[str, str, str]],
+                  footer: str = "") -> None:
+        """A menu as an inline keyboard, one row per line (no descriptions on buttons)."""
+        if not 1 <= len(rows) <= 10:
+            raise ValueError("Telegram list: 1 to 10 rows")
+        for rid, _, _ in rows:
+            if len(rid.encode()) > 64:
+                raise ValueError("telegram callback_data is limited to 64 bytes")
+        lines = [text] + [f"{title}" + (f" — {desc}" if desc else "")
+                          for _, title, desc in rows]
+        if footer:
+            lines.append(footer)
+        self._call("sendMessage", {"chat_id": self.owner, "text": "\n".join(lines)[:4096], "reply_markup": {
+            "inline_keyboard": [[{"text": title[:60], "callback_data": rid}] for rid, title, _ in rows]}})
+
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         if incoming.callback_id:
             self._call("answerCallbackQuery", {"callback_query_id": incoming.callback_id, "text": text[:200]})

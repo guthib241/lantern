@@ -4,6 +4,8 @@ Incoming, from the owner only (everyone else is ignored and counted):
   text          -> a new task (tagged with the channel), or
   "STOP"        -> the kill switch: cancel the running task, deny every pending approval
   "status"      -> what Lantern is doing
+  "menu"/"hi"   -> a pick-one menu (status, reminders, undo, summary, stop) as a list message
+  "summary"     -> today's short summary, written by Muse Spark from Lantern's own records
   "resume"      -> run the tasks cut short when Lantern stopped
   "undo"        -> put back the files the last task moved (one approval, no model call)
   "receipt [N]" -> the last finished task's receipt (or task N's): changes, checks, approvals, data sent, cost
@@ -11,11 +13,14 @@ Incoming, from the owner only (everyone else is ignored and counted):
   "learn [N]"   -> compile the last finished task (or task N) into a routine that runs with no model calls (S4)
   voice note    -> download -> ffmpeg 16 kHz WAV -> Muse Voice Transcribe (biased toward the
                    names Lantern knows) -> handled like text, with the transcript echoed back
-  button tap    -> approve / deny / show an approval. Button ids carry the approval's nonce
+  button tap    -> approve / deny / show an approval (cards.py); a menu row; "stop all?" yes/no;
+                   a suggested next step (starts a new task). Approval button ids carry the nonce
                    and the first 8 hex of its payload hash, so only the card that was shown can
                    answer, and only for the action it showed.
 Outgoing (core events): every approval request becomes a card with Approve / Deny / Show
-buttons on every channel; a finished task's reply goes back to the channel it came from.
+buttons on every channel (the expiry line is the footer on WhatsApp, text elsewhere);
+a finished task's reply goes back to the channel it came from, with up to 2 suggested
+next steps as buttons (suggest.py; just new requests, through the normal agent).
 Questions from parked tasks that arrive within a second of each other go out as one message.
 
 Work happens on two small threads (inbox, outbox), so webhooks answer fast and a slow
@@ -27,6 +32,7 @@ import datetime as dt
 import json
 import queue
 import re
+import secrets
 import threading
 import time
 from collections import deque
@@ -39,11 +45,16 @@ from ..scrubber import DEFAULT as SCRUBBER
 from ..undo import WORDS as UNDO_WORDS, UndoError
 from ..network import PREFIX as NET_PREFIX
 from ..voice import to_wav16k, transcribe
+from . import daily as daily_mod
+from . import suggest as suggest_mod
 from .base import Channel, Incoming
+from .cards import approval_card
 
 STOP = re.compile(r"^\W*/?stop\b", re.I)
 STATUS = re.compile(r"^\W*/?status\W*$", re.I)
-HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
+MENU = re.compile(r"^\W*/?(menu|hi|help|start)\W*$", re.I)
+SUMMARY = re.compile(r"^\W*/?summary\W*$", re.I)
+NUMBER = re.compile(r"^[1-9]$")
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
 ANSWER = re.compile(r"^\s*#(\d+)[\s:,.-]+(.+)$", re.S)   # "#12 residential": an answer to task 12's question
@@ -88,6 +99,11 @@ class ChannelHub:
         self._question_lock = threading.Lock()
         self._finished: dict[int, str] = {}       # recently finished task -> its channel (for learn offers)
         self._offers: deque = deque(maxlen=20)   # tasks Lantern offered to learn, newest last
+        self._suggestions: dict[str, str] = {}   # short id -> full suggested request (server-side, never in buttons)
+        self._suggest_lock = threading.Lock()
+        self._menus: dict[str, list[str]] = {}   # channel -> last menu's row ids (for typed numbers)
+        self._daily_sent: set[str] = set()       # local dates a daily summary already went out
+        self._daily_stop = threading.Event()
         self.photo_wait = PHOTO_WAIT              # S9: seconds to wait for words after a photo without a caption
         self._photos: dict[str, tuple[bytes, int]] = {}   # channel -> (photo waiting for words, its number)
         self._photo_n = 0
@@ -113,6 +129,10 @@ class ChannelHub:
         if listen:
             for c in self.channels.values():
                 c.start(self.receive)
+            self._daily_stop.clear()   # the daily summary (daily.py) is only polled on the serving path
+            t = threading.Thread(target=self._daily_loop, name="lantern-daily", daemon=True)
+            t.start()
+            self._threads.append(t)
         if hasattr(self.core, "questions") and self.core.questions():   # asked before a restart: ask again
             self._schedule_questions()
         cut = getattr(self.core, "interrupted", [])
@@ -123,6 +143,7 @@ class ChannelHub:
         return self
 
     def stop(self) -> None:
+        self._daily_stop.set()
         for c in self.channels.values():
             c.stop()
         if self._unsubscribe:
@@ -177,22 +198,42 @@ class ChannelHub:
         self.core.emit({"type": "channel_error", "error": msg})
 
     def _deliver(self, ch: Channel, kind: str, args: tuple) -> None:
-        text = SCRUBBER.scrub(args[0]).text
-        if kind == "text":
-            ch.send_text(text)
-        elif kind == "to":   # S13: to someone this Lantern is lent to, not the owner's chat
-            ch.send_to(args[1], text)
+        extra: dict = {}
+        if kind == "card":
+            text, footer, buttons = args[0], args[1], args[2]
+            text, footer = SCRUBBER.scrub(text).text, SCRUBBER.scrub(footer).text
+            ch.send_card(text, footer, buttons)
+            extra = {"footer": footer, "buttons": buttons}
+        elif kind == "list":
+            text, button, rows = args[0], args[1], args[2]
+            footer = args[3] if len(args) > 3 else ""
+            text, footer = SCRUBBER.scrub(text).text, SCRUBBER.scrub(footer).text if footer else ""
+            ch.send_list(text, button, rows, footer)
+            extra = {"button": button, "rows": rows, "footer": footer}
         else:
-            ch.send_buttons(text, args[1])
+            text = SCRUBBER.scrub(args[0]).text
+            if kind == "text":
+                ch.send_text(text)
+            elif kind == "to":   # S13: to someone this Lantern is lent to, not the owner's chat
+                ch.send_to(args[1], text)
+                extra = {"to": args[1]}
+            else:
+                ch.send_buttons(text, args[1])
+                extra = {"buttons": args[1]}
         destination = getattr(ch, "destination", None)
         if destination:  # what left the laptop through this channel
-            body = json.dumps({"text": text, "buttons": args[1] if kind == "buttons" else [],
-                               "to": args[1] if kind == "to" else ""}).encode()
+            body = json.dumps({"text": text, **{k: v for k, v in extra.items() if k != "to"},
+                               "to": extra.get("to", "")}, default=str).encode()
             self.core.audit.record(lane="cloud", destination=destination, endpoint=f"{ch.name}.send",
                                    model=ch.name, payload=body, preview=text)
 
     def say(self, channel: str | None, text: str) -> None:
         self._outbox.put((channel, "text", (text,)))
+
+    def say_list(self, channel: str, text: str, button: str,
+                 rows: list[tuple[str, str, str]], footer: str = "") -> None:
+        self._menus[channel] = [rid for rid, _, _ in rows]
+        self._outbox.put((channel, "list", (text, button, rows, footer)))
 
     def tell(self, channel: str, address: str, text: str) -> None:
         """S13: a message to a borrower's own chat."""
@@ -325,20 +366,55 @@ class ChannelHub:
         self.origin[task_id] = ch.name
         self.say(ch.name, f"📷 Scanning it (task #{task_id}).")
 
+    MENU_ROWS = [
+        ("menu:status", "Status", "What Lantern is doing"),
+        ("menu:reminders", "Reminders", "What's coming up"),
+        ("menu:undo", "Undo last task", "Put moved files back"),
+        ("menu:summary", "Today's summary", "Today in a few lines"),
+        ("menu:stop", "Stop everything", "Halt all tasks"),
+    ]
+    MENU_TEXT = "🏮 Lantern menu — tap one (or reply with its number):"
+
+    def _do_stop(self, ch: Channel) -> None:
+        r = self.core.stop()
+        n = r["denied_approvals"]
+        self.say(ch.name, "🛑 Stopped. " + ("I cancelled the running task" if r.get("task_id") else "Nothing was running")
+                 + (f" and denied {n} pending approval{'s' if n != 1 else ''}." if n else "."))
+
+    def _do_undo(self, ch: Channel) -> None:
+        try:
+            task_id = self.core.undo_last()
+        except UndoError as e:
+            return self.say(ch.name, f"Nothing to undo: {e}.")
+        self.origin[task_id] = ch.name
+        self.say(ch.name, f"↩️ Undo is task #{task_id}. Approve the card to put the files back.")
+
+    def _send_menu(self, ch: Channel) -> None:
+        self.say_list(ch.name, self.MENU_TEXT, "Menu", list(self.MENU_ROWS))
+
+    def _reminders_text(self) -> str:
+        upcoming = self.core.memory.reminders()[:5]
+        if not upcoming:
+            return "No reminders pending."
+        return "⏰ Reminders:\n" + "\n".join(f"• {r.public()['due']}: {r.text[:80]}" for r in upcoming)
+
+    def _send_daily(self, channel: str | None) -> None:
+        self.say(channel, daily_mod.render(self.core))
+
     def _text(self, ch: Channel, text: str) -> None:
         t = (text or "").strip()
         if not t:
             return
         if STOP.match(t):
-            r = self.core.stop()
-            n = r["denied_approvals"]
-            self.say(ch.name, "🛑 Stopped. " + ("I cancelled the running task" if r.get("task_id") else "Nothing was running")
-                     + (f" and denied {n} pending approval{'s' if n != 1 else ''}." if n else "."))
-            return
+            return self._do_stop(ch)
         if STATUS.match(t):
             return self.say(ch.name, self._status())
-        if HELP.match(t):
-            return self.say(ch.name, SCOPE)
+        if MENU.match(t):
+            return self._send_menu(ch)
+        if SUMMARY.match(t):
+            return self._send_daily(ch.name)
+        if NUMBER.match(t) and (ids := self._menus.get(ch.name)) and int(t) <= len(ids):
+            return self._menu_row(ch, ids[int(t) - 1])
         if RESUME.match(t):
             new_ids = self.core.resume()
             for task_id in new_ids:
@@ -352,12 +428,7 @@ class ChannelHub:
         if m := LEARN.match(t):
             return self._learn(ch, int(m.group(1)) if m.group(1) else None)
         if UNDO_WORDS.match(t):
-            try:
-                task_id = self.core.undo_last()
-            except UndoError as e:
-                return self.say(ch.name, f"Nothing to undo: {e}.")
-            self.origin[task_id] = ch.name
-            return self.say(ch.name, f"↩️ Undo is task #{task_id}. Approve the card to put the files back.")
+            return self._do_undo(ch)
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
@@ -430,9 +501,45 @@ class ChannelHub:
                 lines.append(f"#{t.id} {t.status}: {(t.summary or t.goal)[:80]}")
         return "\n".join(lines)
 
+    def _menu_row(self, ch: Channel, row_id: str) -> None:
+        """A menu row tap (or its typed number): status, reminders, undo, summary, or stop."""
+        parts = row_id.split(":")
+        sub, extra = (parts[1] if len(parts) > 1 else ""), (parts[2] if len(parts) > 2 else "")
+        if sub == "status":
+            return self.say(ch.name, self._status())
+        if sub == "reminders":
+            return self.say(ch.name, self._reminders_text())
+        if sub == "undo":
+            return self._do_undo(ch)
+        if sub == "summary":
+            return self._send_daily(ch.name)
+        if sub == "stop":
+            if extra == "yes":
+                return self._do_stop(ch)
+            if extra == "no":
+                return self.say(ch.name, "Okay, still running.")
+            self._outbox.put((ch.name, "buttons", ("Stop all tasks?", [("menu:stop:yes", "Yes"),
+                                                                       ("menu:stop:no", "No")])))
+            return
+        self.say(ch.name, "That menu choice isn't open any more — send menu to see it again.")
+
+    def _suggest_tap(self, ch: Channel, inc: Incoming, sid: str) -> None:
+        """A tap on a suggested next step: a new task with the stored request."""
+        with self._suggest_lock:
+            request = self._suggestions.pop(sid, None)
+        if not request:
+            return self.say(ch.name, "That suggestion has expired — just type what you'd like.")
+        task_id = self.core.submit(f"[{ch.name}] {request}")
+        self.origin[task_id] = ch.name
+        self.say(ch.name, f"🏮 On it (task #{task_id}).")
+
     def _button(self, ch: Channel, inc: Incoming) -> None:
         parts = inc.button.split(":")
         verb, aid = parts[0], parts[1] if len(parts) > 1 else ""
+        if verb == "menu":
+            return self._menu_row(ch, inc.button)
+        if verb == "suggest":
+            return self._suggest_tap(ch, inc, aid)
         if verb == "answer":
             return self._answer_button(ch, inc, parts)
         try:
@@ -544,14 +651,8 @@ class ChannelHub:
     def _on_event(self, event: dict) -> None:
         kind = event.get("type")
         if kind == "approval" and event.get("event") == "requested":
-            a = event["approval"]
-            h8 = a["payload_hash"][:8]
-            minutes = max(1, round((a["expires_at"] - time.time()) / 60))
-            text = f"🏮 Lantern needs your OK\n\n{a['summary']}\n\n⏳ expires in {minutes} min · #{a['id']}"
-            buttons = [(f"approve:{a['id']}:{a['nonce']}:{h8}", "✅ Approve"),
-                       (f"deny:{a['id']}:{a['nonce']}:{h8}", "❌ Deny"),
-                       (f"show:{a['id']}", "🔎 Show")]
-            self._outbox.put((None, "buttons", (text, buttons)))
+            card = approval_card(event["approval"], time.time())
+            self._outbox.put((None, "card", (card.text, card.footer, card.buttons)))
         elif kind == "learn_offer":
             task_id = event.get("task_id")
             self._offers.append(task_id)
@@ -608,6 +709,62 @@ class ChannelHub:
                     reply = f"That didn't work: {event.get('summary', '')}"
                 if reply:
                     self.say(name, reply)
+                    self._maybe_suggest(event, name, reply)
+
+
+    def _maybe_suggest(self, event: dict, channel: str, reply: str) -> None:
+        """Up to 2 suggested next steps as buttons under a finished task's reply, made off the event thread (the
+        Spark call must not hold up the next task)."""
+        if event.get("status") != "done" or not reply:
+            return
+        if "reply_public" in event and event["reply_public"] != event.get("reply"):
+            return   # private reply: never suggest from it
+        if event.get("tainted", True):
+            return   # the task read untrusted content (or didn't say): a suggestion could carry planted words
+        threading.Thread(target=self._suggest, args=(event, channel, reply), name="lantern-suggest",
+                         daemon=True).start()
+
+    def _suggest(self, event: dict, channel: str, reply: str) -> None:
+        try:
+            task_id = int(event.get("id"))
+            goal = self.core.memory.get_task(task_id).goal
+        except (TypeError, ValueError, KeyError):
+            return
+        goal = re.sub(r"^\[[^\]]+\]\s*", "", goal.strip())
+        try:
+            items = suggest_mod.generate(self.core, task_id, goal, reply)
+        except Exception:
+            return
+        if not items:
+            return
+        buttons = []
+        with self._suggest_lock:
+            for title, request in items:
+                sid = secrets.token_hex(4)
+                self._suggestions[sid] = request
+                buttons.append((f"suggest:{sid}", title))
+            while len(self._suggestions) > 20:   # tapped or stale suggestions never pile up
+                self._suggestions.pop(next(iter(self._suggestions)))
+        # the full requests are on screen: a tap sends exactly what the owner read, nothing hidden behind a title
+        lines = "\n".join(f"• {title}: {request}" for title, request in items)
+        self._outbox.put((channel, "buttons", (f"💡 You could also ask:\n{lines}", buttons)))
+
+    # ---- daily summary (daily.py): once a day on the serving path ---------------------------
+    def _daily_loop(self) -> None:
+        while not self._daily_stop.wait(30):
+            try:
+                self.check_daily()
+            except Exception as e:  # a bad row must never stop the timer
+                self._error("daily", e)
+
+    def check_daily(self, now: float | None = None) -> bool:
+        """Send today's summary to every channel if it's due. True if sent."""
+        now = time.time() if now is None else now
+        if not daily_mod.due(self._daily_sent, now):
+            return False
+        self._daily_sent.add(time.strftime("%Y-%m-%d", time.localtime(now)))
+        self.say(None, daily_mod.render(self.core, now))
+        return True
 
 
 def question_message(questions: list[dict]) -> tuple:

@@ -33,6 +33,16 @@ class FakeChannel(Channel):
             self.sent.append({"type": "buttons", "text": text, "ts": time.time(),
                               "buttons": [{"id": b, "title": t} for b, t in buttons]})
 
+    # No send_card override: like other non-WhatsApp channels the footer goes
+    # into the text (base class), so the simulated phone shows the whole card.
+    def send_list(self, text: str, button: str, rows: list[tuple[str, str, str]],
+                  footer: str = "") -> None:
+        with self._lock:
+            self.sent.append({"type": "list", "text": text, "button": button, "footer": footer,
+                              "ts": time.time(),
+                              "rows": [{"id": rid, "title": title, "description": desc}
+                                       for rid, title, desc in rows]})
+
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         self.acks.append((incoming.button, text))
 

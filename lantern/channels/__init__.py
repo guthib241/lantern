@@ -10,14 +10,17 @@ Secrets come only from the environment / .env, never from config.json.
 """
 from __future__ import annotations
 
+from . import daily, suggest
 from .base import Channel, ChannelError, Incoming
+from .cards import Card, approval_card
 from .fake import FakeChannel
 from .hub import ChannelHub
 from .telegram import TelegramChannel
 from .whatsapp import DEFAULT_VERSION, WhatsAppChannel, verify_handshake, verify_signature
 
-__all__ = ["Channel", "ChannelError", "ChannelHub", "FakeChannel", "Incoming", "TelegramChannel",
-           "WhatsAppChannel", "channels_from_env", "verify_handshake", "verify_signature"]
+__all__ = ["Card", "Channel", "ChannelError", "ChannelHub", "FakeChannel", "Incoming", "TelegramChannel",
+           "WhatsAppChannel", "approval_card", "channels_from_env", "daily", "suggest",
+           "verify_handshake", "verify_signature"]
 
 
 def channels_from_env(env: dict) -> list[Channel]:

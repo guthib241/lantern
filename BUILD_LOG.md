@@ -526,3 +526,18 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - Waiting approvals show as a red badge on Today.
 - e2e and axe pass on 10 sections in light and dark.
 
+## Oct 30 (better WhatsApp messages for the phone side)
+- Built with Muse Code (OpenCode on Muse Spark 1.3). Files: `lantern/channels/cards.py` (new), `lantern/channels/suggest.py` (new), `lantern/channels/daily.py` (new), `lantern/channels/hub.py`, `lantern/channels/base.py`, `lantern/channels/whatsapp.py`, `lantern/channels/telegram.py`, `lantern/channels/fake.py`, `lantern/channels/__init__.py`, `tests/test_phone.py` (new, 19 tests), `tests/test_channels.py` (help test now expects the menu).
+- Approval cards are formatted in code (`approval_card`, pure, unit-tested): tier-marked action line, Label: value facts from the payload (hashes never shown), an untrusted-content line, expiry footer ("Lantern needs your OK · expires in N min · #id", WhatsApp footer ≤60, appended to text elsewhere; tidy cards group short destination paths).
+- `send_list` on Channel (numbered-text fallback), WhatsApp interactive list, Telegram inline keyboard, fake record; WhatsApp parses `list_reply` into button taps. "menu"/"hi"/"help" sends the fixed menu (Status, Reminders, Undo, Summary, Stop); numbers work as fallback; "Stop everything" asks "Stop all tasks?" (Yes/No) first.
+- Muse Spark follow-ups (`models.SPARK`, one structured chat call on the Spark-low rung through the audited client, cost on the task): ≤2 buttons under a done reply; taps start new tasks from server-side text; skipped when off (`LANTERN_PHONE_SUGGESTIONS=0`), private, clientless, or over the task budget.
+- Daily summary at `LANTERN_DAILY_SUMMARY` (default 21:00, "off" disables; polled on the serving path only) plus the "summary" command/menu row: facts gathered in code (tasks, reminders, spend, denied approvals; no private replies), Spark writes ≤5 lines in Lantern's persona, code fallback otherwise.
+- `python -m pyflakes lantern scripts tests` clean; full suite 683 passed (incl. the desktop e2e, which still finds the cards on the simulated phone).
+- Fixes from review:
+  - No suggestions after a task that read untrusted content (the agent's done event now carries `tainted`; an event without it gets none).
+  - The full suggested requests are shown above the buttons, so a tap sends nothing the owner didn't read.
+  - The Spark call runs on its own thread, so it can't delay the next task.
+  - Test: `test_no_suggestions_after_untrusted_content_and_full_requests_are_shown`.
+- Known limit: the "already sent today" mark lives in memory, so a restart after 21:00 sends the daily summary again.
+- The Muse Code run cost about $2.63 of Muse Spark tokens (14.5M cached input, 226K input, 40K output).
+
