@@ -83,7 +83,7 @@
       <form id="ask" class="ask">
         <svg class="ico lead" aria-hidden="true"><use href="#i-search"/></svg>
         <input id="goal" autocomplete="off" placeholder="Ask Lantern to do something…" maxlength="2000" aria-label="Ask Lantern">
-        <button type="button" class="mic" id="talk" aria-label="Hold to talk" title="Hold to talk"><svg class="ico"><use href="#i-mic"/></svg></button>
+        <button type="button" class="mic" id="talk" aria-label="Hold to talk" aria-pressed="false" title="Hold to talk"><svg class="ico"><use href="#i-mic"/></svg></button>
         <button type="submit" class="send" aria-label="Go" title="Go (Return)"><svg class="ico"><use href="#i-send"/></svg></button>
       </form>
       <p class="talk-live" id="talk-live" aria-live="polite" hidden></p>
@@ -290,6 +290,7 @@
   <script src="lib/lessons.js"></script>
   <script src="lib/cv.js"></script>
   <script src="lib/meeting.js"></script>
+  <script src="lib/talk.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

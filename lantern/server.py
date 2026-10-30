@@ -669,6 +669,50 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             hub.receive(FakeChannel.incoming(text=body.text, button=body.button, sender=phone.owner))
             return {"ok": True}
 
+    @app.websocket("/talk")
+    async def talk(ws: WebSocket, token_q: str = Query(default="", alias="token")):
+        """S15 live talk: the panel streams microphone PCM here; the realtime transcription comes back as
+        {"type": "partial"|"final"|"error"|"done", "text"}. The key stays on this side (talk.py)."""
+        if not secrets.compare_digest(token_q, token):
+            await ws.close(code=4401)
+            return
+        await ws.accept()
+        from .talk import TalkError, relay
+        chunks: asyncio.Queue = asyncio.Queue()
+
+        async def listen_panel() -> None:
+            while True:
+                m = await ws.receive()
+                if m["type"] == "websocket.disconnect":
+                    await chunks.put(None)
+                    return
+                if m.get("bytes"):
+                    await chunks.put(m["bytes"])
+                elif m.get("text") and '"end"' in m["text"]:
+                    await chunks.put(None)
+
+        reader = asyncio.create_task(listen_panel())
+        core.emit({"type": "listening", "on": True})
+        try:
+            out = await relay(chunks.get, ws.send_json, key=os.environ.get(models.API_KEY_ENV, ""))
+            if out["audio_ms"]:
+                core.memory.log_usage(None, models.VOICE, cost_usd=models.audio_cost(out["audio_ms"]))
+            await ws.send_json({"type": "done", "text": out["text"], "audio_ms": out["audio_ms"]})
+        except TalkError as e:
+            await ws.send_json({"type": "error", "text": str(e)})
+        except Exception as e:   # network, a closed socket, a refused handshake: say so, don't crash the server
+            try:
+                await ws.send_json({"type": "error", "text": f"live talk stopped: {type(e).__name__}: {str(e)[:160]}"})
+            except Exception:
+                pass
+        finally:
+            core.emit({"type": "listening", "on": False})
+            reader.cancel()
+            try:
+                await ws.close()
+            except Exception:
+                pass
+
     @app.websocket("/events")
     async def events(ws: WebSocket, token_q: str = Query(default="", alias="token")):
         if not secrets.compare_digest(token_q, token):

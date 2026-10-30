@@ -326,6 +326,77 @@
     } }, 'Save ticked')));
   }
 
+  // ---- live talk (S15): hold the mic, speak, let go; what was heard goes in the ask field and is sent ----------
+  let talking = null;
+  async function talkStart() {
+    if (talking) return;
+    const btn = $('talk');
+    const live = $('talk-live');
+    const session = { ws: null, ctx: null, stream: null, chunks: LanternTalk.chunker(), ended: false };
+    talking = session;
+    btn.classList.add('on');
+    btn.setAttribute('aria-pressed', 'true');
+    live.hidden = false;
+    live.textContent = 'Listening…';
+    try {
+      await window.lantern.allowMicOnce();
+      session.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      session.ctx = new AudioContext({ sampleRate: LanternTalk.RATE });
+      await session.ctx.audioWorklet.addModule('lib/pcm-worklet.js');
+      const tap = new AudioWorkletNode(session.ctx, 'pcm-tap');
+      session.ctx.createMediaStreamSource(session.stream).connect(tap);
+      session.ws = new WebSocket(LanternTalk.url(cfg.apiBase, cfg.token));
+      session.ws.binaryType = 'arraybuffer';
+      session.ws.onmessage = (m) => {
+        let msg = {};
+        try { msg = JSON.parse(m.data); } catch (e) { return; }
+        const r = LanternTalk.reading(msg);
+        if (r.live !== undefined) live.textContent = r.live || 'Listening…';
+        if (r.error) { toast(`Live talk: ${r.error}`); talkClose(session); }
+        if (msg.type === 'done') {
+          talkClose(session);
+          if (r.final) { $('goal').value = r.final; $('ask').requestSubmit(); }
+          else toast('I didn\'t catch anything. Hold the mic while you speak.');
+        }
+      };
+      session.ws.onclose = () => talkClose(session);
+      tap.port.onmessage = (ev) => {
+        if (session.ended || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+        for (const chunk of session.chunks.push(ev.data)) session.ws.send(chunk);
+      };
+    } catch (e) {
+      toast(`Live talk needs the microphone: ${e.message || e}`);
+      talkClose(session);
+    }
+  }
+  function talkStop() {   // the button was let go: send what's left and say the turn is over
+    const session = talking;
+    if (!session || session.ended) return;
+    session.ended = true;
+    $('talk-live').textContent = 'Got it…';
+    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+      const rest = session.chunks.flush();
+      if (rest) session.ws.send(rest);
+      session.ws.send(JSON.stringify({ type: 'end' }));
+    } else talkClose(session);
+    if (session.stream) session.stream.getTracks().forEach((t) => t.stop());
+  }
+  function talkClose(session) {
+    if (session.stream) session.stream.getTracks().forEach((t) => t.stop());
+    if (session.ctx) session.ctx.close().catch(() => {});
+    if (session.ws && session.ws.readyState <= WebSocket.OPEN) session.ws.close();
+    if (talking === session) {
+      talking = null;
+      $('talk').classList.remove('on');
+      $('talk').setAttribute('aria-pressed', 'false');
+      $('talk-live').hidden = true;
+    }
+  }
+  $('talk').addEventListener('pointerdown', (e) => { e.preventDefault(); talkStart(); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('talk').addEventListener(ev, talkStop);
+  $('talk').addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); talkStart(); } });
+  $('talk').addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') talkStop(); });
+
   // ---- meeting recording → follow-ups (S15): nothing is added until ticked ---------------------------------------
   async function meetingListen(ev) {
     ev.preventDefault();

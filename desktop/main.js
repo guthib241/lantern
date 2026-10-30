@@ -28,6 +28,7 @@ const nativeStatus = { line: 'Starting…', badge: 0, notified: [] };
 global.lanternNative = nativeStatus;
 let quitting = false;
 let cameraUntil = 0;   // the camera is allowed for one check-in right after the user clicks
+let micUntil = 0;      // the microphone, for one push to talk right after the user presses the mic
 let serverProc = null; // the Lantern server this app started (and stops on quit), if none was running
 
 async function healthy() {
@@ -190,16 +191,20 @@ function lockDown() {
     });
     contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   });
-  // No device permissions, except the camera for a few seconds after a click on "Check-in" in the panel.
+  // No device permissions, except for a few seconds after a press in the panel: the camera for a check-in, the
+  // microphone for push to talk. Each asks for one kind of device only.
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
-    const video = permission === 'media' && (details.mediaTypes || []).every((t) => t === 'video');
-    cb(Boolean(video && panel && wc === panel.webContents && Date.now() < cameraUntil));
+    const kinds = permission === 'media' ? (details.mediaTypes || []) : [];
+    const only = (kind) => kinds.length > 0 && kinds.every((t) => t === kind);
+    const fromPanel = Boolean(panel && wc === panel.webContents);
+    cb(fromPanel && ((only('video') && Date.now() < cameraUntil) || (only('audio') && Date.now() < micUntil)));
   });
 }
 
 ipcMain.handle('config', () => config);
 ipcMain.handle('stop', () => stopEverything());
 ipcMain.handle('camera:allow-once', () => { cameraUntil = Date.now() + 5000; return true; });
+ipcMain.handle('mic:allow-once', () => { micUntil = Date.now() + 5000; return true; });
 ipcMain.on('avatar:hover', (_e, over) => {
   if (avatar) avatar.setIgnoreMouseEvents(!over, { forward: true });
 });
