@@ -14,30 +14,18 @@
   const now = () => Date.now() / 1000;
   const LEAD = { approval: '!', done: '✓', failed: '!', stopped: '■', reminder: '⏰' };
 
-  // The face is Muse's: desktop/assets/avatar/manifest.js lists, per expression, an animated loop
-  // (.webm, from Vibes / Muse Video) or an image (.webp/.png, Muse Image). Expressions without
-  // their own file show idle. The glow from sprite.js only stands in until any art exists.
-  const sheet = (window.LanternAvatarManifest && window.LanternAvatarManifest.expressions) || {};
-  let broken = false;
+  // Lantern's orb (lib/sprite.js + avatar.css): built once; a state change swaps its class and colours, and
+  // the colours glide from one state to the next.
+  spriteEl.innerHTML = LanternSprite.markup();   // our own trusted markup, no text inside
+  spriteEl.setAttribute('role', 'button');
+  spriteEl.tabIndex = 0;
 
   function setSprite(expression) {
     if (expression === shown) return;
     shown = expression;
     spriteEl.className = 'sprite ' + expression;
-    spriteEl.textContent = '';
-    const entry = sheet[expression] || (expression === 'juggling' ? sheet.thinking : null) || sheet.idle;
-    if (entry && !broken) {
-      const video = /\.(webm|mp4)$/i.test(entry.file);
-      const media = video ? document.createElement('video') : new Image();
-      if (video) Object.assign(media, { autoplay: true, loop: true, muted: true, playsInline: true });
-      media.className = 'portrait';
-      media.setAttribute('aria-label', `Lantern looks ${expression}`);
-      media.onerror = () => { broken = true; shown = ''; render(); };
-      media.src = `../assets/avatar/${entry.file}`;
-      spriteEl.appendChild(media);
-    } else {
-      spriteEl.innerHTML = LanternSprite.svg(expression);   // our own trusted SVG, no user text inside
-    }
+    spriteEl.setAttribute('style', LanternSprite.style(expression));
+    spriteEl.setAttribute('aria-label', `${LanternSprite.LABELS[expression] || 'Lantern'}. Open Lantern`);
   }
 
   let current = null;   // the activity on screen (for the buttons)
@@ -97,4 +85,7 @@
     el.addEventListener('contextmenu', (e) => { e.preventDefault(); window.lantern.avatarMenu(); });
   }
   spriteEl.addEventListener('click', () => window.lantern.togglePanel());
+  spriteEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.lantern.togglePanel(); }
+  });
 })();

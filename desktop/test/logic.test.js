@@ -74,7 +74,11 @@ test('expressions follow what Lantern is doing', () => {
   assert.equal(X.pick(run([{ type: 'stopped', ts: 2 }]), 3), 'annoyed');
   assert.equal(X.pick(plain, 2 + 6 * 60), 'sleeping');
   assert.equal(X.bubble(verified, 3), 'Done.');
-  assert.ok(X.EXPRESSIONS.every((e) => P.svg(e).startsWith('<svg') && P.svg(e).includes(`is ${e}`)));
+  // every state has its own orb colours, motion and a spoken label; the markup holds no text at all
+  assert.ok(X.EXPRESSIONS.every((e) => P.PALETTES[e] && P.LABELS[e] && /--spin:\d/.test(P.style(e))));
+  assert.notEqual(P.style('needs-approval'), P.style('idle'));
+  assert.ok(P.PALETTES.thinking.spin < P.PALETTES.idle.spin && P.PALETTES.idle.spin < P.PALETTES.sleeping.spin);
+  assert.ok(!/>[^<]+</.test(P.markup()));
 });
 
 test('approval card shows what matters and builds the decision', () => {
