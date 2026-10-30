@@ -117,7 +117,7 @@ def test_check_6_learns_heals_and_runs_at_zero_on_a_scripted_model(tmp_path, mon
 
     def repair(kw):
         q = json.loads(kw["messages"][1]["content"])
-        listed = json.loads(next(v for k, v in q.items() if k.startswith("page_"))["content"])
+        listed = json.loads(next(v for k, v in q.items() if k.startswith("page_"))["content"])["candidates"]
         want = v1_to_v2.get(q["used_to_be"].lower(), "").lower()
         return {"target": next((c["label"] for c in listed if c["label"].lower() == want), "none")}
     agent = PortalAgent(v1)

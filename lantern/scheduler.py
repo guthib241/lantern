@@ -502,6 +502,11 @@ class Scheduler:
 
     def stop_task(self, task_id: int) -> bool:
         """Stop one task at its next step (S13: a loan that ended)."""
+        return self.stop_one(task_id, "the loan ended")
+
+    def stop_one(self, task_id: int, why: str = "stopped by the user") -> bool:
+        """"stop #N": only task N stops at its next step; its open question is withdrawn and its open approval
+        cards are denied. The other tasks carry on. False if N isn't running, queued or parked."""
         with self._lock:
             r = self.runs.get(task_id)
         if r is None:
@@ -509,8 +514,14 @@ class Scheduler:
         r.cancelled = True
         if r.agent is not None:
             r.agent.cancel.set()
+        for a in self.core.bus.pending():
+            if self.task_for_approval(a.id) == task_id:
+                try:
+                    self.core.bus.decide(a.id, a.nonce, False, by="stopped")
+                except Exception:   # answered or expired in the meantime
+                    pass
         if r.phase == "parked" and r.reason == "waiting_user":
-            self._cancel(r, "the loan ended")
+            self._cancel(r, why)
         return True
 
     def _cancel(self, run: Run, why: str) -> None:

@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 from . import models
 from .agent import NOT_DONE, Agent, Result, track_unconfirmed
+from .labels import HANDLE
 from .tools import AskUser, ToolError
 
 STATE_VERSION = 1
@@ -49,15 +50,19 @@ class _Cancelled(Exception):
 Checkpoint = Callable[[int, dict, str, str], None]   # (task_id, state, phase, reason)
 
 
+# What a recap may repeat of a step's result: Lantern's own small fields, never content (that stays a handle).
+BRIEF_KEYS = ("path", "count", "moved", "of", "sent", "to", "due", "url", "reason", "error", "answer_type", "found",
+              "doc")
+
+
 def chain_lost(exc: BaseException) -> bool:
     """Does this error say the API no longer has the previous response? (Then we replay with a recap.)
-    Seen live (Oct 28): 400 invalid_request_error "referenced response not found or expired", mid-task.
-    Kept narrow: a 400/404 that names the referenced or previous response."""
+    A 400/404 that names the previous response. The live API's wording (seen Oct 27-28, mid-task, seconds after
+    the response was made): "referenced response not found or expired"."""
     from .reliability import status_of
     text = (str(getattr(exc, "body", "") or "") + " " + str(exc)).lower()
-    if status_of(exc) not in (400, 404) or "response" not in text:
-        return False
-    return "previous" in text or ("referenced response" in text and ("not found" in text or "expired" in text))
+    return status_of(exc) in (400, 404) and "response" in text and (
+        "previous" in text or "referenced response" in text or "not found or expired" in text)
 
 
 class ResumableAgent(Agent):
@@ -107,7 +112,11 @@ class ResumableAgent(Agent):
                     self.memory.mark_private(task_id)
                 elif label.untrusted:
                     self.memory.mark_quoted(task_id)
-            reply, summary = shown_reply, shown_summary
+            # a handle the model made up (or one from a step that failed) is never shown raw: live, Oct 28 a reply
+            # read "$h1 is sitting in your Private folder" after ask_private had refused
+            reply, summary = (HANDLE.sub("(that)", shown_reply), HANDLE.sub("(that)", shown_summary))
+            if self._public is not None:
+                self._public = tuple(HANDLE.sub("(that)", x) for x in self._public)
         self.memory.log_step(task_id, "reply", reply)
         self.memory.finish_task(task_id, status, summary)
         try:
@@ -282,7 +291,7 @@ class ResumableAgent(Agent):
             self.memory.log_step(task_id, "note", f"moved up to {rung.badge}; continuing with a recap")
             response = self._model(task_id, kind, rung, input=self._recap(task_id, state, outputs, "moved to "
                                                                           "another model"), **kw)
-        else:   # the API can drop a chain mid-task too (seen live), not only across a restart
+        else:   # live, Oct 28: the API also loses chains mid-task, not only across a restart
             state.pop("chain_check", None)
             try:
                 response = self._model(task_id, kind, rung, previous_response_id=state["response_id"], input=outputs,
@@ -307,9 +316,14 @@ class ResumableAgent(Agent):
                 except (TypeError, ValueError):
                     continue
                 r = data.get("result") if isinstance(data, dict) else None
-                if isinstance(r, dict) and data.get("name") not in (None, "finish"):
+                if isinstance(r, dict) and data.get("name") == "ask_user" and "answer" in r:
+                    # live, Oct 28: without the answer in the recap the model asked the same question again
+                    done.append(f"ask_user (the user answered: {str(r['answer'])[:200]})")
+                elif isinstance(r, dict) and data.get("name") not in (None, "finish"):
                     mark = "verified" if r.get("verified") else ("error" if r.get("error") else "ok")
-                    done.append(f"{data['name']} ({mark})")
+                    brief = json.dumps({k: v for k, v in r.items() if k in BRIEF_KEYS}, ensure_ascii=False,
+                                       default=str)[:160]
+                    done.append(f"{data['name']} ({mark}{': ' + brief if brief not in ('{}', '') else ''})")
         return (f"{state['goal']}\n\n[Continuing task #{task_id} after {why}; the earlier turns are not available "
                 f"here. Steps so far: {'; '.join(done[-12:]) or 'none'}. Results of the last step: {latest or 'none'}. "
                 "Check before repeating anything that changes something.]")

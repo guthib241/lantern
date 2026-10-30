@@ -97,7 +97,7 @@ class Core:
                  audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
                  bus: ApprovalBus | None = None, approval_timeout: float | None = None,
                  forms: FormService | None = None, email: EmailService | None = None,
-                 mcp: MCPHub | None = None, reminder_tick: float = 1.0, workers: int = 0):
+                 mcp: MCPHub | None = None, reminder_tick: float = 1.0, workers: int = 0, recover: bool = True):
         self.cfg = cfg
         cipher = None if (memory and audit) else cipher_for(cfg)
         self.memory = memory or Memory(cfg.db_path, cipher)
@@ -145,8 +145,9 @@ class Core:
             from .scheduler import Scheduler
             self.scheduler = Scheduler(self, workers, approval_timeout=approval_timeout)
             self.compiler = Compiler(self)
-        keep = self.scheduler.recover() if self.scheduler is not None else set()
-        self.interrupted = recover_interrupted(self.memory, keep)   # before the worker starts taking tasks
+        # recover=False (the terminal): leave tasks another Lantern left unfinished alone; `lantern --resume` does them
+        keep = self.scheduler.recover() if self.scheduler is not None and recover else set()
+        self.interrupted = recover_interrupted(self.memory, keep) if recover else []   # before the worker starts
         self.bus.subscribe(self._approval_event)
         self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
         self._worker.start()
@@ -1022,6 +1023,14 @@ class Core:
         self.emit({"type": "stopped", "denied_approvals": denied})
         first = self.current_task if self.current_task is not None else (stopped[0] if stopped else None)
         return {"stopped": True, "denied_approvals": denied, "task_id": first, "task_ids": stopped}
+
+    def stop_task(self, task_id: int) -> dict:
+        """Stop one task ("stop #N" on the phone); the others carry on. One-at-a-time mode: only the running one."""
+        if self.scheduler is not None:
+            return {"stopped": self.scheduler.stop_one(task_id), "task_id": task_id}
+        if self.current_task == task_id:
+            return {**self.stop(), "task_id": task_id}
+        return {"stopped": False, "task_id": task_id}
 
     def retry_task(self, task_id: int) -> int:
         """Run a failed or cancelled task's goal again as a new task (an interrupted one is resumed)."""

@@ -268,6 +268,36 @@ def test_stop_cancels_running_and_parked_tasks(tmp_path):
     core.shutdown()
 
 
+def test_stop_one_task_leaves_the_others_running(tmp_path):
+    """Live, Oct 28: "stop #N" on the phone matched STOP and cancelled every task."""
+    from lantern.channels import ChannelHub, FakeChannel
+    gate = threading.Event()
+    client = Routed({"question": [ask("q", "Which one?")],
+                     "slow": [([call("list_folders", "s1")], ""), gate, finish("s2"), ([], "ok")],
+                     "other": [gate, finish("o1", "kept going"), ([], "Done.")]})
+    core = Core(config(tmp_path), client, reminder_tick=0, workers=3)
+    phone = FakeChannel()
+    hub = ChannelHub(core, [phone]).start(listen=False)
+    a = core.submit("a question for me")
+    b = core.submit("slow job")
+    c = core.submit("the other job")
+    until(lambda: core.questions() and len(client.fakes["slow"].requests) >= 1)
+    hub.receive(phone.incoming(text=f"stop #{b}"))
+    until(lambda: any(f"Stopping #{b}" in m.get("text", "") for m in phone.messages()))
+    gate.set()
+    until(lambda: core.memory.get_task(c).status == "done")
+    until(lambda: core.memory.get_task(b).status == "cancelled")
+    assert core.memory.get_task(a).status == "active" and core.questions()[0]["task_id"] == a   # still waiting
+    assert core.memory.get_task(c).summary == "kept going"
+    hub.receive(phone.incoming(text=f"stop #{a}"))
+    until(lambda: core.memory.get_task(a).status == "cancelled")
+    assert core.questions() == []
+    hub.receive(phone.incoming(text="stop #999"))
+    until(lambda: any("#999 isn't running" in m.get("text", "") for m in phone.messages()))
+    hub.stop()
+    core.shutdown()
+
+
 def test_ask_user_refuses_to_fish_for_secrets(tmp_path):
     from lantern.memory import Memory
     tb = Toolbox([str(tmp_path)], Memory(tmp_path / "m.db"), lambda s: True)

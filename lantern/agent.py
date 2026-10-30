@@ -163,6 +163,26 @@ class Agent:
             return str(result["model"])
         return "on this computer"
 
+    def _follow(self, task_id: int, goal: str, instructions: str, previous: str, outputs: list[dict],
+                calls_made: list[dict]):
+        """The next turn on the chain. If the API no longer has the chain ("referenced response not found or
+        expired", seen live mid-task), continue on a fresh one with a recap instead of failing the task."""
+        from .taskrun import chain_lost
+        try:
+            return self._create(task_id, instructions=instructions, previous_response_id=previous, input=outputs,
+                                tools=self.tools)
+        except Exception as e:
+            if not chain_lost(e):
+                raise
+        self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; continued "
+                                              "with a recap")
+        done = "; ".join(f"{c['name']} -> {json.dumps(c['result'], ensure_ascii=False, default=str)[:300]}"
+                         for c in calls_made[-12:])
+        return self._create(task_id, instructions=instructions, tools=self.tools,
+                            input=f"{goal}\n\n[Continuing task #{task_id}: the earlier turns are not available here. "
+                                  f"Steps so far: {done or 'none'}. Check before repeating anything that changes "
+                                  "something.]")
+
     def run(self, goal: str, task_id: int | None = None) -> Result:
         """Run one task to completion. Pass task_id to run a task the server already created."""
         task = self.memory.get_task(task_id) if task_id else self.memory.start_task(goal)
@@ -264,19 +284,13 @@ class Agent:
             if finished:
                 status, summary = finished
                 # Let the model say its in-character closing line.
-                response = self._create(
-                    task_id, instructions=instructions, previous_response_id=response.id,
-                    input=outputs, tools=self.tools,
-                )
+                response = self._follow(task_id, goal, instructions, response.id, outputs, calls_made)
                 reply = getattr(response, "output_text", "") or summary
                 self.memory.log_step(task_id, "reply", reply)
                 self.memory.finish_task(task_id, status, summary)
                 return self._result(task_id, status, summary, reply, step, calls_made)
 
-            response = self._create(
-                task_id, instructions=instructions, previous_response_id=response.id,
-                input=outputs, tools=self.tools,
-            )
+            response = self._follow(task_id, goal, instructions, response.id, outputs, calls_made)
 
         return self._stop(task_id, "failed", f"stopped after {self.max_steps} steps without finishing",
                           self.max_steps, calls_made)
