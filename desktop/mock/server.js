@@ -217,6 +217,13 @@ function createMock() {
       return { memory: {}, audit: 0 };
     },
     'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
+    'GET /avatar/manifest': () => ({ active: null, expressions: {}, designs: [] }),
+    'POST /avatar/design': (b) => {
+      if (!b.brief || !String(b.brief).trim()) return [400, { detail: 'describe the avatar in a few words first' }];
+      if (String(b.brief).trim().length > 600) return [400, { detail: 'the brief is too long (at most 600 characters)' }];
+      if (!['3d', 'flat', 'pixel', 'neon'].includes(b.style)) return [400, { detail: 'style must be one of 3d, flat, pixel, neon' }];
+      return { id: 'mock-design', brief: String(b.brief).trim(), style: b.style, cost_usd: 0.01, preview: '' };
+    },
     'GET /reminders': () => reminders.filter((r) => r.status === 'pending'),
     'POST /tasks/resume': () => ({ task_ids: [] }),
     'GET /settings': () => ({ persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] }),
@@ -319,6 +326,12 @@ function createMock() {
           return send(200, { name: g[1], disabled: item.disabled });
         }
         return send(404, { detail: 'not found' });
+      }
+      const av = url.pathname.match(/^\/avatar\/design\/([a-z0-9-]+)\/accept$/);
+      if (av && req.method === 'POST' && req.headers['x-lantern-token'] === TOKEN) {
+        // Mock approves at once (no card); the real server waits for the approval.
+        emit({ type: 'avatar', active: av[1] });
+        return send(200, { accepted: true, verified: true, id: av[1], cost_usd: 0.06, model_calls: 0 });
       }
       const m = url.pathname.match(/^\/approvals\/([\w-]+)$/);
       const key = m ? `${req.method} /approvals/:id` : `${req.method} ${url.pathname}`;

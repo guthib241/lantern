@@ -55,7 +55,7 @@
 
   // ---- tabs ---------------------------------------------------------------------------------
   const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, widgets: loadWidgets,
-                    agents: loadAgents, setup: () => { loadSettings(); loadDoctor(); } };
+                    agents: loadAgents, setup: () => { loadSettings(); loadDoctor(); loadAvatar(); } };
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
   function showTab(name) {
@@ -194,6 +194,101 @@
       },
     }, PERSONA_NAMES[p] || p)));
   }
+
+  // ---- avatar studio (Setup → Avatar; routes are lantern/server.py's /avatar) -------------------------
+  const AVATAR_STYLES = ['3d', 'flat', 'pixel', 'neon'];
+  let avatarStyle = '3d';
+  let avatarPreview = null;   // {id, preview, cost_usd} waiting for “Use this”
+
+  function renderAvatarStyles() {
+    $('avatar-styles').replaceChildren(...AVATAR_STYLES.map((s) => h('button', {
+      role: 'radio', 'aria-checked': String(s === avatarStyle), type: 'button',
+      onclick: () => { avatarStyle = s; renderAvatarStyles(); },
+    }, s)));
+  }
+
+  function avatarRow(imgSrc, title, note, button) {
+    return h('div', { class: 'row avatar-row' },
+      imgSrc ? h('img', { class: 'avatar-thumb', src: imgSrc, alt: '' }) : null,
+      h('div', { class: 'row-text' }, h('b', {}, title), note ? h('small', {}, note) : null),
+      button);
+  }
+
+  async function avatarThumb(id) {
+    try {
+      const blob = await api.blob(`/avatar/file/${encodeURIComponent(id)}/idle`);
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      return '';   // no idle image yet (a bare preview): the row shows text only
+    }
+  }
+
+  async function loadAvatar() {
+    renderAvatarStyles();
+    const box = $('avatar-now');
+    box.textContent = '';
+    let manifest = null;
+    try { manifest = await api.get('/avatar/manifest'); } catch (e) { manifest = null; }
+    if (!manifest) {
+      box.append(h('p', { class: 'hint' }, 'Avatar designs need the newest Lantern server.'));
+      return;
+    }
+    if (avatarPreview) {
+      box.append(avatarRow(avatarPreview.preview,
+        `Preview · ${LanternAudit.money(avatarPreview.cost_usd)}`,
+        'One image. “Use this” draws the other six after you approve.',
+        h('button', { class: 'tinted', onclick: acceptAvatarPreview }, 'Use this')));
+    }
+    const designs = manifest.designs || [];
+    if (!designs.length && !avatarPreview) {
+      box.append(h('p', { class: 'hint' }, 'No designs yet. Describe the face above and tap Preview.'));
+    }
+    for (const d of designs) {
+      const thumb = d.status === 'complete' ? await avatarThumb(d.id) : '';
+      const label = d.active ? 'On screen now' : d.status === 'complete' ? 'Finished' : 'Preview';
+      const button = !d.active && d.status === 'complete'
+        ? h('button', { class: 'tinted', onclick: () => useAvatarDesign(d.id) }, 'Use') : null;
+      box.append(avatarRow(thumb, `${d.style} · ${label}`, String(d.brief || '').slice(0, 140), button));
+    }
+  }
+
+  async function acceptAvatarPreview() {
+    if (!avatarPreview) return;
+    try {
+      const r = await api.post(`/avatar/design/${encodeURIComponent(avatarPreview.id)}/accept`);
+      toast(r.accepted ? 'Lantern has a new face.' : `Not changed: ${r.reason || 'declined'}.`);
+      if (r.accepted) avatarPreview = null;
+    } catch (e) {
+      toast(`Couldn't finish it: ${e.message}`);
+    }
+    loadAvatar();
+  }
+
+  async function useAvatarDesign(id) {
+    try {   // a finished design just becomes active again: no model call
+      const r = await api.post(`/avatar/design/${encodeURIComponent(id)}/accept`);
+      toast(r.accepted ? 'Lantern has a new face.' : `Not changed: ${r.reason || 'declined'}.`);
+    } catch (e) {
+      toast(`Couldn't switch: ${e.message}`);
+    }
+    loadAvatar();
+  }
+
+  $('avatar-preview').addEventListener('click', async () => {
+    const brief = $('avatar-brief').value.trim();
+    if (!brief) {
+      toast('Describe the face first.');
+      return;
+    }
+    try {
+      avatarPreview = await api.post('/avatar/design', { brief, style: avatarStyle });
+      toast(`Preview drawn for ${LanternAudit.money(avatarPreview.cost_usd)}.`);
+    } catch (e) {
+      toast(`Couldn't draw it: ${e.message}`);
+      avatarPreview = null;
+    }
+    loadAvatar();
+  });
 
   // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------
   let upcoming = [];
@@ -780,6 +875,7 @@
     if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
     if (e.type === 'budget') toast(`Lantern has spent ${LanternAudit.money(e.spent_usd)} of its ${LanternAudit.money(e.limit_usd)} limit.`);
     if (e.type === 'done' || e.type === 'budget') loadCosts();
+    if (e.type === 'avatar' && tab === 'setup') loadAvatar();
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
     $('conn').className = 'status ' + (up ? 'up' : 'down');

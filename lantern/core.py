@@ -7,6 +7,7 @@ subscribers (the server's websocket, channels).
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import queue
@@ -15,8 +16,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from . import avatar as avatar_mod
 from . import config as config_mod
 from . import models
+from . import studio as studio_mod
 from .agent import Agent
 from .agentpacks import PackError, PackStore, draft_pack, pack_suffix
 from .approvals import ApprovalBus, ApprovalError, BusGate
@@ -32,6 +35,7 @@ from .policy import Policy, PolicyError
 from .reliability import RetryingClient
 from .router import Router, RouterConfig, make_backend
 from .sam import CheckIn
+from .studio import StudioStore
 from .tools import Toolbox, ToolError
 from .undo import UNDONE, UndoError, undo_plan, undoable
 from .widgets import Widgets
@@ -114,6 +118,7 @@ class Core:
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
         self.envmap = EnvMap(self.policy, cfg.envmap_path)
         self.widgets = Widgets(Path(cfg.widgets_dir))
+        self.studio = StudioStore(Path(cfg.db_path).expanduser().parent / "avatar")
         self.packs = PackStore(Path(getattr(cfg, "agents_dir", Path(cfg.db_path).expanduser().parent / "agents")))
         self.mcp = mcp if mcp is not None else MCPHub.from_file(cfg.mcp_config).start()
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
@@ -384,6 +389,58 @@ class Core:
         except PackError as e:
             return {"installed": False, "reason": str(e), "name": pack.name}
         return {"installed": True, "verified": stored.as_dict() == pack.as_dict(), "name": pack.name}
+
+    # ---- avatar studio (Lantern's face, designed in words; T4a) ------------------------
+    def design_avatar(self, brief: str, style: str) -> dict:
+        """Draw one canonical preview image from the brief (about $0.01). No approval:
+        the preview is cheap and the accept step carries the approval for the sheet."""
+        clean = studio_mod.validate_brief(brief)   # StudioError before any model call
+        key = studio_mod.validate_style(style)
+        design_id = studio_mod.new_id()
+        folder = self.studio.design_dir(design_id)
+        sheet = avatar_mod.generate(self.client, folder, brief=studio_mod.design_brief(clean, key), only=["idle"],
+                                    on_cost=lambda usd: self.memory.log_usage(None, models.IMAGE, cost_usd=usd))
+        preview = (folder / "idle.webp").read_bytes()
+        self.studio.save_meta(design_id, studio_mod.new_meta(design_id, clean, key,
+                                                             sheet.canonical_response, sheet.cost_usd))
+        return {"id": design_id, "brief": clean, "style": key, "cost_usd": sheet.cost_usd,
+                "preview": "data:image/webp;base64," + base64.b64encode(preview).decode()}
+
+    def accept_avatar(self, design_id: str) -> dict:
+        """Render the remaining expressions anchored on the preview (after approval),
+        write the sheet to ~/.lantern/avatar/<id>/ and set it active. A finished
+        design just becomes active again: no model call, no approval."""
+        try:
+            meta = self.studio.get_meta(design_id)
+        except studio_mod.StudioError:
+            raise KeyError(design_id) from None
+        folder = self.studio.design_dir(design_id)
+        rest = [e for e in avatar_mod.EXPRESSIONS if not (folder / f"{e}.webp").exists()
+                and not (folder / f"{e}.png").exists()]
+        if not rest:   # the gallery switch-back: already on disk, nothing to draw
+            self.studio.set_active(design_id)
+            self.emit({"type": "avatar", "active": design_id})
+            return {"accepted": True, "verified": True, "id": design_id, "cost_usd": 0.0, "model_calls": 0}
+        payload = {"id": design_id, "images": len(rest), "cost_usd": round(models.image_cost(len(rest)), 4)}
+        summary = studio_mod.finish_summary(meta.get("style", "?"), len(rest))
+        commit = self.toolbox.gate.ask("finish_avatar", summary, payload)
+        if commit is None:
+            return {"accepted": False, "reason": "user declined", "id": design_id}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"accepted": False, "reason": str(e), "id": design_id}
+        # The preview's manifest holds the canonical turn; generate() chains the rest on it.
+        sheet = avatar_mod.generate(self.client, folder, only=rest,
+                                    on_cost=lambda usd: self.memory.log_usage(None, models.IMAGE, cost_usd=usd))
+        self.studio.save_meta(design_id, {**meta, "status": "complete",
+                                          "cost_usd": round(meta.get("cost_usd", 0.0) + sheet.cost_usd, 4)})
+        self.studio.set_active(design_id)
+        self.emit({"type": "avatar", "active": design_id})
+        verified = all((folder / f"{e}.webp").exists() or (folder / f"{e}.png").exists()
+                       for e in avatar_mod.EXPRESSIONS)
+        return {"accepted": True, "verified": verified, "id": design_id,
+                "cost_usd": sheet.cost_usd, "model_calls": len(rest)}
 
     def pack_draft(self, task_id: int) -> dict:
         """Draft a pack from a finished task (Muse Spark, structured output).

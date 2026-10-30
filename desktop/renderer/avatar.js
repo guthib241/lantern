@@ -14,26 +14,43 @@
   const now = () => Date.now() / 1000;
   const LEAD = { approval: '!', done: '✓', failed: '!', stopped: '■', reminder: '⏰' };
 
-  // The face is Muse's: desktop/assets/avatar/manifest.js lists, per expression, an animated loop
-  // (.webm, from Vibes / Muse Video) or an image (.webp/.png, Muse Image). Expressions without
-  // their own file show idle. The glow from sprite.js only stands in until any art exists.
-  const sheet = (window.LanternAvatarManifest && window.LanternAvatarManifest.expressions) || {};
+  // The face is Muse's, in three fallbacks (LanternAvatar.pickSource): the design on the
+  // server (/avatar/manifest), then desktop/assets/avatar/manifest.js, then the built-in glow.
+  // Bundled entries name animated loops (.webm, from Vibes / Muse Video) or images (.webp/.png,
+  // Muse Image). Expressions without their own file show idle.
+  let portraits = {};
   let broken = false;
+
+  async function loadPortraits() {
+    const bundled = (window.LanternAvatarManifest && window.LanternAvatarManifest.expressions) || {};
+    let server = null;
+    try { server = await api.get('/avatar/manifest'); } catch (e) { server = null; }
+    const from = LanternAvatar.pickSource(server, window.LanternAvatarManifest);
+    if (from === 'server') {
+      portraits = Object.fromEntries(Object.entries(server.expressions).map(([k, v]) => [k, cfg.apiBase + v.file]));
+    } else if (from === 'bundled') {
+      portraits = Object.fromEntries(Object.entries(bundled).map(([k, v]) => [k, `../assets/avatar/${v.file}`]));
+    } else {
+      portraits = {};
+    }
+    broken = false;
+    shown = '';   // the face may have changed: draw it again
+  }
 
   function setSprite(expression) {
     if (expression === shown) return;
     shown = expression;
     spriteEl.className = 'sprite ' + expression;
     spriteEl.textContent = '';
-    const entry = sheet[expression] || sheet.idle;
-    if (entry && !broken) {
-      const video = /\.(webm|mp4)$/i.test(entry.file);
+    const src = portraits[expression] || portraits.idle;
+    if (src && !broken) {
+      const video = /\.(webm|mp4)$/i.test(src);
       const media = video ? document.createElement('video') : new Image();
       if (video) Object.assign(media, { autoplay: true, loop: true, muted: true, playsInline: true });
       media.className = 'portrait';
       media.setAttribute('aria-label', `Lantern looks ${expression}`);
       media.onerror = () => { broken = true; shown = ''; render(); };
-      media.src = `../assets/avatar/${entry.file}`;
+      media.src = src;
       spriteEl.appendChild(media);
     } else {
       spriteEl.innerHTML = LanternSprite.svg(expression);   // our own trusted SVG, no user text inside
@@ -83,12 +100,13 @@
 
   api.events((e) => {
     state = LanternState.reduce(state, { ts: now(), ...e });
-    render();
+    if (e.type === 'avatar') loadPortraits().then(render);   // a new face was accepted: show it
+    else render();
   }, (up) => { if (!up) state = LanternState.reduce(state, { type: 'disconnected', ts: now() }); render(); });
 
   window.lantern.onStopped(() => { state = LanternState.reduce(state, { type: 'stopped', ts: now() }); render(); });
   setInterval(render, 1000);
-  render();
+  loadPortraits().then(render);
 
   // Click-through everywhere except the face and the island.
   for (const el of [spriteEl, island]) {

@@ -8,6 +8,7 @@ const C = require('../renderer/lib/cards.js');
 const A = require('../renderer/lib/audit.js');
 const W = require('../renderer/lib/widgets.js');
 const P = require('../renderer/lib/sprite.js');
+const V = require('../renderer/lib/avatar.js');
 
 const run = (events) => events.reduce(S.reduce, S.initial());
 
@@ -351,6 +352,18 @@ test('menu bar status, badge and terse notifications', () => {
     'call Priya (it was due while Lantern was off)');
   assert.equal(N.notice({ type: 'done', status: 'failed', summary: 'no internet' }, s, {}).title, 'Lantern couldn’t finish');
   assert.equal(N.notice({ type: 'done', status: 'done', reply: 'ok' }, s, {}), null);
+});
+
+test('avatar face: server design first, then bundled art, then the glow', () => {
+  const server = { active: 'abc123', expressions: { idle: { file: '/avatar/file/abc123/idle' } } };
+  const bundled = { expressions: { idle: { file: 'idle.webp' } } };
+  assert.equal(V.pickSource(server, bundled), 'server');
+  assert.equal(V.pickSource({ active: null, expressions: {}, designs: [] }, bundled), 'bundled');
+  assert.equal(V.pickSource({ active: 'abc123', expressions: {} }, bundled), 'bundled');   // active but bare
+  assert.equal(V.pickSource(null, null), 'glow');
+  assert.equal(V.pickSource(null, { expressions: {} }), 'glow');
+  assert.equal(C.card({ action: 'finish_avatar', summary: 'Finish this avatar design (neon): 6 more expressions.' }, 0).title,
+    'Make this your avatar?');
 });
 
 test('widget storage: no key can reach the index, and the cap holds', () => {

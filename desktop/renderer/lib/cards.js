@@ -16,6 +16,7 @@
     run_in_project: 'Run this command?',
     organize_files: 'Tidy these files?',
     install_agent: 'Install this agent?',
+    finish_avatar: 'Make this your avatar?',
     undo_moves: 'Put these files back?',
     set_reminder: 'Set this reminder?',
     cancel_reminder: 'Cancel this reminder?',

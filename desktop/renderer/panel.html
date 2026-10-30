@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
 <meta name="color-scheme" content="light dark">
 <title>Lantern</title>
 <link rel="stylesheet" href="panel.css">
@@ -145,6 +145,16 @@
         <div class="row"><div class="segmented" id="persona" role="radiogroup" aria-label="Lantern's personality"></div></div>
       </div>
       <p class="footnote" id="persona-note">How Lantern talks to you. It never changes what Lantern is allowed to do.</p>
+      <h2 class="section">Avatar</h2>
+      <div class="group">
+        <div class="row"><div class="segmented" id="avatar-styles" role="radiogroup" aria-label="Avatar style"></div></div>
+        <div class="agent-form">
+          <label>Describe Lantern's face<textarea id="avatar-brief" rows="3" maxlength="600" placeholder="3D animated movie portrait of a sleek personal AI assistant, bright cyan eyes, confident smile, short white-silver hair with neon cyan highlights, dark gray futuristic jacket, soft rim lighting, minimalist dark studio background, clean profile picture."></textarea></label>
+        </div>
+        <div class="row"><button class="tinted" id="avatar-preview" type="button">Preview (one image, a few cents)</button></div>
+        <div id="avatar-now"></div>
+      </div>
+      <p class="footnote">Drawn by Muse Image, with no logos, text or brand marks. “Use this” draws the other six expressions (about $0.07) after you approve. Past designs stay in the gallery: switching back is free.</p>
       <h2 class="section">Shortcuts</h2>
       <div class="group">
         <div class="row"><span class="row-text">Quick Ask</span><kbd id="kbd-ask">⌘ ⇧ Space</kbd></div>

@@ -217,6 +217,10 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 8
 .stop-big:active { transform: scale(.98); }
 .row.drop.over { background: var(--fill); border-radius: var(--radius); outline: 2px dashed var(--tint); }
 
+/* ---- avatar studio ---- */
+.avatar-thumb { width: 44px; height: 44px; flex: none; border-radius: 50%; object-fit: cover; background: var(--fill); }
+.avatar-row small { display: block; color: var(--label-2); font-size: 12.5px; word-break: break-word; }
+
 /* ---- reminders ---- */
 .reminder .when { flex: none; font-weight: 600; font-size: 13px; color: var(--orange-text); font-variant-numeric: tabular-nums; }
 .reminder .what { flex: 1; min-width: 0; word-break: break-word; }

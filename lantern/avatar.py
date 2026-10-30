@@ -39,7 +39,7 @@ CHARACTER = (
 )
 FRAMING = (
     "Square portrait, the character centred and filling about 70% of the frame, on a plain soft warm "
-    "cream-to-peach gradient background. No text, no letters, no logos, no watermark."
+    "cream-to-peach gradient background. No logos, no text, no brand marks, no letters, no watermark."
 )
 SIZE = "1024x1024"
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
@@ -75,7 +75,8 @@ def canonical_prompt(brief: str | None, from_reference: bool) -> str:
 
 def expression_prompt(expression: str) -> str:
     return (f"The same character as in the canonical portrait: identical design, colours, style, framing and "
-            f"background. Change only the expression and pose: {EXPRESSIONS[expression]}. No text.")
+            f"background. Change only the expression and pose: {EXPRESSIONS[expression]}. "
+            "No logos, no text, no brand marks.")
 
 
 def plan(*, brief: str | None = None, from_reference: bool = False, only: list[str] | None = None,

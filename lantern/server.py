@@ -22,6 +22,8 @@ in the browser can't drive Lantern through localhost.
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/run,
   POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft
+  POST /avatar/design {brief, style}   one preview image; POST /avatar/design/{id}/accept
+  GET  /avatar/manifest, GET /avatar/file/{id}/{expression}   the active avatar (T4a)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
   POST /checkin {image: data URL, concept}   SAM 3.1 camera check-in (objects only, nothing stored)
   POST /tasks/{id}/retry            run a failed task's goal again (an interrupted one is resumed)
@@ -125,6 +127,11 @@ class PackRunIn(BaseModel):
 
 class PackDraftIn(BaseModel):
     task_id: int
+
+
+class AvatarDesignIn(BaseModel):
+    brief: str = ""
+    style: str = ""
 
 
 def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI:
@@ -409,6 +416,46 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(422, str(e))
         return Response(content=raw, media_type="application/json",
                         headers={"Content-Disposition": f'attachment; filename="{name}.lantern-agent.json"'})
+
+    @app.post("/avatar/design", dependencies=[Depends(auth)])
+    def design_avatar(body: AvatarDesignIn):
+        """Draw one canonical preview image from words (about $0.01). Accepting it
+        renders the full sheet; that step carries the approval."""
+        from .studio import StudioError
+        try:
+            return core.design_avatar(body.brief, body.style)
+        except StudioError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # no key, network: say so plainly
+            raise HTTPException(502, f"avatar preview failed: {type(e).__name__}: {str(e)[:120]}")
+
+    @app.post("/avatar/design/{design_id}/accept", dependencies=[Depends(auth)])
+    def accept_avatar(design_id: str):
+        """Finish a preview into the full sheet (approval, ~$0.06) and set it active.
+        A finished design just becomes active again: no model call. Blocks until
+        the card is approved or declined, like installing an agent pack."""
+        from .avatar import AvatarError
+        from .studio import StudioError
+        try:
+            return core.accept_avatar(design_id)
+        except (KeyError, StudioError):
+            raise HTTPException(404, "no such design")
+        except AvatarError as e:
+            raise HTTPException(502, str(e))
+
+    @app.get("/avatar/manifest", dependencies=[Depends(auth)])
+    def avatar_manifest():
+        return core.studio.manifest()
+
+    @app.get("/avatar/file/{design_id}/{expression}", dependencies=[Depends(auth)])
+    def avatar_file(design_id: str, expression: str):
+        from .studio import StudioError
+        try:
+            path = core.studio.file_path(design_id, expression)
+        except (KeyError, StudioError):
+            raise HTTPException(404, "no such avatar image")
+        media = "image/png" if path.suffix == ".png" else "image/webp"
+        return Response(content=path.read_bytes(), media_type=media)
 
     whatsapp = hub.channels.get("whatsapp") if hub else None
     if isinstance(whatsapp, WhatsAppChannel):

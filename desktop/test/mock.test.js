@@ -70,6 +70,20 @@ test('mock reminders: set, listed, cancel', async (t) => {
   await assert.rejects(api.post(`/reminders/${list[0].id}/cancel`), /pending/);
 });
 
+test('mock avatar studio: preview validation, accept, manifest', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  assert.deepEqual(await api.get('/avatar/manifest'), { active: null, expressions: {}, designs: [] });
+  await assert.rejects(api.post('/avatar/design', { brief: '  ', style: '3d' }), /few words/);
+  await assert.rejects(api.post('/avatar/design', { brief: 'a robot', style: 'watercolor' }), /style/);
+  const d = await api.post('/avatar/design', { brief: 'a brass lantern robot', style: 'neon' });
+  assert.equal(d.id, 'mock-design');
+  assert.equal(d.cost_usd, 0.01);
+  const r = await api.post('/avatar/design/mock-design/accept');
+  assert.deepEqual([r.accepted, r.verified], [true, true]);
+});
+
 test('mock agents: list, run, disable, export, draft', async (t) => {
   const m = await start(0);
   t.after(() => m.close());
