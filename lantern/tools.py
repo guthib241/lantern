@@ -408,6 +408,8 @@ class Toolbox:
         self._saw_untrusted((result.get("confirmation") or {}).get("content", ""))
         result = {**result, "form_url": page}   # kept in the step log, so the guard also holds after a restart
         if result.get("submitted") and result.get("verified"):
+            if getattr(self, "filed", None) is None:   # fill_form without begin_task (direct use, tests)
+                self.filed = {}
             self.filed[page] = "confirmation seen on the page"
         return result
 

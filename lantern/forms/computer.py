@@ -297,7 +297,18 @@ class ComputerLoop:
             status = getattr(e, "status_code", None)
             if first and kw.get("tools") == [NATIVE_TOOL] and status in (400, 404, 422):
                 raise _Fallback() from e
-            raise
+            from ..taskrun import chain_lost
+            if not (kw.get("previous_response_id") and chain_lost(e)):
+                raise
+            # Live, Oct 28 (Muse Wonder on demo/portal, claude/real-run): the API dropped the chain mid-form. The
+            # form's state is on the screen, so a fresh chain gets the same goal and a new screenshot (masked or
+            # with stand-ins like every other) instead of failing the fill.
+            kw = {k: v for k, v in kw.items() if k != "previous_response_id"}
+            kw["input"] = [{"role": "user", "content": [
+                {"type": "input_text", "text": self._goal + "\n\n(Continuing: your earlier turns are not available. "
+                                                            "The screenshot shows the form as it is now; carry on.)"},
+                {"type": "input_image", "image_url": self._shot()}]}]
+            response = self.client.responses.create(model=self.model, **kw)
         self.on_usage(self.model, models.Usage.from_response(getattr(response, "usage", None)))
         return response
 
@@ -321,6 +332,7 @@ class ComputerLoop:
 
     def _run(self, goal: str, protocol: str) -> LoopResult:
         self._result = r = LoopResult("error", protocol=protocol)
+        self._goal = goal
         units = self._coords_for(protocol)
         first_input = [{"role": "user", "content": [{"type": "input_text", "text": goal},
                                                      {"type": "input_image", "image_url": self._shot()}]}]
