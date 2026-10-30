@@ -280,7 +280,7 @@ async function main() {
     const limits = await until('the spending limits', async () => panel.textContent('#cost-limits'));
     check(limits === 'Stops itself at $150.00 · $3.00 per task.', `Costs tab shows the limits enforced in code (${limits})`);
 
-    const TABS = ['tasks', 'privacy', 'phone', 'costs', 'widgets', 'setup'];
+    const TABS = ['tasks', 'learn', 'teach', 'meetings', 'widgets', 'phone', 'privacy', 'costs', 'setup'];
     for (const name of TABS) {
       await panel.click(`.tabs button[data-tab=${name}]`);
       await sleep(350);
@@ -293,7 +293,7 @@ async function main() {
     await until('toasts to clear', async () => panel.isHidden('#toast'), 6000);
     await sleep(300);
     const dark = await panel.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    check(dark === 'rgb(0, 0, 0)', `dark appearance applies (${dark})`);
+    check(dark === 'rgb(35, 35, 37)', `dark appearance applies (${dark})`);
     await panel.screenshot({ path: path.join(OUT, '7-dark.png') });
     for (const name of TABS) {
       await panel.click(`.tabs button[data-tab=${name}]`);
@@ -302,7 +302,7 @@ async function main() {
     }
     await panel.click('.tabs button[data-tab=tasks]');
     violations = violations.concat(await a11y(avatar, 'avatar'));
-    check(violations.length === 0, `no WCAG 2.1 AA violations (axe-core) on 6 panel tabs × light/dark, Quick Ask and the island` +
+    check(violations.length === 0, `no WCAG 2.1 AA violations (axe-core) on 9 panel sections × light/dark, Quick Ask and the island` +
           (violations.length ? `: ${[...new Set(violations.map((v) => v.id))].join(', ')}` : ''));
     await panel.emulateMedia({ colorScheme: 'light' });
 

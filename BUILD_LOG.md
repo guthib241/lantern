@@ -508,3 +508,4 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 
 ## Oct 30 (S15 avatar reactions)
 - Lantern's face made with Muse Image: an idle portrait and 10 reactions as Muse Image edits of it (`lantern/avatar.py` `react`, `scripts/make_avatar.py --reactions`), cached by the portrait's hash; 11 images, $0.11. `healed` after a routine heals itself, `listening` for push to talk. Tests: `tests/test_avatar.py` (2), `desktop/test/logic.test.js` (1).
+- Desktop redesign: sidebar + toolbar + grouped lists (`panel.html`, `panel.css`, `panel.js`, `main.js`), Learned/Teaching/Meetings sections split out of Costs, the Meetings panel (`lib/meeting.js`, `desktop/test/meeting.test.js` (2)), `e2e/tour.js`. e2e + axe on 9 sections × light/dark: pass.

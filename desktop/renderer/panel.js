@@ -54,19 +54,23 @@
   }
 
   // ---- tabs ---------------------------------------------------------------------------------
-  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: () => { loadCosts(); loadRoutines(); }, widgets: loadWidgets,
-                    setup: () => { loadSettings(); loadDoctor(); } };
+  const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, learn: loadRoutines, teach: loadLessons,
+                    widgets: loadWidgets, setup: () => { loadSettings(); loadDoctor(); } };
+  if (cfg.platform === 'darwin') document.body.classList.add('mac');   // traffic lights over the sidebar; vibrancy
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
   function showTab(name) {
     tab = name;
     tabButtons.forEach((x) => { x.classList.toggle('on', x.dataset.tab === name); x.setAttribute('aria-selected', String(x.dataset.tab === name)); });
     document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('on', s.dataset.panel === name));
-    window.scrollTo({ top: 0 });
+    const b = tabButtons.find((x) => x.dataset.tab === name);
+    $('section-title').textContent = b ? b.textContent.trim() : 'Lantern';
+    document.title = `Lantern · ${$('section-title').textContent}`;
+    document.querySelector('main').scrollTo({ top: 0 });
     if (loaders[name]) loaders[name]();
   }
   for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab));
-  // Ctrl/Cmd+1…6 switch sections, like any native app with a tab bar.
+  // Ctrl/Cmd+1…9 go to a section, in sidebar order.
   window.addEventListener('keydown', (e) => {
     const n = Number(e.key);
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && n >= 1 && n <= tabButtons.length) {
@@ -322,6 +326,60 @@
     } }, 'Save ticked')));
   }
 
+  // ---- meeting recording → follow-ups (S15): nothing is added until ticked ---------------------------------------
+  async function meetingListen(ev) {
+    ev.preventDefault();
+    const path = $('meeting-path').value.trim();
+    if (!path) return toast('Give the path of a recording in your folders.');
+    const go = $('meeting-go');
+    go.disabled = true;
+    go.textContent = 'Listening…';
+    let result;
+    try {
+      result = await api.post('/meeting', { path });
+    } catch (e) {
+      return toast(`Couldn't read that recording: ${e.message}`);
+    } finally {
+      go.disabled = false;
+      go.textContent = 'Listen';
+    }
+    const list = LanternMeeting.items(result);
+    const ticked = new Set(list.map((i) => i.n));
+    const box = $('meeting-items');
+    box.textContent = '';
+    if (!list.length) box.append(h('p', { class: 'empty' }, 'Nobody agreed to do anything in that recording.'));
+    for (const i of list) {
+      const id = `meeting-${i.n}`;
+      box.append(h('label', { class: 'row meeting-item', for: id },
+        h('input', { type: 'checkbox', id, checked: i.checked,
+                     onchange: (e) => (e.target.checked ? ticked.add(i.n) : ticked.delete(i.n)) }),
+        h('div', { class: 'row-text' }, h('span', {}, i.text),
+          h('small', {}, `Speaker ${i.speaker}${i.when ? ' · ' + i.when : ''}`)),
+        h('span', { class: `kind ${i.kind}` }, i.kind === 'reminder' ? 'Reminder' : 'Task')));
+    }
+    const turnsBox = $('meeting-turns');
+    turnsBox.textContent = '';
+    for (const t of LanternMeeting.turns(result)) {
+      turnsBox.append(h('div', { class: 'row turn' }, h('span', { class: `who s${t.slot}`, 'aria-label': `Speaker ${t.who}` }, t.who),
+        h('div', { class: 'row-text' }, h('time', {}, t.at), h('p', {}, t.text))));
+    }
+    $('meeting-note').textContent = LanternMeeting.summary(result);
+    $('meeting-confirm').hidden = !list.length;
+    $('meeting-confirm').onclick = async () => {
+      try {
+        const done = await api.post('/meeting/confirm', LanternMeeting.confirm(result, ticked));
+        toast(`Added ${done.reminders.length} reminder${done.reminders.length === 1 ? '' : 's'} and started ` +
+              `${done.tasks.length} task${done.tasks.length === 1 ? '' : 's'}.`);
+        $('meeting-result').hidden = true;
+        if (done.tasks.length) showTab('tasks');
+      } catch (e) {
+        toast(`Couldn't add them: ${e.message}`);
+      }
+    };
+    $('meeting-result').hidden = false;
+  }
+  $('meeting-form').addEventListener('submit', meetingListen);
+
   // ---- decoy screens (S7): what you see / what the cloud saw ------------------------------------------------
   async function showDecoy(e) {
     const ok = /^decoy_\d{8}_\d{6}_[0-9a-f]{6}-(seen|sent)\.jpg$/;
@@ -422,6 +480,7 @@
           !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)));
     });
     $('today-cost').textContent = LanternAudit.money(state.usage.total);
+    document.body.classList.toggle('busy', tasks.some((t) => t.status === 'running' || t.status === 'queued'));
     renderGlance();
   }
 
@@ -432,7 +491,7 @@
     $('kbd-ask').textContent = keyName(cfg.askHotkey);
     $('welcome-ask').textContent = keyName(cfg.askHotkey);
     $('kbd-stop').textContent = keyName('CommandOrControl+Shift+X');
-    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – 6';
+    $('kbd-tabs').textContent = keyName('CommandOrControl+1') + ' – ' + tabButtons.length;
   }
   function seen() {
     try { return window.localStorage.getItem('lantern.welcomed') === '1'; } catch (e) { return false; }
@@ -829,14 +888,17 @@
     if (e.type === 'checkwork') showCheckwork(e);
     if (e.type === 'decoy') showDecoy(e);
     if (e.type === 'routine_learned' || e.type === 'routine_healed' || e.type === 'routines' ||
-        (e.type === 'done' && tab === 'costs')) loadRoutines();
+        (e.type === 'done' && tab === 'learn')) loadRoutines();
     if (e.type === 'routine_healed') toast(`The page had changed: healed ${(e.steps || []).length} step(s), now v${e.version}.`);
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
     $('conn').className = 'status ' + (up ? 'up' : 'down');
     if (up) {
       try { health = await api.get('/health'); } catch (e) { health = {}; }
-      if (health.demo) $('conn').textContent = 'Rehearsal · scripted model, nothing sent';
+      if (health.demo) {
+        $('conn').textContent = 'Rehearsal mode';
+        $('conn').title = 'Rehearsal: a scripted model; nothing is sent anywhere';
+      }
       loadReminders();
       loadCosts();
       loadLessons();

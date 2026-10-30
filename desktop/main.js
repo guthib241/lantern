@@ -3,7 +3,7 @@
 // the sprite, a panel (chat, approvals, privacy, phone, costs, widgets), Quick Ask, and the teaching board. Renderers are
 // sandboxed with context isolation; they talk to the local Lantern server on 127.0.0.1 with
 // the per-install token from ~/.lantern/token. Ctrl/Cmd+Shift+X is the global STOP.
-const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, screen, session } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, nativeTheme, screen, session } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -92,9 +92,15 @@ function createAvatar() {
 }
 
 function createPanel() {
+  // A Mac-style window: a sidebar of sections and a content area. On macOS the traffic lights sit inset over the
+  // sidebar, which gets the system's own sidebar material; elsewhere the window keeps its normal frame.
+  const mac = process.platform === 'darwin'
+    ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 18 }, vibrancy: 'sidebar', visualEffectState: 'followWindow',
+        backgroundColor: '#00000000' }
+    : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#232325' : '#ececf0' };
   panel = new BrowserWindow({
-    width: 460, height: 780, show: false, title: 'Lantern', backgroundColor: '#faf7fc',
-    autoHideMenuBar: true, webPreferences: secure('preload.js'),
+    width: 1080, height: 720, minWidth: 780, minHeight: 540, show: false, title: 'Lantern',
+    autoHideMenuBar: true, ...mac, webPreferences: secure('preload.js'),
   });
   panel.loadFile(path.join(__dirname, 'renderer', 'panel.html'));
   panel.on('close', (e) => {
