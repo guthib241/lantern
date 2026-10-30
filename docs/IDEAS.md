@@ -12,6 +12,9 @@ Deadline: **Nov 4, 9:00 PM ET** (Nov 5, 7:30 AM IST); aim to submit on the eveni
 | T3c | **Loop agents**: agents on a schedule (every morning, every 2 h…), with brakes | Lantern works while you don't | after |
 | T3d | **Runs on laptop / phone / both** | Start and approve agents from your pocket | after |
 | T2 | **Send this file to my phone** (Telegram) | Your laptop's files, anywhere | after (needs Telegram) |
+| T3e | **Signed packs**: "✓ signed by achan", tampered packs refused | Trust what you install | queued (chain 2) |
+| T6 | **Learn a GitHub repo**: Lantern reads it, installs a pinned MCP server or builds a wrapper with Muse Code, then makes an agent | Lantern extends itself | queued (chain 2) |
+| T5 | **LocalSend receiver** (our own implementation of the public protocol): phone → laptop over home Wi-Fi | Private, no cloud, works on iPhone | queued (chain 2) |
 
 ## Strong next ideas (after the hackathon, or if time is left)
 - **"Time saved" counter:** each receipt estimates the minutes saved; a weekly total in the panel. People love a number that grows.
