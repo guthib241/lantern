@@ -99,3 +99,22 @@ def test_validate_token(token, ok):
     else:
         with pytest.raises(gc.ConfigError):
             gc.validate_token(token)
+
+
+def test_default_names():
+    assert gc.names_from_env({}) == ("lantern-glimmer", "lantern-private", "~/.lantern/private_token")
+
+
+def test_separate_names_get_their_own_token_file():
+    app, secret, token_file = gc.names_from_env({"LANTERN_GLIMMER_APP": "lantern-glimmer-qa",
+                                                 "LANTERN_GLIMMER_SECRET": "lantern-private-qa"})
+    assert (app, secret) == ("lantern-glimmer-qa", "lantern-private-qa")
+    assert token_file == "~/.lantern/lantern-private-qa_token"   # never overwrites the default token file
+
+
+@pytest.mark.parametrize("bad", ["has space", "../x", "a" * 65, "-leading", "semi;colon"])
+def test_names_are_validated(bad):
+    with pytest.raises(ValueError):
+        gc.names_from_env({"LANTERN_GLIMMER_APP": bad})
+    with pytest.raises(ValueError):
+        gc.names_from_env({"LANTERN_GLIMMER_SECRET": bad})

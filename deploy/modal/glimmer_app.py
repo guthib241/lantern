@@ -32,6 +32,8 @@ import glimmer_config as gc
 from gate import ALLOWED, Gate
 
 cfg = gc.ServeConfig.from_env(os.environ)
+# Containers re-import this file: give them the same app/Secret names as the deploy.
+NAMES_ENV = {"LANTERN_GLIMMER_APP": gc.APP_NAME, "LANTERN_GLIMMER_SECRET": gc.SECRET_NAME}
 
 app = modal.App(gc.APP_NAME)
 weights = modal.Volume.from_name(gc.VOLUME_NAME, create_if_missing=True)
@@ -81,7 +83,7 @@ gate_image = modal.Image.debian_slim(python_version="3.12").add_local_python_sou
 
 
 @app.cls(image=server_image, gpu=cfg.gpu, cpu=gc.GPU_CPU_CORES, memory=gc.GPU_MEMORY_MIB,
-         volumes={gc.MODEL_DIR: weights.read_only()}, env=cfg.as_env(),
+         volumes={gc.MODEL_DIR: weights.read_only()}, env={**cfg.as_env(), **NAMES_ENV},
          scaledown_window=cfg.idle_seconds, timeout=900, startup_timeout=600,
          min_containers=0, max_containers=1)
 @modal.concurrent(max_inputs=4)   # llama-server has one slot; extra requests queue there, not on a new GPU
@@ -131,7 +133,7 @@ class Glimmer:
             self.proc.kill()
 
 
-@app.function(image=gate_image, secrets=[private], cpu=0.25, memory=256,
+@app.function(image=gate_image, secrets=[private], env=NAMES_ENV, cpu=0.25, memory=256,
               scaledown_window=60, timeout=900, max_containers=2)
 @modal.concurrent(max_inputs=16)
 @modal.asgi_app()

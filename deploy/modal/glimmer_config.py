@@ -12,6 +12,9 @@ Sources (read Oct 28, 2026):
   - `modal billing rates`: GPU / CPU / memory prices.
 
 Deploy-time knobs (environment variables when running `modal deploy`):
+  LANTERN_GLIMMER_APP    Modal app name, default lantern-glimmer
+  LANTERN_GLIMMER_SECRET Modal Secret holding the token, default lantern-private
+                         (token file ~/.lantern/<secret>_token when not the default)
   LANTERN_GLIMMER_GPU    L4 (default) | A10 | L40S | ...   see GPU_PRICE_PER_HOUR
   LANTERN_GLIMMER_QUANT  q4_k_m (default) | q4_k_xl
   LANTERN_GLIMMER_DRAFT  1 (default) = DFlash drafter for speculative decoding, 0 = off
@@ -20,15 +23,30 @@ Deploy-time knobs (environment variables when running `modal deploy`):
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 
-APP_NAME = "lantern-glimmer"
-SECRET_NAME = "lantern-private"
 TOKEN_KEY = "LANTERN_PRIVATE_TOKEN"
-VOLUME_NAME = "lantern-glimmer-weights"
+VOLUME_NAME = "lantern-glimmer-weights"   # shared by every deployment; the server mounts it read-only
 MODEL_DIR = "/models"
-DEFAULT_TOKEN_FILE = "~/.lantern/private_token"
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def names_from_env(env: dict) -> tuple[str, str, str]:
+    """(app name, Secret name, token file). LANTERN_GLIMMER_APP / LANTERN_GLIMMER_SECRET give a second,
+    independent deployment its own app and token, so two people or sessions on one Modal workspace
+    can't stop each other's app or rotate each other's token."""
+    app = env.get("LANTERN_GLIMMER_APP") or "lantern-glimmer"
+    secret = env.get("LANTERN_GLIMMER_SECRET") or "lantern-private"
+    for value in (app, secret):
+        if not _NAME_RE.fullmatch(value):
+            raise ValueError(f"not a valid Modal name: {value!r}")
+    token_file = "~/.lantern/private_token" if secret == "lantern-private" else f"~/.lantern/{secret}_token"
+    return app, secret, token_file
+
+
+APP_NAME, SECRET_NAME, DEFAULT_TOKEN_FILE = names_from_env(os.environ)
 
 # Official llama.cpp server image, CUDA 12 build, pinned. Glimmer needs b10353+.
 LLAMA_IMAGE = "ghcr.io/ggml-org/llama.cpp:server-cuda-b11913"
