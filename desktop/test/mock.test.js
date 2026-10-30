@@ -128,3 +128,13 @@ test('mock agents: faces (emoji and drawn), and runs name their pack', async (t)
   stop();
   assert.equal(seen.find((e) => e.type === 'queued' && e.task_id === task_id).pack, 'tidy-downloads');
 });
+
+test('mock settings: the Wi-Fi receive switch round-trips', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  assert.equal((await api.get('/settings')).localsend, false);
+  assert.equal((await api.post('/settings', { localsend: true })).localsend, true);
+  assert.equal((await api.get('/settings')).localsend, true);
+  assert.equal((await api.post('/settings', { localsend: false })).localsend, false);
+});

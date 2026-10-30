@@ -21,3 +21,4 @@
 | GitHub Actions: actions/checkout, actions/setup-python, actions/setup-node (CI only) | MIT | runs the tests, the rehearsal and the doctor on each pull request |
 | axe-core 4.13.0 (desktop, dev dependency) | MPL-2.0 | accessibility checks (WCAG 2.1 AA) in the end-to-end test; never shipped in the app |
 | FreeCAD (user-installed, run as a separate process) | LGPL-2.1-or-later | CAD kernel for S17 (not bundled) |
+| LocalSend protocol (spec only) | MIT | implemented from the public README (https://github.com/localsend/protocol); no LocalSend code used |

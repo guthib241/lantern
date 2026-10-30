@@ -100,6 +100,7 @@ SKINS = ("muse", "glow", "clock")   # avatar window skins (T4b): drawn faces, th
 class SettingsIn(BaseModel):
     persona: str | None = None
     skin: str | None = None
+    localsend: bool | None = None
 
 
 class CheckInIn(BaseModel):
@@ -227,7 +228,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     def settings_view() -> dict:
         from .agent import PERSONAS
         return {"persona": core.agent.persona, "personas": sorted(PERSONAS),
-                "skin": core.cfg.skin, "skins": list(SKINS)}
+                "skin": core.cfg.skin, "skins": list(SKINS),
+                "localsend": bool(core.localsend and core.localsend.listening)}
 
     @app.get("/settings", dependencies=[Depends(auth)])
     def get_settings():
@@ -237,8 +239,8 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     def set_settings(body: SettingsIn):
         from . import config as config_mod
         from .agent import PERSONAS
-        if body.persona is None and body.skin is None:
-            raise HTTPException(400, "nothing to change: give a persona and/or a skin")
+        if body.persona is None and body.skin is None and body.localsend is None:
+            raise HTTPException(400, "nothing to change: give a persona, a skin and/or localsend")
         if body.persona is not None:
             if body.persona not in PERSONAS:
                 raise HTTPException(400, f"persona must be one of {', '.join(sorted(PERSONAS))}")
@@ -249,6 +251,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
                 raise HTTPException(400, f"skin must be one of {', '.join(SKINS)}")
             core.cfg.skin = body.skin   # free and instant: no model call
             config_mod.save_setting("skin", body.skin, Path(core.cfg.db_path).parent)
+        if body.localsend is not None:   # Setup -> "Receive from phones on Wi-Fi"
+            core.cfg.localsend = body.localsend
+            config_mod.save_setting("localsend", body.localsend, Path(core.cfg.db_path).parent)
+            try:
+                if body.localsend:
+                    core.start_localsend()
+                else:
+                    core.stop_localsend()
+            except RuntimeError as e:   # e.g. the inbox is not in a writable zone
+                raise HTTPException(409, str(e))
         return settings_view()
 
     @app.get("/doctor", dependencies=[Depends(auth)])

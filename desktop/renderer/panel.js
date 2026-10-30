@@ -214,6 +214,19 @@
         loadSettings();
       },
     }, SKIN_NAMES[s] || s)));
+    const LS_NAMES = { true: 'On', false: 'Off' };
+    $('localsend').replaceChildren(...[true, false].map((on) => h('button', {
+      role: 'radio', 'aria-checked': String(on === !!st.localsend), type: 'button',
+      onclick: async () => {
+        try {
+          await api.post('/settings', { localsend: on });
+          toast(on ? 'Lantern answers phones on this Wi-Fi.' : 'Lantern ignores phones.');
+        } catch (err) {
+          toast(`Couldn't change it: ${err.message}`);
+        }
+        loadSettings();
+      },
+    }, LS_NAMES[on])));
   }
 
   // ---- avatar studio (Setup → Avatar; routes are lantern/server.py's /avatar) -------------------------

@@ -335,6 +335,13 @@ def main(argv=None) -> None:
                 ch.send_text(a.channel_test)
                 print(f"sent via {ch.name}")
             return
+        from . import localsend as localsend_mod
+        if localsend_mod.enabled_in(dict(os.environ), cfg):
+            try:
+                status = core.start_localsend()
+                print(f"   LocalSend receiver on {status['alias']} (port {status['port']}, inbox {status['inbox']})")
+            except RuntimeError as e:
+                print(f"   LocalSend receiver off: {e}")
         return serve(core, config_mod.HOME, port=a.port, hub=hub.start())
 
     agent = build_agent(cfg, mem)

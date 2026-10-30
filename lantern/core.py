@@ -116,6 +116,7 @@ class Core:
         self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
         self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
                                            outbox_dir=Path(cfg.media_dir) / "outbox")
+        self.localsend = None  # the LocalSend Server when Wi-Fi receiving is on (off by default)
         self.envmap = EnvMap(self.policy, cfg.envmap_path)
         self.widgets = Widgets(Path(cfg.widgets_dir))
         self.studio = StudioStore(Path(cfg.db_path).expanduser().parent / "avatar")
@@ -614,8 +615,40 @@ class Core:
     def shutdown(self) -> None:
         self._closing.set()
         self.stop()
+        try:
+            self.stop_localsend()
+        except Exception:
+            pass
         self.mcp.close()
         self._queue.put((None, None, None))
+
+    # ---- LocalSend receiver (T5): files and links from phones over home Wi-Fi ----
+    def start_localsend(self) -> dict:
+        """Start the LocalSend receiver. Raises RuntimeError if the inbox is
+        not in a writable zone (refuses to start instead of saving elsewhere)."""
+        from . import localsend as localsend_mod
+        if self.localsend is not None and self.localsend.listening:
+            return self.localsend.status()
+        receiver = localsend_mod.Receiver(
+            self.policy, BusGate(self.bus), audit=self.audit,
+            on_link=lambda url: self.submit(f"[localsend] open this link on my laptop: {url}"),
+            emit=self.emit, home=Path(self.cfg.db_path).expanduser().parent,
+            inbox=localsend_mod.inbox_in(dict(os.environ)),
+            pin=localsend_mod.pin_in(dict(os.environ)))
+        server = localsend_mod.Server(receiver, port=localsend_mod.port_in(dict(os.environ)))
+        server.start()  # check_ready raises before anything listens
+        self.localsend = server
+        self.emit({"type": "localsend", "listening": True, "port": server.port})
+        return server.status()
+
+    def stop_localsend(self) -> dict:
+        if self.localsend is not None:
+            try:
+                self.localsend.stop()
+            finally:
+                self.localsend = None
+            self.emit({"type": "localsend", "listening": False})
+        return {"listening": False}
 
 
 def _short(result: Any, limit: int = 600) -> Any:

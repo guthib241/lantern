@@ -52,13 +52,14 @@ class Config:
     mcp_config: str = str(HOME / "mcp.json")
     encrypt: bool = True                  # memory + audit log encrypted at rest (key in the OS keychain)
     timeout: float = 120.0                # seconds per model call (LANTERN_TIMEOUT)
+    localsend: bool = False               # receive files from phones over Wi-Fi (Setup switch or LANTERN_LOCALSEND=1)
 
 
 PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
                "envmap_path", "widgets_dir", "agents_dir", "mcp_config")
 
 
-SETTABLE = ("persona", "skin")   # what the desktop's Preferences may change
+SETTABLE = ("persona", "skin", "localsend")   # what the desktop's Preferences may change
 
 
 def save_setting(key: str, value, home: str | Path) -> Path:
@@ -131,4 +132,6 @@ def load() -> Config:
         cfg.timeout = float(os.environ["LANTERN_TIMEOUT"])
     if os.environ.get("LANTERN_ENCRYPT"):
         cfg.encrypt = _flag(os.environ["LANTERN_ENCRYPT"])
+    if os.environ.get("LANTERN_LOCALSEND") not in (None, ""):
+        cfg.localsend = _flag(os.environ["LANTERN_LOCALSEND"])
     return cfg
