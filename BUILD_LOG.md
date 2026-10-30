@@ -526,3 +526,10 @@ First real-API runs of S0–S12 (until now every Phase 2 model was scripted). Me
   - `taskrun.py`: qa's wider lost-chain test (any 400/404 naming the previous/referenced response).
 - `tests/test_routines.py`: the reworded-button test reads the repair listing's new `{"page", "candidates"}` shape.
 - `python -m pytest -q`: 631 passed, 7 skipped. pyflakes clean. No live API runs in this step.
+
+## Oct 30 (Muse Spark Open on Baseten, optional lane)
+- `lantern/baseten.py`: `SparkOpen.ask(system, user, images=...)` on Baseten's OpenAI-compatible Chat Completions; config `LANTERN_BASETEN` (off by default), `BASETEN_API_KEY`, `LANTERN_BASETEN_EFFORT`. Only `meta-models/muse-spark-open-1026`; reasoning never returned; reasoning tokens counted in the cost; usage logged per task; cloud-lane scrubbing, deny list and audit; private image files refused through policy.py.
+- `models.py`: `BASETEN_BASE_URL`; Muse Spark Open priced at Baseten's list price ($1.25 / $0.15 / $4.25 per 1M) instead of $0.
+- `scripts/baseten_live.py`: one text and one image (a rendered receipt) check against the live endpoint.
+- Tests: `tests/test_baseten.py` (17), scripted fakes only.
+- **Live: not measured.** The key in this environment is refused: HTTP 403 "please check the api-key you provided" for every request (Bearer, Api-Key and no header alike), so `baseten_live.py` reports both checks failed at $0. To rerun once the network secret is fixed: `LANTERN_BASETEN=on BASETEN_API_KEY=injected-by-proxy python scripts/baseten_live.py`.
