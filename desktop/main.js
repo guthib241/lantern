@@ -44,7 +44,10 @@ async function ensureServer() {
   if (await healthy()) return 'running';
   const url = new URL(config.apiBase);
   if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return 'remote';
-  const python = process.env.LANTERN_PYTHON || (process.platform === 'win32' ? 'py' : 'python3');
+  // The checkout's .venv first: a bare `py` on Windows is the system Python, without Lantern's packages.
+  const venv = path.resolve(__dirname, '..', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const python = process.env.LANTERN_PYTHON || (fs.existsSync(venv) ? venv
+    : process.platform === 'win32' ? 'py' : 'python3');
   const args = ['-m', 'lantern', '--serve', '--port', url.port || '8765'];
   if (process.argv.includes('--rehearsal')) args.push('--demo');
   const log = fs.openSync(path.join(app.getPath('userData'), 'server.log'), 'w');   // why it failed, if it does
