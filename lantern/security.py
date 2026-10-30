@@ -31,7 +31,7 @@ from typing import Any
 
 from . import models
 from .labels import HANDLE, TRUSTED, Handles, Label, untrusted
-from .tools import AskUser, Toolbox, ToolError
+from .tools import ASK_MAX, AskUser, Toolbox, ToolError
 
 GREEN, YELLOW, RED = "green", "yellow", "red"
 TIERS: dict[str, str] = {
@@ -53,6 +53,7 @@ TARGETS: dict[str, tuple[str, ...]] = {"send_email": ("to", "cc"), "fill_form": 
                                        "run_in_project": ("command", "path"), "mcp_call": ("args",)}
 WHAT = {"to": "recipient", "cc": "recipient", "url": "web address", "command": "command", "path": "project",
         "args": "input for another program"}
+ASK_FILLED_MAX = 1500   # an ask_user question with its handles filled in (shown to the user only)
 LEAVES = ("send_email", "fill_form", "mcp_call")   # what goes into these leaves the computer
 URL = re.compile(r"https?://[^\s\"'<>)\]]+")
 
@@ -143,6 +144,13 @@ class GuardedToolbox(Toolbox):
                     return refused
             if name == "send_email" and flags:   # the email service's own unknown-recipient check sees them too
                 self.untrusted_emails |= {s for s in _strings(filled.get("to")) + _strings(filled.get("cc")) if "@" in s}
+            if name == "ask_user":
+                # The limit is for what the model wrote. Handles it quotes are filled in for the user only and may
+                # be long (live, Oct 30: "Meeting: $h5 Email: $h4" was refused 3 times, and the model can't shorten
+                # what it can't read).
+                if len(" ".join(str(args.get("question", "")).split())) > ASK_MAX:
+                    raise ToolError(f"ask_user: keep the question under {ASK_MAX} characters")
+                self.ask_max = ASK_FILLED_MAX
             result = super().call(name, filled)
         except AskUser:
             raise
@@ -151,6 +159,7 @@ class GuardedToolbox(Toolbox):
             raise
         finally:
             self._flags = []
+            self.ask_max = ASK_MAX
         return self._shield(name, result)
 
     def _check(self, name: str, raw: dict, filled: dict, label: Label) -> list[str]:

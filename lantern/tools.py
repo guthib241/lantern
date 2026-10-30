@@ -34,6 +34,9 @@ TEXT_EXTS = {
     ".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".html", ".css",
     ".yaml", ".yml", ".toml", ".ini", ".log", ".xml", ".tex", ".rst", ".eml",
 }
+ASK_MAX = 300   # characters in an ask_user question, as the model writes it
+
+
 def form_page(url: str) -> str:
     """A form's page without query or fragment: the same form, however the model spells its URL."""
     return url.split("#")[0].split("?")[0].rstrip("/")
@@ -666,8 +669,8 @@ class Toolbox:
         question = " ".join(str(question).split())
         if not question:
             raise ToolError("ask_user: the question is empty")
-        if len(question) > 300:
-            raise ToolError("ask_user: keep the question under 300 characters")
+        if len(question) > getattr(self, "ask_max", ASK_MAX):
+            raise ToolError(f"ask_user: keep the question under {ASK_MAX} characters")
         if SECRET_QUESTION.search(question):
             raise ToolError("Lantern never asks for passwords, codes, card or ID numbers in chat. Tell the user "
                             "which field is theirs to fill in themselves.")

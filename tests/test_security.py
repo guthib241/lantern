@@ -512,3 +512,26 @@ def test_a_made_up_handle_is_never_shown_raw(tmp_path):
     assert "$h1" not in done["reply"] and "$doc3" not in done["reply"] and "(that)" in done["reply"]
     assert "$h1" not in env.core.memory.get_task(tid).summary
     env.core.shutdown()
+
+
+def test_the_ask_user_limit_is_for_what_the_model_wrote_not_the_handles_it_quotes(tmp_path):
+    """Live, Oct 30 (real_run check 5): "Meeting:$h5 Email:$h4 ..." was refused 3 times as over 300 characters,
+    because the limit was checked after the handles were filled in, and the model can't shorten what it can't read."""
+    long_answer = "The notes list twelve things. " * 20   # ~600 characters behind $h1
+    scripts = {"notes": [
+        ([call("read_file", "c1", path=str(tmp_path / "docs" / "notes.txt"))], ""),
+        ([call("ask_reader", "c2", doc="$doc1", question="Summarise it.", answer_type="text")], ""),
+        ([call("ask_user", "c3", question="x" * 301)], ""),
+        ([call("ask_user", "c4", question="Here is the summary: $h1. Which item first?")], ""),
+        finish("c5", "asked"), ([], "OK."),
+    ]}
+    env = make_core(tmp_path, scripts, lambda asked: long_answer)
+    (env.docs / "notes.txt").write_text(FILE_TEXT)
+    tid = env.core.submit("go through my notes with me")
+    until(lambda: env.core.questions())
+    assert "under 300" in outputs(env, "notes")["c3"]["error"]
+    q = env.core.questions()[0]["question"]
+    assert q.startswith("Here is the summary:") and ("twelve things" in q or "$h1" in q)
+    env.core.answer(tid, "the first one", by="test")
+    assert env.core.wait_idle(10)
+    env.core.shutdown()
