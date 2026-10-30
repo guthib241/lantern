@@ -8,7 +8,13 @@ Spent on the live API on Oct 28: about **$5.7** (this session ~$5.2, the paralle
 - **First live runs:** S16 lesson and Check my work (parallel session), S12 video, S10/S9 scan + read, S15 resume, S15 meeting → tasks (new), S6/S13 Cedar (failed on `principal is …`, fixed, 6/6).
 - **eval_privacy.py:** 27/30, 0 leaks, $1.70; after the fixes (done-gate in code, the user's request reaches the form planner, planted `role=alert` ignored) 10/10 raw, $0.58. **No screenshots were sent in any run** (no computer use on the portal), so masked/decoy are not compared: that needs a page only computer use can fill.
 - **S14 (Modal), done Oct 30:** base Glimmer 93/93 on the held-out set; tuned (QLoRA, merged) 90/93 with answers 277 → 15 tokens. Scripts: `s14_export.py`, `s14_weights.py`, `s14_modal.py --step baseline|train|merge|tuned`. Not wired into the ladder (see DECISIONS Oct 30).
-- **Still open:** S15 live avatar talk (laptop: realtime ASR), Muse Image avatar reactions (shape confirmed, not built), a desktop panel for meeting → tasks, a computer-use page for the screenshot-mode eval.
+- **Done Oct 30:**
+  - Muse Image avatar reactions: 11 images, $0.11.
+  - The desktop redesign: a Mac window with sidebar and toolbar, approvals as a sheet, and Meetings, Learned and Teaching sections.
+  - The Meetings panel.
+  - S15 live talk: push to talk through Lantern's `/talk`. It has not been tried against the real realtime endpoint, which needs the laptop.
+  - The screenshot-mode eval on a computer-use page (`eval_privacy.py --tasks reimbursement`): raw, masked and decoy each 5/5, 0 leaks. Your values were shown 38 times in raw and 0 in masked or decoy (36 and 32 covered). $0.64.
+- **Still open:** try live talk on the laptop (`LANTERN_TALK_TOKEN=bare` if the Bearer form is refused).
 
 
 ## Phase 2, session 6 (Oct 27): S1 scheduler, S2 resilience, S3 model ladder, S4 self-compiling routines, S0 security backbone, S8 teach by demonstration, on branch `claude/phase2-core`

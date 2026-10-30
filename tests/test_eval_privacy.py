@@ -114,6 +114,21 @@ def test_the_privacy_eval_dry_run(tmp_path, chromium, monkeypatch):
     assert json.loads(json.dumps(rows))                                # --out can write it
 
 
+def test_the_computer_use_task_sends_screenshots_and_each_mode_treats_them_differently(tmp_path, chromium,
+                                                                                         monkeypatch):
+    monkeypatch.setenv("LANTERN_CHROMIUM", chromium)
+    rows = ev.evaluate(ev.scripted, runs=1, modes=list(ev.MODES), tasks=["reimbursement"], data=tmp_path,
+                       live=False, timeout=120, out=lambda _: None)
+    by = {r["mode"]: r for r in rows}
+    for row in rows:
+        assert row["success"] and row["leaks"] == [] and row["audited"] == row["requests"], row
+        assert row["screenshots"] >= 2                                    # the custom dropdown needs the screen
+    assert by["raw"]["shown"] > 0 and by["raw"]["covered"] == 0           # raw: the user's name and email show
+    for mode in ("masked", "decoy"):
+        assert by[mode]["shown"] == 0 and by[mode]["covered"] == by["raw"]["shown"]
+    assert "Reimbursement form" in ev.table(rows, list(ev.MODES), ["reimbursement"])
+
+
 def test_the_eval_refuses_bad_options_and_never_runs_without_a_key(monkeypatch, capsys):
     assert ev.main(["--modes", "raw,blurry"]) == 2
     monkeypatch.delenv("MODEL_API_KEY", raising=False)

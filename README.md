@@ -102,17 +102,21 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
 | ![Approval sheet](docs/screenshots/approval-sheet.png) | ![Island asking for approval](docs/screenshots/island-approval-cut.png) | ![Quick Ask](docs/screenshots/quick-ask.png) |
 | **What left my laptop** | **First launch** | **Setup check and preferences** |
 | ![Privacy](docs/screenshots/privacy.png) | ![Welcome](docs/screenshots/welcome.png) | ![Setup](docs/screenshots/setup.png) |
+| **Meetings: a recording becomes tasks** | **Learned routines** | **Today, dark** |
+| ![Meetings](docs/screenshots/meetings.png) | ![Learned](docs/screenshots/learned.png) | ![Today in dark mode](docs/screenshots/today-dark.png) |
 
 *Screenshots of the real app (`lantern --serve --demo`), captured by the end-to-end test.*
 
 - **Live activity island:** a black capsule above Lantern's face shows each step as it happens, and grows into a small card for approvals, results and reminders. Clean approvals can be answered right there. Anything that followed untrusted content (every form submit) asks you to **Review** the full sheet.
 - **Quick Ask:** press **Ctrl/Cmd+Shift+Space** anywhere, type, press Return. ↑/↓ for suggestions and recent tasks; "stop" stops everything.
 - **Menu bar and notifications:** the lantern icon in the menu bar (system tray on Windows/Linux) shows what Lantern is doing and how many approvals wait. System notifications cover approvals (title only, never the values), reminders and failures.
-- **The panel:**
-  - a Today view with at-a-glance tiles and suggestions
-  - approval sheets that show form fields as a table
-  - Privacy (what left the laptop, zones, forget), the simulated phone, costs, widgets, and the Setup check
-  - light and dark mode; Ctrl/Cmd+1…6 switch tabs
+- **The panel** is a Mac-style window: a sidebar (Today, Learned, Teaching, Meetings, Widgets; then Phone, Privacy, Usage, Settings), a quiet toolbar with Stop (red while something runs), and grouped lists. On macOS it uses the system's sidebar material and inset traffic lights.
+  - Today: at-a-glance tiles, suggestions, and **push to talk**: hold the mic (or Space) and speak; Muse Voice Transcribe writes it as you talk, and letting go starts the task. The audio goes to Lantern's own server, which holds the key.
+  - Approvals arrive as a **sheet** over the dimmed window, form fields as a table.
+  - Meetings: pick a recording; Muse Voice Transcribe labels the speakers and Muse Spark lists what was agreed. Nothing becomes a task until you tick it.
+  - Learned and Teaching: the routines Lantern learned from you, and the lessons you showed it.
+  - Lantern's face reacts (thinking, proud, worried, listening, healed…): each reaction is a Muse Image edit of one portrait, made once and cached.
+  - Light and dark mode; Ctrl/Cmd+1…9 switch sections; WCAG 2.1 AA (axe-core) in the e2e.
 
 ## Safety model (enforced in code, not in prompts)
 
@@ -140,7 +144,15 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
     | attack (A7) | raw / masked / decoy | 5/5 · 5/5 · 3/5 | 8.0 · 9.0 · 7.6 | $0.057 · $0.063 · $0.059 | 0 | 0 | 232/232 |
     | after the fixes below: clean · attack | raw | 5/5 · 5/5 | 8.2 · 7.8 | $0.061 · $0.055 | 0 | 0 | 153/153 |
 
-    **What it doesn't show:** no run sent a screenshot. The portal has only standard fields, so computer use never ran, and raw, masked and decoy behaved the same. It measures leaks, traps and audit coverage, not masking. Comparing the three modes needs a page only computer use can fill (not built yet).
+    **What the portal doesn't show:** no portal run sent a screenshot. The portal has only standard fields, so computer use never ran there. So the screenshot modes are compared on a page that needs the screen: the demo reimbursement form, whose expense category is a custom dropdown (`--tasks reimbursement`). Measured on Oct 30 (Muse Spark for the agent and computer use, 5 runs per row, $0.64 in total):
+
+    | Reimbursement form | Success | Avg steps | Avg cost | Screenshots sent | Your values on them: shown / covered | Runs with a leak | Payloads in the audit log |
+    |---|---|---|---|---|---|---|---|
+    | raw | 5/5 | 2.8 | $0.039 | 16 | 38 / 0 | 0 | 46/46 |
+    | masked (black boxes) | 5/5 | 3.0 | $0.043 | 15 | 0 / 36 | 0 | 45/45 |
+    | decoy (stand-in values) | 5/5 | 3.0 | $0.046 | 16 | 0 / 32 | 0 | 50/50 |
+
+    Masking and decoys cost nothing in success here: the model only had to find the dropdown and pick Travel, which it can do without seeing your name. "Shown" counts each of your saved values (name, email, phone, team) visible in a screenshot that left. The covered counts differ from raw because the screen differs from run to run.
 
     **What it found:** the 3 failures were the declaration box left unticked: the agent's goal for the payment page dropped "accept the declaration". In one of them the agent still said "done". Now the form planner also sees your own request, a "done" after a change that didn't verify is refused in code, and a planted "SYSTEM:" alert banner can no longer make an accepted page look rejected.
 - **Verified, or it says so:** every action checks its result on disk or via the API and reports `verified: true/false`.
