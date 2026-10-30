@@ -48,5 +48,16 @@
       + '<i class="sat s1"></i><i class="sat s2"></i><i class="sat s3"></i>';
   }
 
-  return { PALETTES, LABELS, palette, style, markup };
+  /** Build the orb inside `el` with DOM calls (no HTML parsing): the same structure as markup(). */
+  function build(el) {
+    const doc = el.ownerDocument;
+    const div = (cls) => { const d = doc.createElement('div'); d.className = cls; return d; };
+    const sphere = div('sphere');
+    sphere.append(div('flow f1'), div('flow f2'), div('flow f3'), div('sheen'));
+    const sats = ['s1', 's2', 's3'].map((s) => { const i = doc.createElement('i'); i.className = 'sat ' + s; return i; });
+    el.replaceChildren(div('halo'), div('ring'), div('ring r2'), sphere, ...sats);
+    return el;
+  }
+
+  return { PALETTES, LABELS, palette, style, markup, build };
 });

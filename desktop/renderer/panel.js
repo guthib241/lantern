@@ -8,11 +8,27 @@
   let health = {};
   const now = () => Date.now() / 1000;
 
-  // Lantern's Muse-made face in the header, when the avatar sheet exists.
-  const face = ((window.LanternAvatarManifest || {}).expressions || {}).idle;
-  if (face && /\.(webp|png)$/.test(face.file)) {
-    const img = h('img', { src: `../assets/avatar/${face.file}`, alt: 'Lantern' });
-    $('mark').replaceChildren(img);
+  // Lantern's orb: small in the toolbar, large on Today, both following what Lantern is doing. Under the large
+  // one, a line says what it's working on right now.
+  const orbs = [$('mark'), $('hero-orb')];
+  for (const o of orbs) LanternSprite.build(o);
+  let orbShown = '';
+  function renderOrb() {
+    const t = now();
+    const face = LanternExpression.pick(state, t);
+    if (face !== orbShown) {
+      orbShown = face;
+      for (const o of orbs) {
+        o.className = o.className.replace(/\b(idle|thinking|juggling|smug|celebrating|needs-approval|annoyed|sleeping)\b/g, '').trim() + ' ' + face;
+        o.setAttribute('style', LanternSprite.style(face));
+      }
+      $('hero-orb').setAttribute('aria-label', LanternSprite.LABELS[face] || 'Lantern');
+    }
+    const a = LanternActivity.activity(state, t);
+    const line = a.mode === 'idle' ? (face === 'sleeping' ? 'Resting. Ask me anything.' : 'Ready when you are.')
+      : a.mode === 'working' ? `${a.text}${a.badge ? ' · ' + a.badge : ''}` : a.text;
+    if ($('hero-status').textContent !== line) $('hero-status').textContent = line;
+    $('hero-status').dataset.mode = a.mode;
   }
 
   function h(tag, props, ...children) {
@@ -799,6 +815,7 @@
 
   // ---- live events -------------------------------------------------------------------------------------------
   function renderAll() {
+    renderOrb();
     renderApprovals();
     renderQuestions();
     renderTasks();
@@ -845,6 +862,7 @@
 
   window.lantern.onStopped(() => { state = LanternState.reduce(state, { type: 'stopped', ts: now() }); renderAll(); });
   setInterval(renderApprovals, 1000);   // countdowns
+  setInterval(renderOrb, 1000);          // done → ready, ready → resting
   setInterval(() => { if (tab === 'phone') loadPhone(); }, 3000);
   renderAll();
 })();

@@ -6,6 +6,7 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
 <meta name="color-scheme" content="light dark">
 <title>Lantern</title>
+<link rel="stylesheet" href="orb.css">
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
@@ -27,7 +28,7 @@
   </svg>
 
   <header class="toolbar">
-    <div class="app-icon" id="mark" aria-hidden="true"><svg class="ico"><use href="#i-lantern"/></svg></div>
+    <div class="sprite mini idle" id="mark" aria-hidden="true"></div>
     <div class="title-block">
       <div class="app-name">Lantern</div>
       <div class="status" id="conn">connecting…</div>
@@ -43,9 +44,11 @@
 
   <main>
     <section data-panel="tasks" class="on" aria-label="Today">
-      <div class="large-title">
+      <div class="hero-lantern">
+        <div class="sprite hero-orb idle" id="hero-orb" role="img" aria-label="Lantern is ready"></div>
         <p class="eyebrow" id="today-date"></p>
         <h1 id="today-greeting">Today</h1>
+        <p class="hero-status" id="hero-status" aria-live="polite">Ready when you are.</p>
       </div>
       <form id="ask" class="ask">
         <svg class="ico lead" aria-hidden="true"><use href="#i-search"/></svg>
@@ -226,9 +229,11 @@
 
   <div id="toast" class="toast" role="status" hidden></div>
 
-  <script src="../assets/avatar/manifest.js"></script>
   <script src="lib/state.js"></script>
   <script src="lib/cards.js"></script>
+  <script src="lib/sprite.js"></script>
+  <script src="lib/expression.js"></script>
+  <script src="lib/activity.js"></script>
   <script src="lib/audit.js"></script>
   <script src="lib/widgets.js"></script>
   <script src="lib/api.js"></script>

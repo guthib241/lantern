@@ -16,7 +16,7 @@
 
   // Lantern's orb (lib/sprite.js + avatar.css): built once; a state change swaps its class and colours, and
   // the colours glide from one state to the next.
-  spriteEl.innerHTML = LanternSprite.markup();   // our own trusted markup, no text inside
+  LanternSprite.build(spriteEl);
   spriteEl.setAttribute('role', 'button');
   spriteEl.tabIndex = 0;
 

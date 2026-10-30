@@ -364,3 +364,87 @@ kbd { font: 600 12px var(--font); color: var(--label-2); padding: 3px 8px; borde
 .decoy-pair figure { margin: 0; background: var(--card); }
 .decoy-pair img { display: block; width: 100%; height: auto; }
 .decoy-pair figcaption { padding: 6px 10px; font-size: 12.5px; color: var(--label-2); }
+
+/* ==== Lantern 2: the orb at the centre, glass, light and calm =====================================
+   One idea per screen; Lantern itself (the orb) is the place you look to know what is happening, with a
+   line under it saying what it's doing. Materials are translucent; corners are generous; numbers are rounded. */
+:root { --round: ui-rounded, "SF Pro Rounded", var(--font); --r-lg: 22px; --r-md: 16px;
+        --wash: radial-gradient(120% 60% at 50% -10%, #fff1dc 0%, rgba(255, 241, 220, 0) 60%),
+                radial-gradient(80% 50% at 100% 10%, #efe7ff 0%, rgba(239, 231, 255, 0) 60%), #f5f4f8;
+        --glass: rgba(255, 255, 255, .62); --glass-edge: rgba(255, 255, 255, .7);
+        --lift: 0 1px 1px rgba(30, 20, 60, .04), 0 10px 30px -8px rgba(30, 20, 60, .14); }
+@media (prefers-color-scheme: dark) {
+  :root { --wash: radial-gradient(120% 60% at 50% -10%, #3a2412 0%, rgba(58, 36, 18, 0) 60%),
+                  radial-gradient(80% 50% at 100% 10%, #241a3d 0%, rgba(36, 26, 61, 0) 60%), #0b0a10;
+          --glass: rgba(40, 38, 48, .6); --glass-edge: rgba(255, 255, 255, .08);
+          --lift: 0 0 0 .5px rgba(255, 255, 255, .07), 0 14px 34px -10px rgba(0, 0, 0, .6); }
+}
+html, body { background: var(--wash); background-attachment: fixed; }
+body { padding-bottom: 104px; }
+
+/* toolbar: glass, with Lantern's small orb as its mark */
+.toolbar { background: color-mix(in srgb, var(--glass) 90%, transparent); border-bottom: .5px solid var(--glass-edge);
+           backdrop-filter: saturate(180%) blur(24px); -webkit-backdrop-filter: saturate(180%) blur(24px); }
+.sprite.mini { --size: 26px; width: 34px; height: 34px; cursor: default; }
+.sprite.mini:hover, .sprite.mini:active { transform: none; }
+.sprite.mini .halo { filter: blur(3px); }
+.sprite.mini .flow { filter: blur(4px) saturate(1.3); }
+.sprite.mini .ring, .sprite.mini .sat { display: none; }
+.sprite.mini .sphere { box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--glow) 80%, transparent); animation: none; }
+.capsule { background: var(--glass); box-shadow: inset 0 0 0 .5px var(--glass-edge); }
+.stop { box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--red) 70%, transparent); }
+
+/* Today: Lantern in the middle, a greeting, and a line under it saying what it's doing right now */
+.hero-lantern { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 22px 0 14px; }
+.sprite.hero-orb { --size: 96px; width: 170px; height: 150px; margin-bottom: 2px; cursor: default; }
+.sprite.hero-orb:hover, .sprite.hero-orb:active { transform: none; }
+.sprite.hero-orb .sat { --orbit: 62px; }
+.hero-lantern .eyebrow { margin-top: 2px; }
+.hero-lantern h1 { margin: 0; font: 700 32px/1.1 var(--round); letter-spacing: -.02em; }
+.hero-status { margin: 10px 0 0; max-width: 92%; padding: 7px 14px; border-radius: 99px; font-size: 14px; font-weight: 500;
+               color: var(--label-2); background: var(--glass); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift);
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color .3s; }
+.hero-status[data-mode="working"], .hero-status[data-mode="retry"] { color: var(--label); }
+.hero-status[data-mode="working"]::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; vertical-align: 1px;
+               border-radius: 50%; background: var(--orange); animation: blink 1.2s ease-in-out infinite; }
+.hero-status[data-mode="approval"] { color: #fff; background: linear-gradient(135deg, #6d7bff, #a86bff); }
+.hero-status[data-mode="done"] { color: var(--green-text); }
+.hero-status[data-mode="failed"], .hero-status[data-mode="stopped"] { color: var(--red-text); }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* the ask field: the one big thing to type into */
+.ask { height: 54px; border-radius: 27px; padding: 0 7px 0 18px; background: var(--glass);
+       box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.ask:focus-within { background: var(--card); box-shadow: 0 0 0 4px color-mix(in srgb, #ff9f43 28%, transparent), var(--lift); }
+.ask input { font-size: 16.5px; }
+.send { width: 40px; height: 40px; background: linear-gradient(145deg, #ffb347, #ff6b5a); box-shadow: 0 6px 14px -6px rgba(255, 107, 90, .9); }
+.chip-s { background: var(--glass); box-shadow: inset 0 0 0 .5px var(--glass-edge), 0 1px 2px rgba(0, 0, 0, .04); }
+
+/* at a glance: rounded numbers in soft cards */
+.glance { gap: 12px; margin-top: 16px; }
+.tile { border-radius: var(--r-md); background: var(--glass); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift); padding: 14px 16px; }
+.tile .t-value { font: 700 30px/1.15 var(--round); letter-spacing: -.02em; }
+.tile .t-label::before { width: 9px; height: 9px; box-shadow: 0 0 8px currentColor; }
+
+/* cards and groups */
+.group, .task, .interrupted { border-radius: var(--r-md); background: var(--glass); box-shadow: inset 0 0 0 .5px var(--glass-edge), var(--lift);
+                              backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.large-title h1 { font-family: var(--round); font-size: 32px; }
+.task .reply { border-radius: 18px 18px 18px 6px; background: color-mix(in srgb, #ffb347 12%, var(--card)); }
+
+/* approvals: a clear decision, never a banner to click away */
+.approval { border-radius: var(--r-lg); padding: 20px; background: var(--card);
+            box-shadow: 0 0 0 .5px var(--separator), 0 0 0 6px color-mix(in srgb, #7c83ff 14%, transparent), 0 24px 60px -12px rgba(40, 30, 90, .35); }
+.approval h3 { font: 700 21px/1.2 var(--round); }
+.approval .fields { border-radius: 14px; }
+.approval .deny, .approval .allow { height: 52px; border-radius: 16px; font-size: 16.5px; }
+.approval .allow { background: linear-gradient(145deg, #5b6cff, #8b5cf6); box-shadow: 0 10px 22px -10px rgba(91, 108, 255, .9); }
+
+/* the tab bar floats: a glass capsule above the window's bottom edge */
+.tabs { left: 12px; right: 12px; bottom: 12px; padding: 6px; border-radius: 26px; border: 0;
+        background: color-mix(in srgb, var(--card) 92%, transparent); box-shadow: inset 0 0 0 .5px var(--glass-edge), 0 12px 32px -10px rgba(20, 10, 40, .35);
+        backdrop-filter: saturate(180%) blur(26px); -webkit-backdrop-filter: saturate(180%) blur(26px); }
+.tabs button { border-radius: 20px; padding: 6px 0; transition: background .25s var(--spring), color .25s; }
+.tabs button.on { color: var(--label); background: color-mix(in srgb, var(--card) 85%, transparent); box-shadow: 0 2px 8px -2px rgba(0, 0, 0, .12); }
+.tabs button.on .ico { color: #ff8a3d; }
+.toast { bottom: 100px; }
