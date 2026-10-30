@@ -25,3 +25,16 @@ Deadline: **Nov 4, 9:00 PM ET** (Nov 5, 7:30 AM IST); aim to submit on the eveni
 - **Every TV / every OTT app / installing apps on TVs:** there's no test TV, each brand differs, and OTT apps block remote control. It can't be shown reliably by Nov 4.
 - **OpenCode** (`install-opencode.sh`): a third-party coding tool configured for the older Muse Spark 1.1. We use Muse Code (Meta's own agent) instead.
 - **Health / nutrition advice, personality analysis, "basic RAG":** banned project shapes (CLAUDE.md).
+
+## Research: GitHub and Hugging Face (Oct 30)
+These are ideas only: no code is copied (CLAUDE.md rule 1). A library is used only if its license allows it, and it is recorded in `docs/THIRD_PARTY.md`.
+- **Agent file formats exist; none is the standard yet.**
+  - **A2A Agent Cards** (`agent-card.json`, now under the Linux Foundation): describe an agent's identity and skills.
+  - **Agent Skills** (`SKILL.md` folders): instructions plus scripts.
+  - **AAIF**: an IETF draft.
+  - **Agent Format** (`.agf.yaml`, Apache-2.0).
+
+  **Idea:** "Import a skill" turns a `SKILL.md` into a Lantern pack. Only the instructions are imported, **never its scripts** (packs stay data-only). Export a pack's description as an A2A card, so other tools can discover it. That gives Lantern a large library of community agents on day one.
+- **"Agents for GitHub":** GitHub runs an official MCP server, and there is a public MCP Registry. Lantern already loads MCP servers as deferred tools. **Idea:** a "GitHub helper" pack ("summarize my open issues", "what changed in my repo this week") that uses GitHub's MCP server, read-only by default. A pack could also list the MCP servers it needs, and Lantern would offer to add them (with approval).
+- **3D avatar:** pixiv's **three-vrm** (MIT) renders `.vrm` 3D characters in a browser/Electron window, and open desktop companions already use it for lip-synced overlays. **Idea for after T4:** a "3D skin" that loads a user's own `.vrm` file (made in VRoid etc.; not an AI feature, so Rule 2 isn't affected). It would add Three.js + three-vrm, recorded in THIRD_PARTY.
+- **Hugging Face:** the product may only use Meta models, so non-Meta models there are out. Lantern already uses Muse Glimmer locally for private files. Muse Spark Open weights are reported as released (gated); we use the hosted API, so nothing changes for the hackathon.
