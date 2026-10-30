@@ -40,3 +40,18 @@ Headless (one shot, no chat): `muse exec "Do the task in docs/tasks/T1-open-on-l
 |---|---|---|
 | `docs/tasks/T1-open-on-laptop.md` | share a link from the phone → it opens on the laptop | to do |
 | `docs/tasks/T2-send-to-phone.md` | "send this file to my phone" over Telegram | to do (needs T1's Telegram setup to try by hand) |
+
+## Automatic review on GitHub (Muse Spark)
+Every push to a `claude/*` branch, and every pull request, runs `.github/workflows/muse-review.yml`.
+- It sends the change (scrubbed of secrets, and marked as untrusted data) to **Muse Spark**, with CLAUDE.md's rules as the checklist.
+- The review appears on the run's **Summary** page.
+- The check turns **red only for "high"** findings (a hard-rule break or a clear bug).
+
+It is our own small script (`scripts/ci_review.py`, tests in `tests/test_ci_review.py`), inspired by the cookbook's GitHub repo agent; no third-party agent is installed. A review of a feature-sized change costs about **$0.03** (measured on T3a: $0.0347).
+
+**One-time setup (you):** GitHub → your repo → **Settings → Secrets and variables → Actions → New repository secret**.
+- Name: `MODEL_API_KEY`. Value: your Meta key.
+- Without it the job just says "Skipped".
+- Never put the key in a file.
+
+Run it by hand: `python scripts/ci_review.py --base origin/main --head HEAD` (add `--dry-run` to see what would be sent).
