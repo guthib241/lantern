@@ -193,6 +193,19 @@
         loadSettings();
       },
     }, PERSONA_NAMES[p] || p)));
+    const SKIN_NAMES = { muse: 'Face', glow: 'Glow', clock: 'Clock' };
+    $('avatar-skins').replaceChildren(...(st.skins || ['muse', 'glow', 'clock']).map((s) => h('button', {
+      role: 'radio', 'aria-checked': String(s === (st.skin || 'muse')), type: 'button',
+      onclick: async () => {
+        try {
+          await api.post('/settings', { skin: s });
+          toast(s === 'clock' ? 'Lantern is a clock now.' : `Lantern's skin is ${SKIN_NAMES[s] || s}.`);
+        } catch (err) {
+          toast(`Couldn't change it: ${err.message}`);
+        }
+        loadSettings();
+      },
+    }, SKIN_NAMES[s] || s)));
   }
 
   // ---- avatar studio (Setup → Avatar; routes are lantern/server.py's /avatar) -------------------------

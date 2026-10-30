@@ -39,7 +39,7 @@ function createMock() {
       inputs: [], goal: 'Say hello.', instructions: 'Reply with one friendly line.',
       tools: ['search_files'] } }],
   ]);
-  const settings = { persona: 'smug' };
+  const settings = { persona: 'smug', skin: 'muse' };
 
   const now = () => Date.now() / 1000;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -226,11 +226,19 @@ function createMock() {
     },
     'GET /reminders': () => reminders.filter((r) => r.status === 'pending'),
     'POST /tasks/resume': () => ({ task_ids: [] }),
-    'GET /settings': () => ({ persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] }),
+    'GET /settings': () => ({ persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'],
+      skin: settings.skin, skins: ['muse', 'glow', 'clock'] }),
     'POST /settings': (b) => {
-      if (!['helpful', 'sarcastic', 'smug'].includes(b.persona)) return [400, { detail: 'unknown persona' }];
-      settings.persona = b.persona;
-      return { persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] };
+      if (b.persona !== undefined && !['helpful', 'sarcastic', 'smug'].includes(b.persona)) {
+        return [400, { detail: 'unknown persona' }];
+      }
+      if (b.skin !== undefined && !['muse', 'glow', 'clock'].includes(b.skin)) {
+        return [400, { detail: 'unknown skin' }];
+      }
+      if (b.persona !== undefined) settings.persona = b.persona;
+      if (b.skin !== undefined) settings.skin = b.skin;
+      return { persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'],
+        skin: settings.skin, skins: ['muse', 'glow', 'clock'] };
     },
     'GET /doctor': () => ({
       checks: [

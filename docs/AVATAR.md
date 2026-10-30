@@ -30,6 +30,23 @@ imported from the MetaMuse app). If there is no art at all, it shows the
 built-in glow. Every image prompt says "no logos, no text, no brand marks",
 so the face is always ours, never Meta's branding.
 
+## Live skins
+
+The avatar window can also wear a **skin** instead of the drawn face. Pick
+it in the panel under Setup → Avatar → Skin; it is saved with the other
+preferences (`POST /settings`) and costs nothing — no drawing involved.
+
+There are three skins: **Face** (the Muse portraits above, falling back to
+the glow when there is no art yet), **Glow** (always the built-in glow), and
+**Clock**. The clock is an analog clock drawn as our own SVG — like the glow,
+with no text inside — showing the real local time on your computer, redrawn
+every second. Lantern's state tints it: while working the ring pulses, while
+it waits for your approval the ring turns amber, and when stopped it goes
+grey.
+
+Skins live in one small file (`desktop/renderer/lib/skins.js`), one function
+per skin, so new ones can be added without touching the avatar window itself.
+
 ## Cost
 
 Each image costs $0.01. The preview is one image; finishing a face is six

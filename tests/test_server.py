@@ -192,7 +192,8 @@ def test_zones_say_whether_each_path_exists(tmp_path):
 def test_settings_change_the_persona_and_are_remembered(tmp_path):
     import json as _json
     core, c, _ = make(tmp_path, [])
-    assert c.get("/settings", headers=H).json() == {"persona": "smug", "personas": ["helpful", "sarcastic", "smug"]}
+    assert c.get("/settings", headers=H).json() == {"persona": "smug", "personas": ["helpful", "sarcastic", "smug"],
+                                                       "skin": "muse", "skins": ["muse", "glow", "clock"]}
     assert c.post("/settings", json={"persona": "helpful"}, headers=H).json()["persona"] == "helpful"
     assert core.agent.persona == "helpful" and "warm, upbeat" in core.agent.instructions()
     saved = _json.loads((tmp_path / "config.json").read_text())   # next to memory.db, not the real ~/.lantern
@@ -203,6 +204,19 @@ def test_settings_change_the_persona_and_are_remembered(tmp_path):
     import pytest as _pytest
     with _pytest.raises(ValueError):
         config_mod.save_setting("roots", ["/"], tmp_path)   # only allowlisted keys
+
+
+def test_settings_change_the_avatar_skin_and_reject_unknown(tmp_path):
+    import json as _json
+    core, c, _ = make(tmp_path, [])
+    assert c.post("/settings", json={"skin": "clock"}, headers=H).json()["skin"] == "clock"
+    assert core.cfg.skin == "clock"
+    saved = _json.loads((tmp_path / "config.json").read_text())   # next to memory.db, not the real ~/.lantern
+    assert saved == {"skin": "clock"}   # switching skins is free: no model call, just saved
+    assert c.post("/settings", json={"skin": "watch"}, headers=H).status_code == 400
+    assert c.post("/settings", json={}, headers=H).status_code == 400
+    assert c.post("/settings", json={"skin": "glow"}).status_code == 401
+    assert core.cfg.skin == "clock"   # rejected writes change nothing
 
 
 def test_a_task_from_another_program_starts_untrusted(tmp_path):

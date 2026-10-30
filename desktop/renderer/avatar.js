@@ -20,6 +20,16 @@
   // Muse Image). Expressions without their own file show idle.
   let portraits = {};
   let broken = false;
+  let skin = 'muse';   // Setup → Avatar → Skin, from GET /settings (T4b live skins)
+
+  async function loadSkin() {
+    try {
+      const st = await api.get('/settings');
+      skin = LanternSkins.normalize(st && st.skin);
+    } catch (e) {
+      skin = 'muse';
+    }
+  }
 
   async function loadPortraits() {
     const bundled = (window.LanternAvatarManifest && window.LanternAvatarManifest.expressions) || {};
@@ -37,12 +47,18 @@
     shown = '';   // the face may have changed: draw it again
   }
 
-  function setSprite(expression) {
+  function setSprite(expression, mode) {
+    if (skin === 'clock') {   // the live clock redraws every second: never cached, no portraits
+      spriteEl.className = 'sprite clock';
+      spriteEl.innerHTML = LanternSkins.clockSvg(new Date(), LanternSkins.clockStyle(mode));
+      shown = expression;
+      return;
+    }
     if (expression === shown) return;
     shown = expression;
     spriteEl.className = 'sprite ' + expression;
     spriteEl.textContent = '';
-    const src = portraits[expression] || portraits.idle;
+    const src = skin === 'glow' ? null : portraits[expression] || portraits.idle;
     if (src && !broken) {
       const video = /\.(webm|mp4)$/i.test(src);
       const media = video ? document.createElement('video') : new Image();
@@ -61,8 +77,8 @@
 
   function render() {
     const t = now();
-    setSprite(LanternExpression.pick(state, t));
     const a = LanternActivity.activity(state, t);
+    setSprite(LanternExpression.pick(state, t), a.mode);
     current = a;
     island.hidden = a.mode === 'idle';
     if (island.hidden) return;
@@ -106,7 +122,8 @@
 
   window.lantern.onStopped(() => { state = LanternState.reduce(state, { type: 'stopped', ts: now() }); render(); });
   setInterval(render, 1000);
-  loadPortraits().then(render);
+  setInterval(() => loadSkin().then(render), 30000);   // the panel saves the skin; pick it up shortly after
+  loadSkin().then(() => loadPortraits()).then(render);
 
   // Click-through everywhere except the face and the island.
   for (const el of [spriteEl, island]) {
