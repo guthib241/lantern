@@ -36,6 +36,21 @@ class BackendError(RuntimeError):
     """FreeCAD missing, crashed, timed out, or refused an operation. Safe to show."""
 
 
+def _windows_installs(env: dict) -> list[str]:
+    """freecadcmd.exe in every 'FreeCAD *' folder under Program Files and the per-user install folder, newest first."""
+    bases = [env.get("ProgramFiles"), env.get("ProgramW6432"), env.get("ProgramFiles(x86)"),
+             str(Path(env["LOCALAPPDATA"]) / "Programs") if env.get("LOCALAPPDATA") else None]
+    found: list[str] = []
+    for base in dict.fromkeys(b for b in bases if b):
+        # Program install folders only (never user files): just the FreeCAD* names, case-insensitive.
+        for d in sorted(Path(base).glob("[Ff][Rr][Ee][Ee][Cc][Aa][Dd]*"), key=lambda d: d.name.lower(), reverse=True):
+            for exe in ("freecadcmd.exe", "FreeCADCmd.exe"):
+                if (d / "bin" / exe).is_file():
+                    found.append(str(d / "bin" / exe))
+                    break
+    return found
+
+
 def find_freecadcmd(env: dict | None = None) -> str | None:
     env = os.environ if env is None else env
     if env.get("LANTERN_FREECAD_CMD"):
@@ -45,7 +60,8 @@ def find_freecadcmd(env: dict | None = None) -> str | None:
         found = shutil.which(c) or (c if Path(c).is_absolute() and Path(c).exists() else None)
         if found:
             return found
-    return None
+    found = _windows_installs(env)
+    return found[0] if found else None
 
 
 class FreeCADBackend:

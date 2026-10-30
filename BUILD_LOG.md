@@ -282,3 +282,15 @@ Everything in this repo was written during the Meta Global AI Developer Hackatho
 - Also verified live: Muse Image avatar sheet (7 consistent expressions, $0.07), SAM 3.1 (5 ducks on the cookbook photo, 0 mugs), tool search with a deferred MCP tool catalog (model searched, loaded and called the right tool).
 - Also verified live: the Electron desktop app against a live server (`npm run live`: torch question + tidy with Allow), resume after killing the server mid-task, a $0.002 per-task limit stopping a task after one call, the private lane OFF refusing without leaking, and a re-run of the widget, tidy + undo, prompt-injection, hidden-folder and recap beats. Total live spend for all testing: about $0.90.
 - Fixed: widget generation streamed at `reasoning.effort: low` (the unstreamed call always died at 30 s); no health guidance (agent rule, widget rule, checker catches intake goals like "8 glasses"); tiny budget limits printed exactly.
+
+## Oct 30, 2026: S17 FreeCAD connector merged in (branch claude/freecad-laptop)
+S17 FreeCAD connector (`lantern/integrations/freecad/`, `demo/freecad/`, `tests/freecad/`, `docs/FREECAD.md`, `config/mcp/freecad.example.json`):
+- typed CAD tools as deferred MCP tools behind tool_search;
+- green/yellow/red tiers with zone checks and exact-file red approvals;
+- the visual verify loop on Muse Spark;
+- three demo tasks;
+- 59 offline tests.
+
+Verified live with Muse Spark on the fake geometry, including plain-English tasks through Core. Real FreeCAD is laptop-only.
+
+Merge hooks applied: `Toolbox.mcp_call` routes the freecad server through `FreeCADConnector`; `Core` builds the connector with the guarded client; one `BASE_RULES` line; THIRD_PARTY row; a doctor check that FreeCAD is found when mcp.json has a `freecad` server. Windows: FreeCAD found in any `FreeCAD*` folder under Program Files or `%LOCALAPPDATA%\Programs`. 4 new tests (`tests/freecad/test_freecad_laptop.py`), including Core wiring the connector.

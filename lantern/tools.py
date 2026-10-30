@@ -58,6 +58,7 @@ class Toolbox:
         self.widgets = widgets  # widgets.Widgets
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
+        self.freecad = None     # integrations.freecad.connector.FreeCADConnector: tiers + verify loop for CAD
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
@@ -551,6 +552,8 @@ class Toolbox:
 
     def mcp_call(self, function: str, args: dict) -> dict:
         """Call another program's tool. Needs approval unless the user allowlisted it as read-only."""
+        if getattr(self, "freecad", None) is not None and self.mcp.tools[function].server == "freecad":
+            return self.freecad.call(self, function, args)
         import json as _json
 
         from .mcp_client import MCPError

@@ -218,6 +218,15 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     add(Check("desktop", "Desktop app", OK if node and electron else FAIL,
               "ready" if node and electron else "Node.js not found" if not node else "Electron not installed",
               "" if node and electron else "Install Node.js 18+, then: cd desktop && npm install"))
+    try:
+        servers = json.loads(Path(cfg.mcp_config).expanduser().read_text(encoding="utf-8")).get("servers", {})
+    except (OSError, ValueError):
+        servers = {}
+    if "freecad" in servers:
+        from .integrations.freecad.backend import find_freecadcmd
+        cad = find_freecadcmd({**v, **(servers["freecad"].get("env") or {})})
+        add(Check("freecad", "FreeCAD (CAD tools)", OK if cad else FAIL, cad or "FreeCAD not found",
+                  "" if cad else "Install FreeCAD 1.0+ or set LANTERN_FREECAD_CMD in mcp.json's freecad env"))
     face = _avatar_expressions()
     add(Check("avatar", "Lantern's face (made with Muse)", OK if face else WARN,
               f"{face} expressions" if face else "none yet: the avatar is a faceless glow",
