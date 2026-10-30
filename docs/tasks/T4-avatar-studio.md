@@ -67,6 +67,6 @@ Example placeholder brief: *"3D animated movie portrait of a sleek personal AI a
 
 ## Done when
 - both test suites pass;
-- `docs/AVATAR.md` updated in plain words;
+- `docs/AVATAR.md` (new) explains it in plain words;
 - one `BUILD_LOG.md` line;
 - commits: "T4a avatar studio", "T4b live skins (clock)", "T4c agent faces".
