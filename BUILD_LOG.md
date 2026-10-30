@@ -295,5 +295,8 @@ Verified live with Muse Spark on the fake geometry, including plain-English task
 
 Merge hooks applied: `Toolbox.mcp_call` routes the freecad server through `FreeCADConnector`; `Core` builds the connector with the guarded client; one `BASE_RULES` line; THIRD_PARTY row; a doctor check that FreeCAD is found when mcp.json has a `freecad` server. Windows: FreeCAD found in any `FreeCAD*` folder under Program Files or `%LOCALAPPDATA%\Programs`. 4 new tests (`tests/freecad/test_freecad_laptop.py`), including Core wiring the connector.
 
+## Oct 30, 2026: T1 open_link
+- Share a YouTube/web link to the Telegram bot and it opens in the laptop's browser after one approval: `lantern/linkopen.py` (clean_url + open_url, stdlib only), the `open_link` tool (approval bound to the URL hash, verified = the browser accepted it), an agent rule, and a phone fast path in the channel hub (no model call). 10 new tests.
+
 ## Oct 30, 2026: S17 on the Windows laptop (first real FreeCAD run)
 Real FreeCAD 1.1.0: all FreeCAD tests and all 3 demo tasks pass, with Muse Spark's visual checks. Lantern's desktop panel built the enclosure through the hooks (6 approvals, $0.09). Fixed 5 Windows issues: per-user/newer FreeCAD installs, EINVAL on restart, path comparison in the demo, the demo ignoring `.env`, and the desktop app starting the wrong Python. Details, exact commands and costs: `docs/FREECAD_LAPTOP.md`. Still to confirm: the red export card and STL via the panel, and measuring from the panel.

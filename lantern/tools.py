@@ -17,10 +17,12 @@ import fnmatch
 import hashlib
 import json
 import threading
+import webbrowser
 from pathlib import Path
 from typing import Callable
 
 from .approvals import ApprovalError, Gate, as_gate
+from .linkopen import clean_url, open_url
 from .memory import Memory
 from .policy import PRIVATE, WRITABLE, Policy, PolicyError
 from .untrusted import wrap
@@ -58,6 +60,7 @@ class Toolbox:
         self.widgets = widgets  # widgets.Widgets
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
+        self.link_opener = webbrowser.open  # open_link's browser hook, so tests can swap it
         self.freecad = None     # integrations.freecad.connector.FreeCADConnector: tiers + verify loop for CAD
         self.tainted = False  # set once untrusted content reached the model in this task
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
@@ -241,6 +244,22 @@ class Toolbox:
         if ok:
             self._log_undo([{"source": str(dst), "destination": str(src)}])
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
+
+    # ---- links (open on this laptop) -------------------------------------------
+    def open_link(self, url: str) -> dict:
+        """Open a web link in this laptop's default browser, after approval."""
+        link = clean_url(url or "")
+        if link is None:
+            return {"done": False, "reason": "not a web link (only http/https)"}
+        payload = {"url": link, "url_sha256": hashlib.sha256(link.encode()).hexdigest()}
+        commit = self._approve("open_link", f"Open on this laptop: {link}", payload)
+        if commit is None:
+            return {"done": False, "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return refused
+        opened = open_url(link, self.link_opener)
+        # verified honestly means "the browser accepted it"
+        return {"done": opened, "verified": opened, "url": link}
 
     def _log_undo(self, moves: list[dict]) -> None:
         """Record the reverse of verified moves in the task's log (memory only, never sent to the model):
@@ -686,6 +705,9 @@ TOOL_SPECS = [
         ["text", "when"]),
     _fn("list_reminders", "List upcoming reminders.", {}, []),
     _fn("cancel_reminder", "Cancel an upcoming reminder by its number.", {"id": {"type": "integer"}}, ["id"]),
+    _fn("open_link",
+        "Open a web link (YouTube, a website) in the browser on this laptop. The user approves the exact link first.",
+        {"url": {**S, "description": "The link to open, e.g. a shared YouTube URL"}}, ["url"]),
     _fn("organize_files", "Tidy files: move many files at once (into new subfolders if needed). The user approves "
         "the whole plan once; each move is verified, and the result includes an undo plan.",
         {"moves": {"type": "array", "description": "Up to 200 moves",

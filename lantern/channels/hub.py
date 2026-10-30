@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 from .. import models
 from ..approvals import ApprovalError
+from ..linkopen import clean_url
 from ..scrubber import DEFAULT as SCRUBBER
 from ..undo import WORDS as UNDO_WORDS, UndoError
 from ..voice import to_wav16k, transcribe
@@ -42,6 +43,7 @@ STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
+LINK_OPEN = re.compile(r"^\W*(?:open\s+this\s+on\s+my\s+laptop\s+|open\s+)?(https?://\S+)\W*$", re.I)
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
          "resume, undo (puts back the files the last task moved), or receipt (proof of what the last task did). "
@@ -202,6 +204,12 @@ class ChannelHub:
                 return self.say(ch.name, f"Nothing to undo: {e}.")
             self.origin[task_id] = ch.name
             return self.say(ch.name, f"↩️ Undo is task #{task_id}. Approve the card to put the files back.")
+        if m := LINK_OPEN.match(t):  # phone fast path: no model call, faster and free
+            url = clean_url(m.group(1))
+            if url is not None:
+                task_id = self.core.submit(f"[{ch.name}] open this link on my laptop: {url}")
+                self.origin[task_id] = ch.name
+                return self.say(ch.name, f"🏮 On it (task #{task_id}).")
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
