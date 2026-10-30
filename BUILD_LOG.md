@@ -294,3 +294,6 @@ S17 FreeCAD connector (`lantern/integrations/freecad/`, `demo/freecad/`, `tests/
 Verified live with Muse Spark on the fake geometry, including plain-English tasks through Core. Real FreeCAD is laptop-only.
 
 Merge hooks applied: `Toolbox.mcp_call` routes the freecad server through `FreeCADConnector`; `Core` builds the connector with the guarded client; one `BASE_RULES` line; THIRD_PARTY row; a doctor check that FreeCAD is found when mcp.json has a `freecad` server. Windows: FreeCAD found in any `FreeCAD*` folder under Program Files or `%LOCALAPPDATA%\Programs`. 4 new tests (`tests/freecad/test_freecad_laptop.py`), including Core wiring the connector.
+
+## Oct 30, 2026: S17 on the Windows laptop (first real FreeCAD run)
+Real FreeCAD 1.1.0: all FreeCAD tests and all 3 demo tasks pass, with Muse Spark's visual checks. Lantern's desktop panel built the enclosure through the hooks (6 approvals, $0.09). Fixed 5 Windows issues: per-user/newer FreeCAD installs, EINVAL on restart, path comparison in the demo, the demo ignoring `.env`, and the desktop app starting the wrong Python. Details, exact commands and costs: `docs/FREECAD_LAPTOP.md`. Still to confirm: the red export card and STL via the panel, and measuring from the panel.
