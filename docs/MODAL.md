@@ -14,6 +14,13 @@ Lantern's private lane is any OpenAI-compatible Muse Glimmer server (see `docs/G
 | GPU server (`Glimmer` class) | **Blocked:** Modal answered `Please add a payment method to use L4 GPU functions.` The account has credit but no card on file. Add one at modal.com → Settings → Usage & Billing, then run the smoke test below |
 | Cold start, tokens/sec, tool calling on the real model | **Not measured yet.** Waiting on the payment method. The figures below marked *estimate* are estimates |
 
+## GPU, measured (Oct 30, card on file)
+
+- **L4:** no capacity. Modal kept the function "waiting to be scheduled on a GPU_L4 worker" for over 10 minutes, and the gate answered 500 meanwhile.
+- **A10 (`LANTERN_GLIMMER_GPU=A10`)**, Q4_K_M + DFlash drafter, `smoke.py`: cold start **22 s**, decode **29.6 tokens/s** (prompt 367 tokens/s; 171 of 579 drafted tokens accepted), short answer right, one tool call with the right arguments and a correct follow-up. A10 is now the recommended GPU: it scheduled at once and is ~7× faster than CPU mode.
+- Lantern's private-file check (`scripts/real_run.py --only 2`): **44 s** end to end (118 s on CPU), nothing private in any Meta request.
+- **One workspace, one app name, one Secret:** two sessions deploying `lantern-glimmer` or running `rotate_token.py` at the same time overwrite each other (the other one's token stops working). Use one session (or the laptop) for the Modal app at a time.
+
 ## CPU mode: running before a card is on file (Oct 28, measured)
 
 Modal refuses every GPU function (L4, A10 and L40S were tried) until a payment method is on the account, even with credit. CPU functions run on credit, so the same app has a CPU mode:
