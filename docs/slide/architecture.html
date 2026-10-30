@@ -65,9 +65,9 @@
           <div class="label">Your laptop</div>
           <div class="box laptop"><b>Agent + memory</b><small>Plans, calls tools, remembers what it did (encrypted)</small></div>
           <div class="box guard"><b>Approvals</b><small>Bound to a hash of exactly what you saw</small></div>
-          <div class="box guard"><b>Privacy zones + scrubber</b><small>Private files never leave; keys and IDs redacted; every byte audited</small></div>
+          <div class="box guard"><b>Privacy zones + scrubber</b><small>Private files never reach a cloud API; keys and IDs redacted; every byte audited</small></div>
           <div class="box laptop"><b>Tools</b><small>Forms (own browser), email, files, projects, reminders, widgets, MCP</small></div>
-          <div class="box glimmer" style="border-color:#c9f0d3;background:#f1fbf4"><b>Muse Glimmer</b><small>Reads private files, on this computer</small></div>
+          <div class="box glimmer" style="border-color:#c9f0d3;background:#f1fbf4"><b>Muse Glimmer</b><small>Reads private files: on this computer or your own private server</small></div>
         </div>
         <div class="arrow"></div>
         <div class="col">
@@ -82,10 +82,11 @@
       <table>
         <tr><td><span class="chip spark">Muse Spark 1.3</span></td><td>The agent: plans, tool calls, form plans, widgets, tool search</td></tr>
         <tr><td><span class="chip wonder">Muse Wonder 1.0</span></td><td>Computer use: sees the browser, clicks custom widgets</td></tr>
-        <tr><td><span class="chip glimmer">Muse Glimmer</span></td><td>Private lane: answers about private files, locally</td></tr>
+        <tr><td><span class="chip glimmer">Muse Glimmer</span></td><td>Private lane: answers about private files, on this computer or a self-hosted server</td></tr>
         <tr><td><span class="chip voice">Voice Transcribe</span></td><td>WhatsApp voice notes from phone and glasses</td></tr>
         <tr><td><span class="chip image">Muse Image 1.0</span></td><td>Lantern's face: portrait + anchored expressions</td></tr>
-        <tr><td><span class="chip sam">SAM 3.1</span></td><td>Camera check-in: objects only, nothing stored</td></tr>
+        <tr><td><span class="chip sam">SAM 3.1</span></td><td>Camera check-in and photo to scan: objects and pages only</td></tr>
+        <tr><td><span class="chip spark">Muse Spark Open</span></td><td>Optional, off by default: second cloud lane (Baseten), public content only</td></tr>
       </table>
       <p class="note">Every AI feature runs on Meta models; no other provider is used. Contributor-mode models are refused in code,
         so your data never trains a model.</p>

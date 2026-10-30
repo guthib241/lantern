@@ -548,7 +548,7 @@ Ported `scripts/real_run.py` from `claude/real-run`; tasks run on the scheduler 
   - **Masking measured with computer use for the first time:** 21 Wonder screen steps; 12 of the user's own values were covered in screenshots, 0 shown unmasked. Masking covers screenshots only: the values Wonder must type are in its goal.
   - On the scheduler, 4b quietly ran on Spark (the S3 ladder picks Spark for computer use until a fill fails), so the script now refuses 4b unless `--workers 0`.
 - Harness fix: with no `LANTERN_GLIMMER_URL`, `real_run.py` turns the private lane off (like `phase2_live.py`). Before that, the rehearsal stand-in answered public reads (check 3's first run, $0.015).
-- Meta spend for these runs: about $0.80 in total, including the 4b run that turned out to be Spark ($0.13) and the failed first runs.
+- Meta spend for these runs: $0.75 in total, including the 4b run that turned out to be Spark ($0.13) and the failed first runs.
 - **`scripts/phase2_live.py` on the combined branch, all 6 pass ($0.30):**
   - S1 three tasks, one parked for an answer: 65 s, $0.046.
   - S2 tool error, then another way: 36 s, $0.017.

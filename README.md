@@ -2,7 +2,7 @@
 
 ![Lantern: the approval sheet, the Today view in dark mode, Quick Ask and the live activity island](docs/screenshots/hero.png)
 
-**I hate forms. Lantern is an AI that lives on my laptop, does the boring computer work for me (forms, email, files), asks before anything leaves the machine, and never reads my private folder in the cloud.**
+**I hate forms. Lantern is an AI that lives on my laptop, does the boring computer work for me (forms, email, files), asks before anything leaves the machine, and never sends my private folder to a cloud AI API.**
 
 Built on Meta's Muse models for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026).
 
@@ -43,7 +43,7 @@ Use `npm run rehearsal` (in `desktop/`) to click through the same story in the d
 | 0:00 | "I hate forms. My AI lives on my laptop and never reads my private folder." The avatar wakes up. | Electron overlay; faces made with Muse Image |
 | 0:15 | Walking, Ray-Ban Meta glasses: *"send a voice message to Lantern: fill the hackathon reimbursement form and email it to the organiser"* | WhatsApp voice note → ffmpeg → **Muse Voice Transcribe** |
 | 0:50 | The laptop fills the form live (badge **Muse Wonder**). It leaves the password, OTP, card, CVV and PAN fields alone. Submit pauses, WhatsApp shows **Approve / Deny**, tap Approve, and Lantern verifies the confirmation page and emails the receipt. | Playwright + computer use, approval bound to a hash of every value, IMAP check of Sent |
-| 1:40 | "What base salary does the offer letter in my Private folder say?" The badge reads **Muse Glimmer (local)**. The audit shows 0 bytes of the letter left. A planted fake key in my notes is redacted before the cloud call. | Privacy zones, private lane, scrubber, audit log |
+| 1:40 | "What base salary does the offer letter in my Private folder say?" The badge reads **Muse Glimmer (local)**, or **(self-hosted)** with the private Glimmer server. The audit shows 0 bytes of the letter went to Meta's API. A planted fake key in my notes is redacted before the cloud call. | Privacy zones, private lane, scrubber, audit log |
 | 2:20 | "Which projects use torch?" (no model call) · "make me a water timer". The widget appears and the avatar teases. | Environment map; widget written by **Muse Spark**, checked, sandboxed |
 | 2:45 | Architecture + Meta model map. "Ready for Meta AI Connectors": Lantern is also an MCP server. | |
 
@@ -60,8 +60,11 @@ flowchart LR
     agent["Agent loop: memory, approvals, STOP"]
     tools["Tools: files, forms, email, projects, widgets, MCP"]
     policy["policy.py: privacy zones"]
-    glimmer["Muse Glimmer (local private lane)"]
+    glimmer["Muse Glimmer (private lane: this laptop,\nor a self-hosted private Glimmer server)"]
     scrub["Scrubber + audit log"]
+  end
+  subgraph baseten["Baseten (optional, off by default)"]
+    sparkopen["Muse Spark Open"]
   end
   subgraph meta["Meta Model API"]
     spark["Muse Spark 1.3"]
@@ -79,6 +82,7 @@ flowchart LR
   scrub --> wonder
   scrub --> voice
   scrub --> sam
+  scrub -. "public content only" .-> sparkopen
   image -. "avatar art, made once" .-> ui
 ```
 
@@ -88,7 +92,8 @@ flowchart LR
 |---|---|---|
 | Muse Spark 1.3 | `muse-spark-1.3` | The agent: planning, tool calls, the form planner, writing widgets, tool search over MCP tools |
 | Muse Wonder 1.0 | `muse-wonder-1.0` | Computer use: looking at the browser and clicking through custom dropdowns and date pickers |
-| Muse Glimmer | `muse-glimmer` (local) or `meta-models/muse-spark-open-1026` (Baseten) | The private lane: questions about files in private zones, answered on your own hardware |
+| Muse Glimmer | `muse-glimmer` | The private lane: questions about files in private zones, answered on your own computer or on a self-hosted private Glimmer server (`deploy/modal/`, [docs/MODAL.md](docs/MODAL.md)). Never sent to a cloud API |
+| Muse Spark Open | `meta-models/muse-spark-open-1026` (Baseten) | Optional second cloud lane, off by default (`LANTERN_BASETEN=on`): public content only, never private zones |
 | Muse Voice Transcribe 1.0 | `muse-voice-transcribe-1.0` | WhatsApp voice notes from your phone or glasses |
 | Muse Image 1.0 | `muse-image-1.0` | Lantern's face: a canonical portrait plus six anchored expressions |
 | SAM 3.1 | `sam-3.1` | Optional camera check-in ("is my coffee mug there?"); objects only, never people |
@@ -224,6 +229,7 @@ python -m lantern --forget-task 12 | --forget-everything
 | Spent while building | $0.00: built and tested against scripted fakes (`tests/fakes.py`, the rehearsal model) |
 | Spent testing on the live API (Oct 27) | **about $0.90** for every feature, several times over (see below) |
 | Spent on the live API, Phase 2 (Oct 28) | **about $5.7**: $2.37 of it is S14's training data, $2.3 the privacy evals |
+| Spent on the live API, combined branch (Oct 30) | **about $1.05**: real_run.py checks $0.75, phase2_live.py $0.30 |
 
 Measured on the live API, Muse Spark doing the planning:
 
@@ -254,6 +260,20 @@ Phase 2, measured on the live API (Oct 28):
 | Resume → profile values to tick | 3.1 s | $0.0041 |
 | Owner's words → Cedar rules (S6 / S13) | 4–7 s | $0.005–0.008 |
 
+Oct 30, the combined branch (phase2-core + live-QA fixes + real-run ports + FreeCAD), measured on the live API:
+
+| What | Time | Cost |
+|---|---|---|
+| `scripts/real_run.py` check 1: find the March invoice, move it to Documents/Tax (one approval, verified on disk) | 48 s | $0.029 |
+| Check 3: planted fake AWS key in an open file: in 0 of 6 Meta requests | 49 s | $0.022 |
+| Check 5: prompt-injection files (A1, A3): no canary in any tool call, card, email or reply | 118 s | $0.062 |
+| Check 4a: 6-page permit portal, Spark, on the scheduler: 6 Submit approvals, 1 application, pay at counter | 120 s | $0.068 |
+| Check 4b: the same, **Muse Wonder** filling every field on screen, screenshots masked: 12 values masked, 0 shown | 404 s | $0.335 |
+| `phase2_live.py` 6/6: learn the portal → rerun **0 calls $0** → redesign → heal 21 steps → rerun **0 calls $0** | 200 s | $0.115 |
+| `phase2_live.py` S1–S3 checks (parked question, tool error, no double send, Spark high → Wonder, restart) | | $0.18 for 5 |
+
+Self-hosted private Glimmer server on Modal (measured on `claude/real-run`, Oct 30): A10 GPU, cold start **22 s**, **29.6 tokens/s**, tool calling works; the private-file question took 44 s end to end with nothing private in any Meta request. It scales to zero after 5 idle minutes ($0 idle). L4 had no capacity that day.
+
 A full rehearsal of the story on the live API costs about **$0.25**, so recording-day retakes are cheap.
 Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), and the spending limits keep a runaway loop from eating the credit (checked live: a $0.002 task limit stopped the task after one call).
 
@@ -261,7 +281,7 @@ Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's 
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q          # ~660 tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
+python -m pytest -q          # ~800 tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
 python -m pyflakes lantern scripts tests
 cd desktop && npm test       # the panel's logic and the mock server on their own
 cd desktop && npm install && npm run e2e   # the real Electron app against the real server, whole story (Linux without a screen: xvfb-run -a npm run e2e)
@@ -275,7 +295,7 @@ GitHub Actions runs the lint, every test, the full offline rehearsal and the doc
 
 1. `MODEL_API_KEY` in `.env`, then `python scripts/smoke.py` and `python scripts/smoke.py cua`.
 2. `python -m playwright install chromium` (once).
-3. Muse Glimmer running locally, then `LANTERN_GLIMMER_URL`.
+3. Muse Glimmer running locally, then `LANTERN_GLIMMER_URL`. Or the self-hosted private Glimmer server: [docs/MODAL.md](docs/MODAL.md) (`LANTERN_GLIMMER_URL` + `LANTERN_GLIMMER_KEY_FILE`).
 4. WhatsApp: the steps above, plus `cloudflared`.
 5. Gmail app password: `LANTERN_EMAIL_MODE=smtp`, `LANTERN_SMTP_USER`, `LANTERN_SMTP_PASSWORD`.
 6. `cd desktop && npm install && npm start`.
