@@ -5,7 +5,7 @@
 - The avatar can also be a **live skin**, e.g. a clock that shows the real time.
 - When agent packs run, Lantern visibly **turns into its agents**: each running agent appears as its own small face next to the main avatar, and clicking one shows what it's doing. This is the "wow" moment for the demo video.
 
-Read `CLAUDE.md` first; its hard rules apply. Before any Muse Image call, read dev.meta.ai/docs (image generation) and reuse the request shape in `lantern/avatar.py`. Don't guess. Branch `claude/freecad-laptop`. `python -m pytest -q` and `npm test` (in `desktop/`) must pass before every commit.
+Read `CLAUDE.md` first; its hard rules apply. Before any Muse Image call, read dev.meta.ai/docs (image generation) and reuse the request shape in `lantern/avatar.py`. Don't guess. Meta's cookbook has the matching recipes: `05_muse_image/03_anchored_generation` (one character, consistent across a series: the expressions and agent faces) and `05_muse_image/04_image_editing_with_reasoning` (edit a design, e.g. "add a hat") at github.com/meta-models/meta-model-cookbook. Branch `claude/freecad-laptop`. `python -m pytest -q` and `npm test` (in `desktop/`) must pass before every commit.
 
 Today:
 - `lantern/avatar.py` (`plan`, `generate`, `EXPRESSIONS`) and `scripts/make_avatar.py --brief "..."` already make a 7-expression face with Muse Image (about $0.07), written to `desktop/assets/avatar/` + `manifest.js`;
