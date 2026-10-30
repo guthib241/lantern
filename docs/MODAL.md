@@ -4,20 +4,45 @@ Lantern's private lane is any OpenAI-compatible Muse Glimmer server (see `docs/G
 
 **Wording for judges and the README:** say *"self-hosted private Glimmer server"* (or "Muse Glimmer on our own private GPU server"). Do **not** say "local", "on-device" or "never leaves your computer" for this setup. Private-file questions travel over TLS to a GPU we rent from Modal, are answered there, and nothing is logged or stored, but they do leave the laptop. Lantern already audits this lane as `selfhosted`, separately from `local`.
 
-## Status (Oct 28, 2026)
+## Status (Oct 30, 2026)
 
 | Part | State |
 |---|---|
 | Weights in the Modal Volume `lantern-glimmer-weights` | **Done.** Q4_K_M (16.8 GB) + DFlash drafter (1.6 GB), downloaded once (93 s + 12 s) and sha256-checked |
-| Modal Secret `lantern-private` + `~/.lantern/private_token` | **Done** (`rotate_token.py`) |
-| Token gate (`gate.py`) | **Done, tested live** on Modal with the real Secret and HTTPS URL (fake GPU behind it) |
-| GPU server (`Glimmer` class) | **Blocked:** Modal answered `Please add a payment method to use L4 GPU functions.` The account has credit but no card on file. Add one at modal.com → Settings → Usage & Billing, then run the smoke test below |
-| Cold start, tokens/sec, tool calling on the real model | **Not measured yet.** Waiting on the payment method. The figures below marked *estimate* are estimates |
+| Modal Secret + token file (`rotate_token.py`) | **Done** |
+| Token gate (`gate.py`) | **Done, tested live** on Modal with the real Secret and HTTPS URL: 401 for no / wrong / Basic token, 404 unknown paths, 400 stream, 200 via the OpenAI SDK; no token or content in the logs |
+| GPU server on **A10** (default) | **Measured** (on `claude/real-run`): cold start **22 s**, decode **29.6 tokens/s** with the drafter, correct short answer, one correct tool call + follow-up |
+| GPU server on L4 | **No capacity** on Oct 30: "waiting to be scheduled on a GPU_L4 worker" for 10+ min. Still selectable with `LANTERN_GLIMMER_GPU=L4` |
+| CPU mode (no GPU) | **Measured:** cold start 149 s, 4.2 tokens/s. Works on Modal credit alone |
+| llama.cpp b11913 flags | **Fixed:** `--no-mmap` crash-looped the server ("invalid argument"); it is `--load-mode none` now |
+
+## GPU, measured (Oct 30, card on file)
+
+*Copied from `claude/real-run` (`docs/MODAL.md`, commit 6d43e57), where another session ran `smoke.py` and `scripts/real_run.py` on the same deploy code. Not re-run on this branch.*
+
+- **L4:** no capacity. Modal kept the function "waiting to be scheduled on a GPU_L4 worker" for over 10 minutes, and the gate answered 500 meanwhile.
+- **A10 (`LANTERN_GLIMMER_GPU=A10`)**, Q4_K_M + DFlash drafter, `smoke.py`: cold start **22 s**, decode **29.6 tokens/s** (prompt 367 tokens/s; 171 of 579 drafted tokens accepted), short answer right, one tool call with the right arguments and a correct follow-up. A10 is now the recommended GPU: it scheduled at once and is ~7× faster than CPU mode.
+- Lantern's private-file check (`scripts/real_run.py --only 2`): **44 s** end to end (118 s on CPU), nothing private in any Meta request.
+- **One workspace, one app name, one Secret:** two sessions deploying `lantern-glimmer` or running `rotate_token.py` at the same time overwrite each other (the other one's token stops working). Use one session (or the laptop) for the Modal app at a time.
+
+## CPU mode: running before a card is on file (Oct 28, measured on `claude/real-run`)
+
+Modal refuses every GPU function (L4, A10 and L40S were tried) until a payment method is on the account, even with credit. CPU functions run on credit, so the same app has a CPU mode:
+
+```bash
+LANTERN_GLIMMER_GPU=CPU modal deploy deploy/modal/glimmer_app.py
+```
+
+- llama.cpp's CPU build (`server-b11913`), 16 cores, 32 GiB, the same Q4_K_M weights from the Volume, no drafter. About **$1.01/h** while warm, $0 when scaled to zero.
+- **Measured:** cold start 149 s (17 GB into RAM), then **4.2 tokens/s**. A private question with a short answer took about 1–2 min warm. That's fine for a proof and for a private question now and then, too slow for chat.
+- Same gate, token, scale-to-zero and logging rules as the GPU path. Lantern points at it the same way (below), with `LANTERN_GLIMMER_KEY_FILE=~/.lantern/private_token`.
+- **Also fixed on the way:** llama.cpp b11913 no longer knows `--no-mmap` (the server crash-looped with "invalid argument"); it is `--load-mode none` now, on the GPU path too.
+
 
 ## How it fits together
 
 ```
-Lantern router ──HTTPS, Bearer token──▶ gate (CPU, 0.25 core)        ──Modal function call──▶ Glimmer (L4 GPU)
+Lantern router ──HTTPS, Bearer token──▶ gate (CPU, 0.25 core)        ──Modal function call──▶ Glimmer (A10 GPU)
  (OpenAI SDK)                           the only public URL                                   llama-server on 127.0.0.1
                                         401 / 404 / 413 / 400 here                            Q4_K_M + DFlash drafter
                                         never wakes the GPU                                   weights from the Volume
@@ -28,25 +53,26 @@ Lantern router ──HTTPS, Bearer token──▶ gate (CPU, 0.25 core)        �
 - **No content logging.** The gate never prints. llama-server runs at its default verbosity (timings and token counts, no text), and the token is not on its command line. The smoke test sends a random canary word and fails if it appears in `modal app logs`. The live gate probe's logs contained neither the token nor any message text.
 - **Scale to zero.** The GPU container stops after 5 minutes idle (`LANTERN_GLIMMER_IDLE`), the gate after 60 s. `max_containers=1` on the GPU, so the worst case is one GPU, never a fleet.
 
-## Why llama.cpp on an L4
+## Why llama.cpp on an A10
 
 **Engine: llama.cpp `server-cuda-b11913`** (official image, pinned; Glimmer needs b10353+). dev.meta.ai's deploy page lists no public FP8 build of Glimmer. The NVFP4 build needs a Blackwell GPU (B200, $6.25/h). The quantized builds that fit a 24 GB card are the official GGUFs, and the GGUF model card documents llama.cpp for them, with tool calls parsed from the embedded template (`--jinja`). The vLLM flags from the earlier session (`--tool-call-parser muse_glimmer --reasoning-parser muse_glimmer --generation-config auto`) are for the BF16 checkpoint, which needs ~72 GB of VRAM. They are kept below as the "full precision" option.
 
-**GPU: NVIDIA L4 (24 GB), $0.80/h.** It is the cheapest Modal GPU the model fits on:
+**GPU: NVIDIA A10 (24 GB), $1.10/h.** The L4 is cheaper per hour and the model fits on it too, but on Oct 30 Modal had no L4 capacity (10+ minutes unscheduled, the gate answered 500 meanwhile). The A10 scheduled at once and was measured at 29.6 tokens/s with a 22 s cold start, which is fast enough for the demo. So A10 is the default; L4 stays an option (`LANTERN_GLIMMER_GPU=L4`).
 
 | GPU (usable VRAM) | $/h | Q4_K_M + drafter at 16K ctx (≈19.4 GiB) | |
 |---|---|---|---|
 | T4 (15 GiB) | 0.59 | doesn't fit (the 16.8 GB file alone) | |
-| **L4 (22 GiB)** | **0.80** | **fits, ~2.6 GiB spare** | **chosen** |
-| A10 (22 GiB) | 1.10 | fits | ~2× the memory bandwidth, so roughly 2× the decode speed (estimate) |
+| L4 (22 GiB) | 0.80 | fits, ~2.6 GiB spare | no capacity on Oct 30; not measured |
+| **A10 (22 GiB)** | **1.10** | **fits** | **default: measured 22 s cold start, 29.6 tokens/s** |
 | L40S (44.5 GiB) | 1.95 | fits, also fits Q4_K_XL + drafter | |
 | A100-80GB / H100 | 2.50 / 3.95 | BF16 full precision with vLLM | |
+| CPU (16 cores, 32 GiB RAM) | ~1.01 | in RAM, no drafter | measured 149 s cold start, 4.2 tokens/s |
 
 VRAM math (`glimmer_config.vram_needed_gib`, from the model card): 15.6 GiB weights + 1.5 GiB drafter + 0.28 GiB KV cache + 2 GiB overhead. The KV cache stays tiny because only 13 of the 52 layers attend globally (the other 39 use a 2048-token window) and there are only 2 KV heads. 32K context would add only ~0.2 GiB.
 
-**Speed trade-off (estimate, to be measured):** decoding is memory-bandwidth-bound. The L4 (300 GB/s) reading ~17 GB per token caps near 15–18 tok/s without speculation. The DFlash drafter should help: Meta reports 3.1× on an RTX 5090 with greedy decoding, and less is likely at temperature 1.0. If the smoke test shows L4 too slow for the demo, `--gpu A10` costs 1.4× per hour and should be ~2× faster, which makes it cheaper per token.
+**Speed (measured on A10):** decoding is memory-bandwidth-bound. On the A10 with the DFlash drafter the smoke test measured 29.6 tokens/s decode and 367 tokens/s prompt processing; 171 of 579 drafted tokens were accepted (about 30%, at temperature 1.0). The L4 has about half the A10's memory bandwidth, so it would likely be slower; it was never measured because no L4 was available.
 
-**Quality:** Q4_K_M ("K-Quant-17GB") is what the model card targets for 24 GB, with 1.0% average degradation versus full precision across 15 benchmarks. Q4_K_XL (0.2%) fits an L4 only without the drafter (`--quant q4_k_xl --no-draft`), or an L40S with it. Full precision means BF16 with vLLM on an 80 GB GPU (3–5× the price per hour). Not built here.
+**Quality:** Q4_K_M ("K-Quant-17GB") is what the model card targets for 24 GB, with 1.0% average degradation versus full precision across 15 benchmarks. Q4_K_XL (0.2%) fits an A10 or L4 only without the drafter (`--quant q4_k_xl --no-draft`), or an L40S with it. Full precision means BF16 with vLLM on an 80 GB GPU (3–5× the price per hour). Not built here.
 
 ## Deploy, test, stop
 
@@ -61,9 +87,10 @@ python deploy/modal/rotate_token.py   # makes the token: Modal Secret + ~/.lante
 Deploy, smoke-test, stop (one command; the weights are already in the Volume, so no download):
 
 ```bash
-python deploy/modal/smoke.py                      # L4 + drafter (defaults); prints a JSON report, then stops the app
+python deploy/modal/smoke.py                      # A10 + drafter (defaults); prints a JSON report, then stops the app
 python deploy/modal/smoke.py --no-draft           # compare speed without the drafter
-python deploy/modal/smoke.py --gpu A10            # compare a faster GPU
+python deploy/modal/smoke.py --gpu L4             # try the cheaper GPU (no capacity on Oct 30)
+python deploy/modal/smoke.py --gpu CPU            # no GPU at all (slow, see "CPU mode")
 ```
 
 The smoke test deploys, then checks that the gate refuses no token, a wrong token, Basic auth and an unknown path (all before any GPU starts). It then measures cold start (the first authorized request), sends one short prompt with the router's exact parameters, makes one tool call and sends the tool result back for the follow-up answer, times a ~200-word answer for tokens/sec (llama-server's `timings`, including drafter acceptance), checks the logs for the canary, runs `modal app stop`, and estimates cost from GPU seconds × the hourly price. Target spend: under $0.15 per run.
@@ -75,22 +102,35 @@ modal deploy deploy/modal/glimmer_app.py          # prints the gate URL: https:/
 modal app stop lantern-glimmer                    # everything off; deploy again to bring it back
 ```
 
+### A separate app and Secret per session (`LANTERN_GLIMMER_APP`, `LANTERN_GLIMMER_SECRET`)
+
+Several people or Claude sessions can share one Modal workspace. If two of them deploy the same app name or run `rotate_token.py` on the same Secret, they overwrite each other: one stops the other's app, or rotates the token the other one is holding (this caused every early 401 on this branch). Give each its own names:
+
+```bash
+export LANTERN_GLIMMER_APP=lantern-glimmer-qa LANTERN_GLIMMER_SECRET=lantern-private-qa
+python deploy/modal/rotate_token.py               # token -> Secret lantern-private-qa + ~/.lantern/lantern-private-qa_token
+python deploy/modal/smoke.py                      # deploys, tests and stops lantern-glimmer-qa only
+```
+
+Defaults are `lantern-glimmer` / `lantern-private` with the token file `~/.lantern/private_token`. Any other Secret name gets its own token file `~/.lantern/<secret>_token`, so the default file is never overwritten. Names are checked against Modal's naming rules before anything runs. Both apps share the read-only weights Volume. The containers re-import `glimmer_app.py`, so the names are passed into them as env vars too. Only the owner of an app should deploy, stop or rotate it.
+
 Settings are environment variables at deploy time (`LANTERN_GLIMMER_GPU`, `LANTERN_GLIMMER_QUANT`, `LANTERN_GLIMMER_DRAFT`, `LANTERN_GLIMMER_CTX`, `LANTERN_GLIMMER_IDLE`, `LANTERN_GLIMMER_REASONING`). See `deploy/modal/glimmer_config.py`; impossible combinations (too big for the GPU, idle > 30 min) are refused before deploying.
 
 ## Cost
 
 | | $/hour | When |
 |---|---|---|
-| GPU container (L4 + 1 core + 4 GiB) | **$0.879** | only while warm: from the first request until 5 min after the last |
+| GPU container (A10 + 1 core + 4 GiB) | **$1.179** | only while warm: from the first request until 5 min after the last |
 | Gate (0.25 core + 0.25 GiB) | $0.014 | while warm, 60 s after the last request |
 | Idle (deployed, scaled to zero) | **$0** | weights Volume 18 GB is inside Modal's 1 TiB free storage |
 
-- One "wake" (cold start + a few questions + 5 min idle) costs about **$0.08–0.10** (estimate).
-- An hour of demo rehearsal with it warm the whole time costs about $0.90. The $100 credit covers ~110 warm hours.
-- Per-request cost depends on tokens/sec, which hasn't been measured yet.
-- If the token ever leaks, the worst case is someone keeping one L4 warm: $21/day. Rotate the token (below), and consider a workspace spending limit in Modal's billing settings.
+- One "wake" (22 s cold start + a few questions + 5 min idle) is about 6 minutes of A10 time: **~$0.12** (computed from the measured cold start and the hourly price).
+- An hour of demo rehearsal with it warm the whole time costs about $1.18. The $100 credit covers ~85 warm hours.
+- Per answer: at 29.6 tokens/s, a 300-token answer takes ~10 s of GPU time, about $0.003 while warm.
+- Measured spend: all of the Modal work across sessions (weights download, gate tests, CPU and A10 runs, the real-run private-file checks) came to about $0.45 by Oct 30.
+- If the token ever leaks, the worst case is someone keeping one A10 warm: $28/day. Rotate the token (below), and consider a workspace spending limit in Modal's billing settings.
 
-**Cold start** (*estimate*): gate ~3.5 s (measured), then the GPU container starts and llama-server reads ~18 GB from the Volume into VRAM. Expect tens of seconds to ~1.5 min. `smoke.py` prints the real number. Modal web requests longer than 150 s get a 303 redirect that the OpenAI SDK follows automatically, so a slow cold start waits instead of failing. Lantern's router uses a 120 s timeout per request, so see "Router" below for a warm-up.
+**Cold start (measured on A10):** 22 s from the first authorized request until llama-server answered (gate ~3.5 s, then the GPU container starts and reads ~18 GB from the Volume into VRAM). CPU mode: 149 s. Modal web requests longer than 150 s get a 303 redirect that the OpenAI SDK follows automatically, so a slow cold start waits instead of failing. Lantern's router uses a 120 s timeout per request, which covers the A10 cold start; see "Router" below for a warm-up.
 
 ## Rotating the token (on your laptop)
 
@@ -98,7 +138,7 @@ Settings are environment variables at deploy time (`LANTERN_GLIMMER_GPU`, `LANTE
 python deploy/modal/rotate_token.py --redeploy
 ```
 
-It makes a new `secrets.token_urlsafe(32)`, writes it to a temporary owner-only file, updates the Modal Secret `lantern-private`, and only then replaces `~/.lantern/private_token`. If the Modal call fails, the old token stays valid and in place. It never prints the token. `--redeploy` restarts the containers so the old token stops working right away; without it, running containers keep the old token until they scale down. On Windows the file goes to `C:\Users\<you>\.lantern\private_token`. Use `--token-file` to put it elsewhere.
+It makes a new `secrets.token_urlsafe(32)`, writes it to a temporary owner-only file, updates the Modal Secret (`lantern-private`, or `LANTERN_GLIMMER_SECRET`), and only then replaces `~/.lantern/private_token`. If the Modal call fails, the old token stays valid and in place. It never prints the token. `--redeploy` restarts the containers so the old token stops working right away; without it, running containers keep the old token until they scale down. On Windows the file goes to `C:\Users\<you>\.lantern\private_token`. Use `--token-file` to put it elsewhere.
 
 The sandbox copy used for testing lives at `~/.lantern/private_token`, outside the repo, so it can't be committed.
 
@@ -129,7 +169,7 @@ Three small follow-ups worth doing at the same time (not done here, since this b
 2. **Cold-start warm-up.** `OpenAIGlimmer` uses a 120 s timeout. For the selfhosted lane, either raise it to 300 s, or have Lantern send one `GET /v1/models` in the background at startup so the GPU is warm before the first private question.
 3. **Doctor.** `lantern --doctor` only probes localhost (by design, see DECISIONS). If wanted, a selfhosted check could call `GET /v1/models`, but that wakes the GPU (~$0.08), so keep it behind an explicit flag.
 
-Also at merge time: add to `docs/THIRD_PARTY.md` llama.cpp (MIT, official `ghcr.io/ggml-org/llama.cpp` image), the Modal client (Apache-2.0), huggingface_hub (Apache-2.0) and the Muse Glimmer GGUF weights (Apache-2.0). Add a `BUILD_LOG.md` line, and a `docs/DECISIONS.md` line: "gate + RPC-only GPU so unauthenticated traffic never wakes a GPU; llama.cpp Q4_K_M on L4 because no public FP8 exists and BF16 needs 80 GB".
+Also at merge time: add to `docs/THIRD_PARTY.md` llama.cpp (MIT, official `ghcr.io/ggml-org/llama.cpp` image), the Modal client (Apache-2.0), huggingface_hub (Apache-2.0) and the Muse Glimmer GGUF weights (Apache-2.0). Add a `BUILD_LOG.md` line, and a `docs/DECISIONS.md` line: "gate + RPC-only GPU so unauthenticated traffic never wakes a GPU; llama.cpp Q4_K_M on A10 because no public FP8 exists, BF16 needs 80 GB, and L4 had no capacity".
 
 ## Files
 

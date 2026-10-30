@@ -1,6 +1,6 @@
 """Deploy the private Glimmer server, test it, measure it, stop it.
 
-    python deploy/modal/smoke.py                       # L4, Q4_K_M, DFlash drafter (the defaults)
+    python deploy/modal/smoke.py                       # A10, Q4_K_M, DFlash drafter (the defaults)
     python deploy/modal/smoke.py --gpu A10 --no-draft  # try another setup
     python deploy/modal/smoke.py --keep                # leave it deployed (it still scales to zero)
 

@@ -15,7 +15,11 @@ Deploy-time knobs (environment variables when running `modal deploy`):
   LANTERN_GLIMMER_APP    Modal app name, default lantern-glimmer
   LANTERN_GLIMMER_SECRET Modal Secret holding the token, default lantern-private
                          (token file ~/.lantern/<secret>_token when not the default)
-  LANTERN_GLIMMER_GPU    L4 (default) | A10 | L40S | ...   see GPU_PRICE_PER_HOUR
+  LANTERN_GLIMMER_GPU    A10 (default) | L4 | L40S | ...   see GPU_PRICE_PER_HOUR
+                         A10 is the default because it was measured (22 s cold start, 29.6 tokens/s,
+                         claude/real-run, Oct 30); L4 had no capacity (10+ min unscheduled) that day
+                         CPU = no GPU: llama.cpp's CPU build on CPU_CORES cores (slow, but runs on Modal
+                         credit alone; Modal needs a card on file before any GPU function deploys)
   LANTERN_GLIMMER_QUANT  q4_k_m (default) | q4_k_xl
   LANTERN_GLIMMER_DRAFT  1 (default) = DFlash drafter for speculative decoding, 0 = off
   LANTERN_GLIMMER_CTX    context tokens for the single slot, default 16384
@@ -50,6 +54,7 @@ APP_NAME, SECRET_NAME, DEFAULT_TOKEN_FILE = names_from_env(os.environ)
 
 # Official llama.cpp server image, CUDA 12 build, pinned. Glimmer needs b10353+.
 LLAMA_IMAGE = "ghcr.io/ggml-org/llama.cpp:server-cuda-b11913"
+LLAMA_IMAGE_CPU = "ghcr.io/ggml-org/llama.cpp:server-b11913"   # same build, CPU only
 LLAMA_SERVER = "/app/llama-server"
 SERVED_MODEL = "muse-glimmer"
 LLAMA_PORT = 8081  # inside the GPU container, bound to 127.0.0.1 only
@@ -75,16 +80,19 @@ DRAFT = WeightFile("dflash-Muse-Glimmer-30B-Q4_K_M.gguf", 1_631_208_128,
                    "b2e808bf656086fe86bd0d0bd990f01d33e377537a07c02d45371517c8b264ef")
 
 # USD per hour, from `modal billing rates` on Oct 28, 2026. Modal GPU names as the client accepts them.
-GPU_PRICE_PER_HOUR = {"T4": 0.59, "L4": 0.80, "A10": 1.10, "L40S": 1.95, "A100-40GB": 2.10,
+GPU_PRICE_PER_HOUR = {"CPU": 0.0, "T4": 0.59, "L4": 0.80, "A10": 1.10, "L40S": 1.95, "A100-40GB": 2.10,
                       "A100-80GB": 2.50, "RTX-PRO-6000": 3.03, "H100": 3.95}
-GPU_VRAM_GIB = {"T4": 15.0, "L4": 22.0, "A10": 22.0, "L40S": 44.5, "A100-40GB": 39.5,
+GPU_VRAM_GIB = {"CPU": 30.0, "T4": 15.0, "L4": 22.0, "A10": 22.0, "L40S": 44.5, "A100-40GB": 39.5,
                 "A100-80GB": 79.0, "RTX-PRO-6000": 94.5, "H100": 79.0}   # usable, not marketing GB
 CPU_PER_CORE_HOUR = 0.0473
 MEM_PER_GIB_HOUR = 0.008
 
 # GPU container resources (requests; billing is the larger of request and use).
 GPU_CPU_CORES = 1.0
-GPU_MEMORY_MIB = 4096   # weights are read with --no-mmap straight into VRAM, so host RAM stays small
+GPU_MEMORY_MIB = 4096   # weights are read (no mmap) straight into VRAM, so host RAM stays small
+# CPU mode: the weights live in RAM, and decoding speed follows cores and memory bandwidth.
+CPU_CORES = 16.0
+CPU_MEMORY_MIB = 32768
 
 # Glimmer text model geometry (model card): KV cache per token.
 _LAYERS_GLOBAL, _LAYERS_LOCAL, _WINDOW = 13, 39, 2048
@@ -116,7 +124,7 @@ def vram_needed_gib(quant: str, context: int, draft: bool) -> float:
 
 @dataclass(frozen=True)
 class ServeConfig:
-    gpu: str = "L4"
+    gpu: str = "A10"
     quant: str = "q4_k_m"
     draft: bool = True
     context: int = 16384
@@ -132,6 +140,8 @@ class ServeConfig:
             raise ConfigError("context must be between 2048 and 131072 tokens")
         if not 60 <= self.idle_seconds <= 1800:
             raise ConfigError("idle timeout must be 60..1800 seconds (scale to zero quickly)")
+        if self.gpu == "CPU" and self.draft:
+            raise ConfigError("the drafter needs a GPU; use LANTERN_GLIMMER_DRAFT=0 with LANTERN_GLIMMER_GPU=CPU")
         if self.reasoning_strength not in REASONING_STRENGTHS:
             raise ConfigError(f"reasoning_strength must be one of {REASONING_STRENGTHS}")
         need = vram_needed_gib(self.quant, self.context, self.draft)
@@ -150,7 +160,8 @@ class ServeConfig:
         return cls(
             gpu=env.get("LANTERN_GLIMMER_GPU") or cls.gpu,
             quant=env.get("LANTERN_GLIMMER_QUANT") or cls.quant,
-            draft=(env.get("LANTERN_GLIMMER_DRAFT") or "1") not in ("0", "false", "no", "off"),
+            draft=(env.get("LANTERN_GLIMMER_DRAFT") or ("0" if env.get("LANTERN_GLIMMER_GPU") == "CPU" else "1"))
+            not in ("0", "false", "no", "off"),
             context=num("LANTERN_GLIMMER_CTX", cls.context),
             idle_seconds=num("LANTERN_GLIMMER_IDLE", cls.idle_seconds),
             reasoning_strength=env.get("LANTERN_GLIMMER_REASONING") or cls.reasoning_strength,
@@ -166,7 +177,17 @@ class ServeConfig:
     def files(self) -> list[WeightFile]:
         return [WEIGHTS[self.quant]] + ([DRAFT] if self.draft else [])
 
+    @property
+    def cpu_only(self) -> bool:
+        return self.gpu == "CPU"
+
+    def resources(self) -> tuple[float, int]:
+        """(CPU cores, memory MiB) the server container requests."""
+        return (CPU_CORES, CPU_MEMORY_MIB) if self.cpu_only else (GPU_CPU_CORES, GPU_MEMORY_MIB)
+
     def price_per_hour(self) -> float:
+        if self.cpu_only:
+            return CPU_CORES * CPU_PER_CORE_HOUR + CPU_MEMORY_MIB / 1024 * MEM_PER_GIB_HOUR
         return (GPU_PRICE_PER_HOUR[self.gpu] + GPU_CPU_CORES * CPU_PER_CORE_HOUR
                 + GPU_MEMORY_MIB / 1024 * MEM_PER_GIB_HOUR)
 
@@ -178,14 +199,16 @@ def llama_server_cmd(cfg: ServeConfig, model_dir: str = MODEL_DIR) -> list[str]:
         "-m", f"{model_dir}/{WEIGHTS[cfg.quant].filename}",
         "-a", SERVED_MODEL,
         "--host", "127.0.0.1", "--port", str(LLAMA_PORT),
-        "-ngl", "999",                  # every layer on the GPU
+        "-ngl", "0" if cfg.cpu_only else "999",   # every layer on the GPU (or none, in CPU mode)
         "-c", str(cfg.context), "-np", "1",   # one slot gets the whole context (-c is split across slots)
         "--jinja",                      # required: the chat template (and tool-call format) is in the GGUF
-        "--no-mmap",                    # read weights into VRAM, don't keep a 17 GB page cache in host RAM
+        "--load-mode", "none",          # no mmap: read weights into VRAM/RAM once (b11913 dropped --no-mmap; live, Oct 28)
         "--temp", str(SAMPLING["temperature"]), "--top-p", str(SAMPLING["top_p"]),
         "--top-k", str(SAMPLING["top_k"]), "--min-p", "0",   # Glimmer's own generation config, nothing extra
         "--chat-template-kwargs", '{"reasoning_strength":"%s"}' % cfg.reasoning_strength,
     ]
+    if cfg.cpu_only:
+        cmd += ["-t", str(int(CPU_CORES))]
     if cfg.draft:
         cmd += ["-md", f"{model_dir}/{DRAFT.filename}", "-ngld", "999"]
     return cmd

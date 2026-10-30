@@ -70,7 +70,7 @@ def download_weights(quant: str, draft: bool) -> None:
 
 
 server_image = (
-    modal.Image.from_registry(gc.LLAMA_IMAGE, add_python="3.12")
+    modal.Image.from_registry(gc.LLAMA_IMAGE_CPU if cfg.cpu_only else gc.LLAMA_IMAGE, add_python="3.12")
     .entrypoint([])
     .pip_install("huggingface_hub[hf_xet]==1.33.0")
     .env({"HF_HUB_DISABLE_TELEMETRY": "1", "HF_XET_HIGH_PERFORMANCE": "1"})
@@ -82,7 +82,7 @@ server_image = (
 gate_image = modal.Image.debian_slim(python_version="3.12").add_local_python_source("glimmer_config", "gate")
 
 
-@app.cls(image=server_image, gpu=cfg.gpu, cpu=gc.GPU_CPU_CORES, memory=gc.GPU_MEMORY_MIB,
+@app.cls(image=server_image, gpu=None if cfg.cpu_only else cfg.gpu, cpu=cfg.resources()[0], memory=cfg.resources()[1],
          volumes={gc.MODEL_DIR: weights.read_only()}, env={**cfg.as_env(), **NAMES_ENV},
          scaledown_window=cfg.idle_seconds, timeout=900, startup_timeout=600,
          min_containers=0, max_containers=1)
@@ -106,8 +106,9 @@ class Glimmer:
             time.sleep(1)
         else:
             raise RuntimeError("llama-server didn't become ready in 540 s")
-        mem = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.used,memory.total", "--format=csv,noheader"],
-                             capture_output=True, text=True).stdout.strip()
+        mem = "CPU only" if cfg.cpu_only else subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.used,memory.total", "--format=csv,noheader"],
+            capture_output=True, text=True).stdout.strip()
         print(f"lantern-glimmer ready in {time.monotonic() - t0:.1f}s on {mem} ({cfg})")
 
     @modal.method()

@@ -10,8 +10,10 @@ import glimmer_config as gc  # noqa: E402
 
 def test_defaults_fit_a_24gb_gpu():
     cfg = gc.ServeConfig()
-    assert (cfg.gpu, cfg.quant, cfg.context) == ("L4", "q4_k_m", 16384)
-    assert gc.vram_needed_gib(cfg.quant, cfg.context, cfg.draft) < gc.GPU_VRAM_GIB["L4"]
+    assert (cfg.gpu, cfg.quant, cfg.context) == ("A10", "q4_k_m", 16384)
+    for gpu in ("A10", "L4"):   # A10 is the default (measured); L4 stays an option
+        assert gc.vram_needed_gib(cfg.quant, cfg.context, cfg.draft) < gc.GPU_VRAM_GIB[gpu]
+        assert gc.ServeConfig(gpu=gpu).gpu == gpu
 
 
 def test_kv_cache_is_small_because_most_layers_are_sliding_window():
@@ -82,10 +84,11 @@ def test_weights_are_pinned():
 
 
 def test_cost_estimate():
-    cfg = gc.ServeConfig()          # L4 0.80 + 1 core 0.0473 + 4 GiB 0.032
-    assert cfg.price_per_hour() == pytest.approx(0.8793)
-    assert gc.cost_usd(3600, cfg) == pytest.approx(0.8793)
-    assert gc.cost_usd(300, cfg) == pytest.approx(0.8793 / 12)
+    cfg = gc.ServeConfig()          # A10 1.10 + 1 core 0.0473 + 4 GiB 0.032
+    assert cfg.price_per_hour() == pytest.approx(1.1793)
+    assert gc.cost_usd(3600, cfg) == pytest.approx(1.1793)
+    assert gc.cost_usd(300, cfg) == pytest.approx(1.1793 / 12)
+    assert gc.ServeConfig(gpu="L4").price_per_hour() == pytest.approx(0.8793)
 
 
 @pytest.mark.parametrize("token,ok", [
@@ -118,3 +121,23 @@ def test_names_are_validated(bad):
         gc.names_from_env({"LANTERN_GLIMMER_APP": bad})
     with pytest.raises(ValueError):
         gc.names_from_env({"LANTERN_GLIMMER_SECRET": bad})
+
+
+def test_cpu_mode_runs_without_a_gpu_and_without_the_drafter():
+    """Live, Oct 28: Modal refuses every GPU until a card is on file; CPU functions run on credit alone."""
+    c = gc.ServeConfig.from_env({"LANTERN_GLIMMER_GPU": "CPU"})
+    assert c.cpu_only and not c.draft and c.resources() == (gc.CPU_CORES, gc.CPU_MEMORY_MIB)
+    cmd = gc.llama_server_cmd(c)
+    assert cmd[cmd.index("-ngl") + 1] == "0" and cmd[cmd.index("-t") + 1] == str(int(gc.CPU_CORES))
+    assert "-md" not in cmd
+    assert round(c.price_per_hour(), 2) == round(gc.CPU_CORES * gc.CPU_PER_CORE_HOUR
+                                                 + gc.CPU_MEMORY_MIB / 1024 * gc.MEM_PER_GIB_HOUR, 2)
+    with pytest.raises(gc.ConfigError):
+        gc.ServeConfig(gpu="CPU", draft=True)
+
+
+def test_no_mmap_is_spelled_for_this_llama_cpp_build():
+    """Live, Oct 28: server-b11913 rejects --no-mmap ("invalid argument") and crash-looped; it is --load-mode none."""
+    for c in (gc.ServeConfig(), gc.ServeConfig.from_env({"LANTERN_GLIMMER_GPU": "CPU"})):
+        cmd = gc.llama_server_cmd(c)
+        assert "--no-mmap" not in cmd and cmd[cmd.index("--load-mode") + 1] == "none"
