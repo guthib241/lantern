@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS spend (             -- dollars per local day, for the
     day TEXT PRIMARY KEY,                      -- YYYY-MM-DD; no tasks, no content: kept when you forget things
     cost_usd REAL NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS time_saved (        -- honest minutes per finished task (timesaved.py):
+    task_id INTEGER PRIMARY KEY,               -- only verified actions count; anything else stores 0
+    minutes REAL NOT NULL DEFAULT 0,
+    updated_at REAL NOT NULL                   -- when the task finished (for the per-day week total)
+);
 """
 
 PRIVATE_SUMMARY = "(answered from a private file; the details stay on this computer)"
@@ -186,10 +191,12 @@ class Memory:
     def finish_task(self, task_id: int, status: str, summary: str) -> None:
         if status not in TASK_STATUSES:
             raise ValueError(f"bad status {status!r}")
+        now = time.time()
         self.db.execute(
             "UPDATE tasks SET status = ?, summary = ?, updated_at = ? WHERE id = ?",
-            (status, self._enc(summary), time.time(), task_id),
+            (status, self._enc(summary), now, task_id),
         )
+        self.record_time_saved(task_id, now, status)
         self.db.commit()
 
     @_locked
@@ -210,6 +217,37 @@ class Memory:
     def tasks_with_status(self, status: str, limit: int = 50) -> list[Task]:
         rows = self.db.execute("SELECT * FROM tasks WHERE status = ? ORDER BY id LIMIT ?", (status, limit)).fetchall()
         return [self._task(r) for r in rows]
+
+    # ---- time saved (timesaved.py: fixed estimates, only verified actions) --
+    @_locked
+    def record_time_saved(self, task_id: int, finished_at: float, status: str) -> float:
+        """Store this task's estimate: verified actions only, and only when done.
+
+        Failed, declined or stopped tasks store 0, so the week total stays
+        honest. Runs inside finish_task (no extra commit of its own)."""
+        from .timesaved import estimate_steps
+        minutes = estimate_steps(self.steps(task_id))[0] if status == "done" else 0.0
+        self.db.execute(
+            "INSERT INTO time_saved (task_id, minutes, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(task_id) DO UPDATE SET minutes = excluded.minutes, updated_at = excluded.updated_at",
+            (task_id, minutes, finished_at),
+        )
+        return minutes
+
+    @_locked
+    def time_saved(self, task_id: int) -> float:
+        """Stored estimate for one task, in minutes (0 when it saved nothing)."""
+        row = self.db.execute("SELECT minutes FROM time_saved WHERE task_id = ?", (task_id,)).fetchone()
+        return float(row[0]) if row else 0.0
+
+    @_locked
+    def time_saved_since(self, since: float) -> list[dict]:
+        """Stored estimates finished at or after `since`: task_id, minutes, updated_at."""
+        rows = self.db.execute(
+            "SELECT task_id, minutes, updated_at FROM time_saved WHERE updated_at >= ? ORDER BY updated_at",
+            (since,),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     # ---- steps -------------------------------------------------------------
     @_locked
@@ -328,7 +366,7 @@ class Memory:
     def forget_task(self, task_id: int) -> dict:
         """Delete a task with its timeline and usage rows, then rebuild the file."""
         counts = {table: self.db.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,)).rowcount
-                  for table in ("steps", "usage", "reminders")}
+                  for table in ("steps", "usage", "reminders", "time_saved")}
         self.db.execute("DELETE FROM private_tasks WHERE task_id = ?", (task_id,))
         counts["tasks"] = self.db.execute("DELETE FROM tasks WHERE id = ?", (task_id,)).rowcount
         self._vacuum()
@@ -337,7 +375,7 @@ class Memory:
     @_locked
     def forget_everything(self) -> dict:
         counts = {table: self.db.execute(f"DELETE FROM {table}").rowcount
-                  for table in ("steps", "usage", "tasks", "facts", "reminders")}
+                  for table in ("steps", "usage", "tasks", "facts", "reminders", "time_saved")}
         self.db.execute("DELETE FROM private_tasks")
         self.db.execute("DELETE FROM sqlite_sequence")
         self._vacuum()

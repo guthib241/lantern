@@ -131,9 +131,12 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 8
 .tile .t-label::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--gray); }
 .tile.orange .t-label::before { background: var(--orange); } .tile.green .t-label::before { background: var(--green); }
 .tile.blue .t-label::before { background: var(--blue); } .tile.purple .t-label::before { background: var(--purple); }
+.tile.teal .t-label::before { background: var(--teal); }
 .tile .t-value { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .tile.orange .t-value { color: var(--orange-text); }
 .tile .t-note { font-size: 12.5px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; margin-top: 6px; }
+.tile .bars span { flex: 1; min-height: 2px; border-radius: 2px; background: var(--teal); opacity: .75; }
 
 /* ---- approval sheet ---- */
 .approvals { position: sticky; top: 53px; z-index: 9; padding: 0 12px; }

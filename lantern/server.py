@@ -16,6 +16,7 @@ in the browser can't drive Lantern through localhost.
   GET  /zones, POST /zones {path, zone}
   GET  /memory                      remembered facts
   GET  /usage                       tokens and cost per model, and the spending limits (budget.py)
+  GET  /stats/time-saved?days=7      honest week total of estimated minutes saved (timesaved.py)
   GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
@@ -338,6 +339,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
     def usage():
         return {"by_model": core.memory.usage_by_model(), "total_usd": core.memory.total_cost(),
                 "budget": core.budget.status()}
+
+    @app.get("/stats/time-saved", dependencies=[Depends(auth)])
+    def time_saved(days: int = 7):
+        """Honest week total: stored per-task estimates (verified actions only,
+        fixed table) plus verified LocalSend receives, per local day."""
+        from . import timesaved
+        try:
+            return timesaved.summarize(core.memory, core.audit, days=days)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/profile", dependencies=[Depends(auth)])
     def profile():

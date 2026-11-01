@@ -208,6 +208,15 @@ function createMock() {
                                                              task_usd: 3, left_usd: Math.max(0, 150 - spent) } };
     },
     'GET /memory': () => ({ facts: { 'manager email': 'priya@example.com' } }),
+    'GET /stats/time-saved': () => {
+      const days = [];
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      for (let back = 6; back >= 0; back--) {
+        const d = new Date(today.getTime() - back * 86400000);
+        days.push({ day: d.toISOString().slice(0, 10), minutes: 0 });
+      }
+      return { days, total_min: 0, total: '0 min' };
+    },
     'GET /channel/messages': () => ({ owner: 'owner', messages: phone }),
     'POST /channel/fake': (b) => { phoneIn(b); return { ok: true }; },
     'POST /forget/everything': (b) => {

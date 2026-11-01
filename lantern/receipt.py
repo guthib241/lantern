@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from . import models
 from .audit import AuditLog
 from .memory import Memory
+from .timesaved import estimate_steps, format_minutes
 
 DONE = {   # plain words for the tools that change something
     "write_file": "Saved a file", "move_file": "Moved a file", "organize_files": "Tidied files",
@@ -102,11 +103,14 @@ def build(memory: Memory, audit: AuditLog, task_id: int) -> dict:
             row["kinds"].append(kind)
         row["redactions"].update(e["redactions"] or {})
     rows = [{**row, "redactions": dict(row["redactions"])} for row in sent.values()]
+    saved_min, saved_labels = estimate_steps(memory.steps(task_id))   # verified actions only, fixed table
     left = [r for r in rows if r["lane"] != "local" and not r["simulated"]]
     usage = [{**u, "badge": models.badge(u["model"])} for u in memory.task_usage_by_model(task_id)]
     return {
         "task": {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
                  "started_at": t.created_at, "finished_at": t.updated_at},
+        "time_saved_min": saved_min, "time_saved": (", ".join(saved_labels) if saved_labels else ""),
+        "time_saved_text": format_minutes(saved_min),
         "actions": actions, "looked": looked,
         "checked": sum(a["verified"] for a in actions), "unchecked": sum(not a["verified"] for a in actions),
         "approvals": list(approvals.values()),
@@ -148,6 +152,10 @@ def as_text(r: dict) -> str:
     if r["stayed_local"]:
         n = r["stayed_local"]
         lines.append(f"• Stayed on this computer: {n} private-lane question{'s' if n != 1 else ''}")
+    if r["time_saved_min"] > 0:
+        lines.append(f"• Estimated time saved: {format_minutes(r['time_saved_min'])} ({r['time_saved']})")
+    else:
+        lines.append("• Estimated time saved: 0 min (nothing verified)")
     lines.append(f"• Cost: ${r['cost_usd']:.4f}" + (" · " + ", ".join(f"{u['badge']} ×{u['calls']}" for u in r["models"])
                                                      if r["models"] else ""))
     return "\n".join(lines)

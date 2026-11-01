@@ -85,7 +85,7 @@ def test_forget_really_removes_bytes(tmp_path):
     audit.record(lane="cloud", destination="x", endpoint="responses", model="m", payload=b"x", task_id=gone.id,
                  preview="GHOST-99 preview")
     assert b"GHOST-99" in raw(db, adb)
-    assert mem.forget_task(gone.id) == {"steps": 1, "usage": 1, "reminders": 0, "tasks": 1}
+    assert mem.forget_task(gone.id) == {"steps": 1, "usage": 1, "reminders": 0, "time_saved": 0, "tasks": 1}
     assert audit.forget_task(gone.id) == 1
     assert mem.forget("door")
     assert b"GHOST" not in raw(db, adb)

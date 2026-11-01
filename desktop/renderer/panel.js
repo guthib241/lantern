@@ -327,13 +327,24 @@
   // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------
   let upcoming = [];
   let budget = null;   // {spent_usd, total_usd, task_usd, left_usd, ...} from /usage: the limits enforced in code
+  let savedWeek = null;   // {total_min, days: [{day, minutes}]} from /stats/time-saved: the honest week total
+  function tileBars(g) {
+    if (!g.bars) return null;
+    const max = Math.max(1, ...g.bars);
+    return h('div', { class: 'bars', 'aria-hidden': 'true' },
+      ...g.bars.map((v) => h('span', { style: `height: ${Math.max(8, Math.round((v / max) * 100))}%` })));
+  }
   function renderGlance() {
     const t = now();
     $('today-date').textContent = LanternToday.dateLine(t);
     $('today-greeting').textContent = LanternToday.greeting(t);
-    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t, budget }).map((g) =>
-      h('div', { class: `tile ${g.tone}`, 'data-tile': g.id },
-        h('span', { class: 't-label' }, g.label), h('span', { class: 't-value' }, g.value), h('span', { class: 't-note' }, g.note))));
+    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t, budget, timeSaved: savedWeek }).map((g) =>
+      h('div', { class: `tile ${g.tone}`, 'data-tile': g.id, ...(g.a11y ? { 'aria-label': g.a11y, role: 'img' } : {}) },
+        h('span', { class: 't-label' }, g.label), h('span', { class: 't-value' }, g.value), h('span', { class: 't-note' }, g.note), tileBars(g))));
+  }
+  async function loadSaved() {
+    try { savedWeek = await api.get('/stats/time-saved?days=7'); } catch (e) { savedWeek = null; }
+    renderGlance();
   }
   $('suggestions').replaceChildren(...LanternToday.SUGGESTIONS.map((s) => h('button', { class: 'chip-s', type: 'button', onclick: () => {
     $('goal').value = s.goal;
@@ -1175,6 +1186,7 @@
     if (e.type === 'reminder' || e.type === 'reminders') loadReminders();
     if (e.type === 'budget') toast(`Lantern has spent ${LanternAudit.money(e.spent_usd)} of its ${LanternAudit.money(e.limit_usd)} limit.`);
     if (e.type === 'done' || e.type === 'budget') loadCosts();
+    if (e.type === 'done') loadSaved();
     if (e.type === 'avatar' && tab === 'setup') loadAvatar();
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
@@ -1184,6 +1196,7 @@
       if (health.demo) $('conn').textContent = 'Rehearsal · scripted model, nothing sent';
       loadReminders();
       loadCosts();
+      loadSaved();
     }
   });
 
