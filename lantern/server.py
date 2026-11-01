@@ -132,6 +132,10 @@ class PackRunIn(BaseModel):
     inputs: dict = {}
 
 
+class SurfaceIn(BaseModel):
+    surface: str = ""
+
+
 class PackDraftIn(BaseModel):
     task_id: int
 
@@ -401,7 +405,7 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(422, str(e))
         info = packsign.signature_info(pack.as_dict())
         return {**pack.as_dict(), "disabled": pack.disabled, "face": core.packs.face(name),
-                "loop": core.packs.loop_state(name),
+                "loop": core.packs.loop_state(name), "surface": core.pack_surface(name),
                 "signature_status": info["status"], "fingerprint": info["fingerprint"],
                 "mine": core.pack_author_is_you(pack.author)}
 
@@ -428,6 +432,30 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             return {"task_id": core.submit("", pack=name, inputs=body.inputs)}
         except KeyError:
             raise HTTPException(404, f"no agent called {name!r}")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/agents/{name}/surface", dependencies=[Depends(auth)])
+    def get_surface(name: str):
+        from .agentpacks import PackError as _PackError
+        try:
+            return {"name": name, "surface": core.pack_surface(name)}
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/agents/{name}/surface", dependencies=[Depends(auth)])
+    def set_surface(name: str, body: SurfaceIn):
+        """Pick where an agent runs (laptop, phone or both). Local-only, like
+        enable/disable: it spends nothing, so no approval card."""
+        from .agentpacks import PackError as _PackError
+        try:
+            return core.set_pack_surface(name, body.surface)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
         except ValueError as e:
             raise HTTPException(400, str(e))
 

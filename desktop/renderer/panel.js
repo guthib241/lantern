@@ -748,6 +748,7 @@
           h('div', { class: `agent-sig ${sig.kind}` }, sig.text))),
       c.description ? h('p', { class: 'reply' }, c.description) : null,
       c.tools.length ? h('div', { class: 'agent-tools' }, c.tools.map((t) => h('span', { class: 'chip' }, t))) : null,
+      surfaceBox(pack),
       loopBox(pack),
       run ? h('div', { class: 'agent-run' },
         h('span', {}, run.live ? `Running as task #${run.id}` : `Last run: #${run.id} · ${run.status}`),
@@ -823,6 +824,28 @@
     } catch (e) {
       toast(`Couldn't change it: ${e.message}`);
     }
+  }
+
+  // ---- surfaces: where an agent can start (laptop, phone, or both; the store keeps it) --
+  function surfaceBox(pack) {
+    const sv = LanternAgents.surfaceView(pack);
+    const names = { laptop: 'Laptop', phone: 'Phone', both: 'Both' };
+    return h('div', { class: 'agent-surface' },
+      h('span', { class: 'status' }, 'Runs on'),
+      h('div', { class: 'actions' },
+        ...sv.options.map((o) => h('button', {
+          class: o === sv.surface ? 'tinted' : 'forget',
+          onclick: () => setAgentSurface(pack, o),
+        }, names[o]))));
+  }
+
+  async function setAgentSurface(pack, surface) {
+    try {
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/surface`, { surface });
+    } catch (e) {
+      toast(`Couldn't change where it runs: ${e.message}`);
+    }
+    loadAgents();
   }
 
   // ---- loops: packs that run on a schedule (the loop state rides on the agent list) --

@@ -94,3 +94,25 @@ you on the phone and the desktop. The Agents tab shows "next run at …" and
 "last run: ok / failed / stopped" with its receipt, plus **Pause** / **Resume**
 and **Run now**. From the phone, `loops` lists the loops and `pause <name>`
 turns one off.
+
+## Where an agent runs (laptop, phone, or both)
+
+The work itself always happens on the laptop — that is where Lantern, the
+files and FreeCAD live. **Runs on** decides where you start an agent, and
+where its approvals and results show up:
+
+| Runs on | Start it from | Approval cards | Result |
+|---|---|---|---|
+| Laptop | the panel | the panel | the panel |
+| Phone | the phone: `run <name> <inputs>` or tapping Run | the phone | the phone |
+| Both | either | both (the first answer wins) | both |
+
+The setting lives in the laptop's store next to `disabled` and the loop
+state — never in the shared pack file, so sharing a pack shares no trace of
+where you run it. New installs start on **Laptop**.
+
+From the phone, `agents` lists the agents that run on the phone with Run
+buttons, and `run <name> key=value …` starts one (a missing input gets a
+question back in the chat; quotes group values with spaces). A laptop-only
+agent is refused with "this agent runs on the laptop only; change it in the
+Agents tab". Scheduled runs report to their pack's surface the same way.

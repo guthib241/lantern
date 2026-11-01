@@ -28,6 +28,16 @@
     };
   }
 
+  const SURFACES = ['laptop', 'phone', 'both'];
+
+  /** Where an agent can start: the store's Runs-on setting (laptop when missing). Pure. */
+  function surfaceView(pack) {
+    const p = pack || {};
+    const surface = SURFACES.includes(p.surface) ? p.surface : 'laptop';
+    const labels = { laptop: 'Laptop', phone: 'Phone', both: 'Both' };
+    return { surface, label: `Runs on: ${labels[surface]}`, options: SURFACES };
+  }
+
   /** Values from the run form -> {ok, inputs} or {ok:false, error}. Every declared
    *  input is needed: the server renders each {blank} of the goal from one. */
   function runPayload(pack, values) {
@@ -191,7 +201,7 @@
     return { ok: true, emoji };
   }
 
-  return { FORMAT, MAX_VALUE, cardView, runPayload, parsePackFile, packFileName, packFileText,
+  return { FORMAT, MAX_VALUE, SURFACES, surfaceView, cardView, runPayload, parsePackFile, packFileName, packFileText,
            draftFields, packFromFields, faceView, parseEmoji, signatureBadge,
            scheduleText, formatDue, loopView };
 });

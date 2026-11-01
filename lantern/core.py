@@ -567,6 +567,30 @@ class Core:
             raise ValueError(str(e)) from None
         return data
 
+    # ---- agent surfaces (where a pack may start: laptop, phone, or both; T3d) --
+    def pack_surface(self, name: str) -> str:
+        """This pack's Runs-on setting (kept in the store, never in the shared file)."""
+        try:
+            return self.packs.surface(name)
+        except KeyError:
+            raise KeyError(name) from None
+
+    def set_pack_surface(self, name: str, surface: str) -> dict:
+        """Keep a new Runs-on setting. No approval: it spends nothing. Raises
+        KeyError if unknown, ValueError if the surface is not one of the three."""
+        from .agentpacks import PackError as _PackError
+        from .agentpacks import validate_surface
+        try:
+            validate_surface(surface)
+        except _PackError as e:
+            raise ValueError(str(e)) from None
+        try:
+            saved = self.packs.set_surface(name, surface)
+        except KeyError:
+            raise KeyError(name) from None
+        self.emit({"type": "agents", "event": "surface", "name": name, "surface": saved})
+        return {"name": name, "surface": saved}
+
     # ---- loop agents (packs on a schedule; T3c) -----------------------------------
     def scheduled_budget(self) -> float | None:
         """One scheduled run's own task budget: LANTERN_TASK_BUDGET_USD, default $0.10."""

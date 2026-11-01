@@ -92,6 +92,12 @@ test('mock agents: list, run, disable, export, draft', async (t) => {
   assert.ok(list.agents.some((a) => a.name === 'tidy-downloads'));
   const one = await api.get('/agents/tidy-downloads');
   assert.equal(one.title, 'Tidy Downloads');
+  assert.equal(one.surface, 'laptop');
+  assert.deepEqual(await api.post('/agents/tidy-downloads/surface', { surface: 'both' }),
+    { name: 'tidy-downloads', surface: 'both' });
+  assert.equal((await api.get('/agents/tidy-downloads')).surface, 'both');
+  await assert.rejects(api.post('/agents/tidy-downloads/surface', { surface: 'watch' }), /laptop, phone, both/);
+  await assert.rejects(api.post('/agents/no-such-agent/surface', { surface: 'phone' }), /no agent/);
   const { task_id } = await api.post('/agents/tidy-downloads/run', { inputs: { folder: 'Downloads' } });
   assert.equal(typeof task_id, 'number');
   assert.deepEqual(await api.post('/agents/hello-agent/disable'), { name: 'hello-agent', disabled: true });

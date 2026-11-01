@@ -347,6 +347,17 @@ def canonical_bytes(data: dict) -> bytes:
     return (json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
 
 
+SURFACES = ("laptop", "phone", "both")
+DEFAULT_SURFACE = "laptop"
+
+
+def validate_surface(value: Any) -> str:
+    """Where an agent can start from (`laptop`, `phone` or `both`). Raises PackError."""
+    if value not in SURFACES:
+        raise PackError(f"surface must be one of {', '.join(SURFACES)}")
+    return value
+
+
 LOOP_DEFAULT = {"enabled": False, "next_run": None, "last_task": None,
                 "last_status": None, "failures": 0, "running": None}
 LOOP_TYPES = {"enabled": bool, "next_run": (int, float, type(None)), "last_task": (int, type(None)),
@@ -408,6 +419,7 @@ class PackStore:
                     continue   # a hand-edited file that no longer validates stays unlisted
                 info = packsign.signature_info(pack.as_dict())
                 out.append({**pack.as_dict(), "disabled": disabled, "loop": loop,
+                            "surface": self._stored_surface(path) or DEFAULT_SURFACE,
                             "face": self._listed_face(path, pack.name),
                             "signature_status": info["status"], "fingerprint": info["fingerprint"]})
         return out
@@ -445,9 +457,23 @@ class PackStore:
         emoji = face.get("emoji") if isinstance(face, dict) else None
         return emoji if isinstance(emoji, str) and emoji else None
 
-    def _write(self, pack: Pack, *, disabled: bool, face: dict | None, loop: dict | None = None) -> None:
-        """Store the wrapper: the pack plus local-only state (disabled, face, loop)."""
-        wrapper: dict[str, Any] = {"format": STORE_FORMAT, "disabled": disabled, "pack": pack.as_dict()}
+    @staticmethod
+    def _stored_surface(path: Path) -> str | None:
+        """The Runs-on setting in the store wrapper (never in the shared pack file)."""
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        surface = raw.get("surface") if isinstance(raw, dict) else None
+        return surface if surface in SURFACES else None
+
+    def _write(self, pack: Pack, *, disabled: bool, face: dict | None, loop: dict | None = None,
+               surface: str | None = None) -> None:
+        """Store the wrapper: the pack plus local-only state (disabled, face, loop, surface)."""
+        if surface is None:   # keep the existing setting; a fresh install starts on the laptop
+            surface = self._stored_surface(self._path(pack.name)) or DEFAULT_SURFACE
+        wrapper: dict[str, Any] = {"format": STORE_FORMAT, "disabled": disabled, "pack": pack.as_dict(),
+                                   "surface": surface}
         if face:
             wrapper["face"] = face
         wrapper["loop"] = _loop_of(loop)   # the loop is local state, never shared
@@ -533,6 +559,31 @@ class PackStore:
         if back.as_dict() != pack.as_dict() or saved != kept:
             raise PackError(f"agent {name!r}'s loop didn't store correctly")
         return saved
+
+    # ---- surfaces: where an agent can start (laptop, phone, or both) -----------
+    def surface(self, name: str) -> str:
+        """This pack's Runs-on setting. Raises KeyError if unknown."""
+        path = self._path(name)
+        if not path.exists():
+            raise KeyError(f"no agent called {name!r}")
+        self._load(path)   # re-validates the pack, like every other load
+        return self._stored_surface(path) or DEFAULT_SURFACE
+
+    def set_surface(self, name: str, surface: str) -> str:
+        """Keep a new Runs-on setting. No approval: it spends nothing and only
+        decides where the agent can start. Verifies by reading the file back."""
+        validate_surface(surface)
+        path = self._path(name)
+        if not path.exists():
+            raise KeyError(f"no agent called {name!r}")
+        pack, disabled, loop = self._load(path)
+        face = self._stored_face(path)
+        self._write(pack, disabled=disabled, face={"emoji": face} if face else None,
+                    loop=loop, surface=surface)
+        back, _, _ = self._load(path)   # verify: read it back
+        if back.as_dict() != pack.as_dict() or self._stored_surface(path) != surface:
+            raise PackError(f"agent {name!r}'s surface didn't store correctly")
+        return surface
 
     def export(self, name: str) -> bytes:
         """The exact pack file, to share. Faces stay on this laptop: the export

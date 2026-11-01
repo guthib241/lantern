@@ -421,6 +421,42 @@ def test_loop_routes_round_trip(tmp_path):
         core.shutdown()
 
 
+# ---- surfaces (T3d: scheduled runs report to the pack's surface) -------------------
+def test_scheduled_run_reports_to_a_phone_surface(tmp_path):
+    core, _ = make_core(tmp_path, finish_script("posted", "posted."))
+    phone = FakeChannel()
+    hub = ChannelHub(core, [phone]).start(listen=False)
+    try:
+        core.packs.install(loop_pack())
+        core.set_pack_surface("morning-post", "phone")
+        core.packs.save_loop("morning-post", {**core.packs.loop_state("morning-post"),
+                                              "enabled": True, "next_run": stamp(3, 9, 0)})
+        assert core.check_loops(stamp(3, 9, 1))
+        assert core.wait_idle() and hub.wait_idle()
+        texts = [m["text"] for m in phone.messages() if m.get("type") == "text"]
+        assert "posted." in texts   # no channel asked: the run still reports to its surface
+    finally:
+        hub.stop()
+        core.shutdown()
+
+
+def test_scheduled_run_stays_quiet_on_a_laptop_surface(tmp_path):
+    core, _ = make_core(tmp_path, finish_script("posted", "posted."))
+    phone = FakeChannel()
+    hub = ChannelHub(core, [phone]).start(listen=False)
+    try:
+        core.packs.install(loop_pack())   # the default surface is laptop-only
+        core.packs.save_loop("morning-post", {**core.packs.loop_state("morning-post"),
+                                              "enabled": True, "next_run": stamp(3, 9, 0)})
+        assert core.check_loops(stamp(3, 9, 1))
+        assert core.wait_idle() and hub.wait_idle()
+        assert core.memory.recent_tasks()[0].status == "done"
+        assert phone.messages() == []
+    finally:
+        hub.stop()
+        core.shutdown()
+
+
 # ---- phone ----------------------------------------------------------------------------
 def test_phone_loops_and_pause(tmp_path):
     core, _ = make_core(tmp_path, [])

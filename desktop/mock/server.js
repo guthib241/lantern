@@ -304,7 +304,9 @@ function createMock() {
         : `every ${s.every} at ${s.at}`;
       const loopView = (name, a) => ({ name, title: a.pack.title, scheduled: !!a.pack.schedule,
         schedule: a.pack.schedule || null, description: describeSchedule(a.pack.schedule), ...loopOf(a) });
+      const surfaceOf = (a) => a.surface || 'laptop';
       const signedView = (a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null, loop: loopOf(a),
+        surface: surfaceOf(a),
         signature_status: a.pack.signature ? 'signed' : 'unsigned', fingerprint: null, mine: false });
       const lp = url.pathname.match(/^\/agents\/([^/]+)\/loop\/(resume|pause|run-now)$/);
       if (lp && req.headers['x-lantern-token'] === TOKEN) {
@@ -328,7 +330,7 @@ function createMock() {
         return send(200, { loops: [...agents.entries()].filter(([, a]) => a.pack.schedule)
           .map(([name, a]) => loopView(name, a)) });
       }
-      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face|sign))?)?$/);
+      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face|sign|surface))?)?$/);
       if (g && req.headers['x-lantern-token'] === TOKEN) {
         // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
         if (req.method === 'GET' && !g[1]) {
@@ -382,6 +384,16 @@ function createMock() {
         if (req.method === 'POST' && (g[2] === 'disable' || g[2] === 'enable')) {
           item.disabled = g[2] === 'disable';
           return send(200, { name: g[1], disabled: item.disabled });
+        }
+        if (g[2] === 'surface') {
+          if (req.method === 'GET') return send(200, { name: g[1], surface: surfaceOf(item) });
+          let b = {};
+          try { b = body ? JSON.parse(body) : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          if (!['laptop', 'phone', 'both'].includes(b.surface)) {
+            return send(400, { detail: 'surface must be one of laptop, phone, both' });
+          }
+          item.surface = b.surface;
+          return send(200, { name: g[1], surface: item.surface });
         }
         return send(404, { detail: 'not found' });
       }

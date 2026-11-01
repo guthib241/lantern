@@ -385,6 +385,8 @@ def test_agent_routes_need_token(tmp_path):
         assert http.post("/agents/x/enable").status_code == 401
         assert http.get("/agents/x/export").status_code == 401
         assert http.post("/agents/draft", json={"task_id": 1}).status_code == 401
+        assert http.get("/agents/x/surface").status_code == 401
+        assert http.post("/agents/x/surface", json={"surface": "phone"}).status_code == 401
         assert http.get("/agents", headers=H).json() == {"agents": []}
     finally:
         core.shutdown()
@@ -460,5 +462,64 @@ def test_draft_route(tmp_path):
         data = http.post("/agents/draft", json={"task_id": tid}, headers=H).json()
         assert validate(data).name == "tidy-test"
         assert http.post("/agents/draft", json={"task_id": tid + 99}, headers=H).status_code == 404
+    finally:
+        core.shutdown()
+
+
+# ---- surfaces (T3d: where an agent runs) ------------------------------------------
+def test_surface_defaults_laptop_and_round_trips(tmp_path):
+    store = PackStore(tmp_path / "agents")
+    store.install(good_pack())
+    assert store.surface("tidy-test") == "laptop"
+    assert store.list()[0]["surface"] == "laptop"
+    assert store.set_surface("tidy-test", "phone") == "phone"
+    assert store.surface("tidy-test") == "phone"
+    assert store.list()[0]["surface"] == "phone"
+    with pytest.raises(PackError, match="surface"):
+        store.set_surface("tidy-test", "watch")
+    with pytest.raises(KeyError):
+        store.surface("missing")
+    with pytest.raises(KeyError):
+        store.set_surface("missing", "phone")
+
+
+def test_surface_survives_replace_disable_loop_but_not_export(tmp_path):
+    store = PackStore(tmp_path / "agents")
+    store.install(good_pack())
+    store.set_surface("tidy-test", "both")
+    store.install(good_pack(author="cal", title="T2"), replace=True)
+    assert store.surface("tidy-test") == "both"   # a reinstall keeps the laptop's setting
+    store.disable("tidy-test")
+    assert store.surface("tidy-test") == "both"
+    store.save_loop("tidy-test", {**store.loop_state("tidy-test"), "enabled": True})
+    assert store.surface("tidy-test") == "both"
+    store.enable("tidy-test")
+    assert "surface" not in json.loads(store.export("tidy-test"))   # never in the shared file
+
+
+def test_hand_edited_surface_falls_back_to_laptop(tmp_path):
+    store = PackStore(tmp_path / "agents")
+    store.install(good_pack())
+    path = tmp_path / "agents" / "tidy-test.json"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["surface"] = "watch"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert store.surface("tidy-test") == "laptop"
+    assert store.list()[0]["surface"] == "laptop"
+
+
+def test_surface_routes_round_trip(tmp_path):
+    core, http, _ = make_http(tmp_path, finish_script("hi"))
+    try:
+        core.packs.install(good_pack())
+        assert http.get("/agents", headers=H).json()["agents"][0]["surface"] == "laptop"
+        assert http.get("/agents/tidy-test", headers=H).json()["surface"] == "laptop"
+        r = http.post("/agents/tidy-test/surface", json={"surface": "both"}, headers=H)
+        assert r.json() == {"name": "tidy-test", "surface": "both"}
+        assert http.get("/agents/tidy-test/surface", headers=H).json() == {"name": "tidy-test", "surface": "both"}
+        assert core.wait_idle()
+        assert http.post("/agents/tidy-test/surface", json={"surface": "watch"}, headers=H).status_code == 400
+        assert http.post("/agents/nope/surface", json={"surface": "phone"}, headers=H).status_code == 404
+        assert http.get("/agents/nope/surface", headers=H).status_code == 404
     finally:
         core.shutdown()

@@ -101,6 +101,16 @@ test('loop view: schedule line, next and last run, off state', () => {
   assert.equal(G.loopView({ schedule: sched, loop: { last_task: 9, last_status: 'cancelled' } }, now).last, 'Last run #9 · stopped');
 });
 
+test('surfaces: laptop by default, Runs-on labels for the switch', () => {
+  assert.deepEqual(G.surfaceView({}), {
+    surface: 'laptop', label: 'Runs on: Laptop', options: ['laptop', 'phone', 'both'],
+  });
+  assert.equal(G.surfaceView({ surface: 'phone' }).label, 'Runs on: Phone');
+  assert.equal(G.surfaceView({ surface: 'both' }).label, 'Runs on: Both');
+  assert.equal(G.surfaceView({ surface: 'watch' }).surface, 'laptop');
+  assert.deepEqual(G.SURFACES, ['laptop', 'phone', 'both']);
+});
+
 test('draft round-trips through editable fields', () => {
   const fields = G.draftFields({ ...PACK, extra: 1 });
   assert.equal(fields.tools, 'list_dir\nsearch_files\norganize_files');
