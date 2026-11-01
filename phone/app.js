@@ -265,6 +265,23 @@
   var recStream = null;
   var recChunks = [];
   var recTimer = null;
+  var recElapsedTimer = null;
+  var recStartedAt = 0;
+  var recPlaceholder = null;
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+    $("mic").hidden = true;
+  }
+
+  function updateRecPlaceholder() {
+    var secs = Math.floor((Date.now() - recStartedAt) / 1000);
+    $("goal").placeholder = "Recording\u2026 " + secs + "s";
+  }
+
+  function stopRecPlaceholder() {
+    if (recElapsedTimer) { clearInterval(recElapsedTimer); recElapsedTimer = null; }
+    if (recPlaceholder !== null) { $("goal").placeholder = recPlaceholder; recPlaceholder = null; }
+  }
 
   function stopTracks() {
     if (recStream) recStream.getTracks().forEach(function (t) { t.stop(); });
@@ -296,11 +313,16 @@
     recorder.start();
     $("mic").classList.add("recording");
     $("status").textContent = "Recording… let go to send.";
+    recStartedAt = Date.now();
+    recPlaceholder = $("goal").placeholder;
+    updateRecPlaceholder();
+    recElapsedTimer = setInterval(updateRecPlaceholder, 250);
     recTimer = setTimeout(stopRecording, 60000);
   }
 
   function stopRecording() {
     if (recTimer) { clearTimeout(recTimer); recTimer = null; }
+    stopRecPlaceholder();
     if (recorder && recorder.state !== "inactive") recorder.stop();
     recorder = null;
     $("mic").classList.remove("recording");

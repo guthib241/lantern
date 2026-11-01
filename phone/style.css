@@ -213,12 +213,37 @@ main {
   justify-content: center;
   background: var(--card);
   border: 1px solid var(--line);
+  color: var(--text);
   font-size: 19px;
   cursor: pointer;
   flex: none;
 }
-.composer button#mic { background: var(--card); border: 1px solid var(--line); font-size: 19px; }
-.composer button#mic.recording { background: #b3261e; color: #ffffff; }
+.composer .cambtn svg, .composer button#mic svg { width: 22px; height: 22px; display: block; flex: none; }
+.composer button#mic {
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.composer button#mic[hidden] { display: none; }
+.composer button#mic.recording {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #ffffff;
+  animation: mic-pulse 1.2s ease-out infinite;
+}
+@keyframes mic-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(179, 38, 30, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(179, 38, 30, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(179, 38, 30, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer button#mic.recording { animation: none; }
+}
 .taskimg { width: 100%; max-width: 420px; border-radius: 12px; border: 1px solid var(--line); display: block; }
 .taskimg-holder { min-height: 20px; }
 .sheet-backdrop {
