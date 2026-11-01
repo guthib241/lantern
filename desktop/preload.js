@@ -14,5 +14,5 @@ contextBridge.exposeInMainWorld('lantern', {
   allowMicOnce: () => ipcRenderer.invoke('mic:allow-once'),         // push to talk, after a press on the mic
   hideQuick: () => ipcRenderer.send('quick:hide'),
   onQuickShown: (fn) => ipcRenderer.on('quick:shown', () => fn()),
-  openBoard: (lesson) => ipcRenderer.invoke('board:open', lesson),   // S16: play a lesson on the board window
+  openBoard: (lesson, name) => ipcRenderer.invoke('board:open', lesson, name),   // S16: play a lesson on the board window
 });

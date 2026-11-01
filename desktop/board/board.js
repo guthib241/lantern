@@ -8,12 +8,18 @@
  * say         every action may carry a line, spoken by the computer's own speech engine (Web Speech API). That is
  *             the operating system's voice, not a Meta model. Captions always show the line.
  *
+ * Interruption: hold "Hold to ask" (or Space) and the lesson pauses; the question is heard through Lantern's
+ * /talk (Muse Voice Transcribe, as in the panel) or typed when there is no key / in rehearsal; the answer
+ * (POST /lesson/ask, its math already SymPy-checked by the server) is spoken and shown, and Resume (or a
+ * Space tap) continues from the same step.
+ *
  * URL options: ?lesson=quadratic  ?speed=1.5  ?mute=1  ?autoplay=1.  window.LanternBoard is the API for the
- * desktop app and tests: load(lesson), play(), pause(), step(), restart(), state().
+ * desktop app and tests: load(lesson), play(), pause(), step(), restart(), holdAsk(), resume(), state().
  */
 (function () {
   'use strict';
   const T = window.LanternBoardTimeline;
+  const A = window.LanternBoardAsk;
   const $ = (id) => document.getElementById(id);
   const NS = 'http://www.w3.org/2000/svg';
   const CANCELLED = new Error('cancelled');
@@ -23,7 +29,11 @@
   const num = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) && v !== null ? Math.min(hi, Math.max(lo, n)) : d; };
 
   const st = {
-    lesson: null, index: 0, playing: false, gen: 0, stepOnce: false, done: false,
+    lesson: null, lessonName: null, index: 0, playing: false, gen: 0, stepOnce: false, done: false,
+    host: null,            // {apiBase, token} from the desktop app, for /talk and /lesson/ask
+    askState: 'idle',      // idle | asking | thinking | answered (lib/ask.js)
+    askMode: 'typed',      // voice only with a real server and a key; otherwise the typed box
+    wasPlaying: false, answerMode: false, answer: null, talking: null,
     speed: num(params.get('speed'), 1, 0.25, 40),
     muted: params.get('mute') === '1' || !hasVoice,
     items: new Map(),     // id -> {el, extras: [], action, svg: bool}
@@ -40,7 +50,7 @@
       const tick = () => {
         if (gen !== st.gen) return reject(CANCELLED);
         const now = performance.now();
-        if (st.playing) left -= now - last;
+        if (st.playing || st.answerMode) left -= now - last;
         last = now;
         if (left <= 0) return resolve();
         setTimeout(tick, Math.min(50, Math.max(5, left)));
@@ -58,7 +68,7 @@
   function animate(el, keyframes, ms, gen) {
     const anim = el.animate(keyframes, { duration: reduceMotion ? 0 : Math.max(1, ms), easing: 'ease-in-out', fill: 'forwards' });
     st.running.add(anim);
-    if (!st.playing) anim.pause();
+    if (!st.playing && !st.answerMode) anim.pause();
     return anim.finished.then(
       () => { st.running.delete(anim); if (gen !== st.gen) throw CANCELLED; },
       () => { st.running.delete(anim); throw CANCELLED; });
@@ -67,9 +77,11 @@
   const ms = (a) => (T.revealSeconds(a) * 1000) / st.speed;
 
   // ---- voice and captions -------------------------------------------------------------------------
-  function speak(text, gen) {
+  // The caption line carries the lesson's spoken lines, and (while a question is being asked) the live
+  // partial transcript. An answer is shown once, in its own box, so its speech must not write the caption.
+  function speak(text, gen, showCaption = true) {
     if (!text) return Promise.resolve();   // a silent step keeps the last caption up, so it can still be read
-    $('caption').textContent = text;
+    if (showCaption) $('caption').textContent = text;
     const estimate = (T.speechSeconds(text) * 1000) / Math.min(st.speed, 2);
     if (st.muted) return wait(estimate / (st.speed > 2 ? st.speed / 2 : 1), gen);
     return new Promise((resolve, reject) => {
@@ -84,6 +96,154 @@
       // A voice that never reports the end must not stall the lesson.
       wait(estimate * 2 + 3000, gen).then(finish, (e) => { if (!over) { over = true; reject(e); } });
     });
+  }
+
+  // ---- asking a question mid-lesson (S16): hold, pause, answer, resume -----------------------------------
+  // Voice reuses the panel's live talk exactly: microphone PCM -> Lantern's /talk -> Muse Voice Transcribe
+  // realtime (lib/talk.js + the panel's pcm-worklet). With no key, in rehearsal, or if the mic fails, the
+  // question is typed instead. The answer's speech is the same OS speech synthesis as the lesson's lines.
+  function setAskState(s) {
+    st.askState = s;
+    document.body.dataset.ask = s;
+    $('ask').setAttribute('aria-pressed', String(s === 'asking'));
+    $('ask').textContent = s === 'asking' && st.askMode === 'voice' ? 'Listening… let go to ask' : 'Hold to ask';
+  }
+
+  function showTyped(message) {
+    $('ask-panel').hidden = false;
+    $('ask-form').hidden = false;
+    if (message) $('ask-live').textContent = message;
+    $('ask-q').focus();
+  }
+
+  function holdStart() {
+    if (!st.lesson || st.askState === 'asking' || st.askState === 'thinking' || st.askState === 'answered') return;
+    st.wasPlaying = st.playing;
+    setPlaying(false);
+    if (hasVoice) window.speechSynthesis.cancel();   // the lesson's line stops; its caption stays readable
+    setAskState('asking');
+    $('answer').hidden = true;
+    $('ask-panel').hidden = false;
+    $('ask-form').hidden = true;
+    $('ask-live').textContent = st.askMode === 'voice' ? 'Listening…' : '';
+    if (st.askMode === 'voice' && window.LanternTalk && st.host) talkStart();
+    else showTyped(st.host ? '' : 'Type your question (answers need this lesson opened from Lantern).');
+  }
+
+  function holdEnd() {
+    if (st.askState !== 'asking') return;
+    if (st.talking) talkStop();               // voice: let go -> the transcript becomes the question
+    // typed: releasing just leaves the box open for typing; Ask (or Enter) sends it
+  }
+
+  async function talkStart() {
+    const session = { ws: null, ctx: null, stream: null, chunks: window.LanternTalk.chunker(), ended: false };
+    st.talking = session;
+    const live = $('ask-live');
+    try {
+      await window.lanternBoardHost.allowMicOnce();
+      session.stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      session.ctx = new AudioContext({ sampleRate: window.LanternTalk.RATE });
+      await session.ctx.audioWorklet.addModule('../renderer/lib/pcm-worklet.js');
+      const tap = new AudioWorkletNode(session.ctx, 'pcm-tap');
+      session.ctx.createMediaStreamSource(session.stream).connect(tap);
+      session.ws = new WebSocket(window.LanternTalk.url(st.host.apiBase, st.host.token));
+      session.ws.binaryType = 'arraybuffer';
+      session.ws.onmessage = (m) => {
+        let msg = {};
+        try { msg = JSON.parse(m.data); } catch (e) { return; }
+        const r = window.LanternTalk.reading(msg);
+        if (r.live !== undefined) {   // the live partial transcript belongs in the caption line
+          live.textContent = r.live || 'Listening…';
+          $('caption').textContent = r.live || 'Listening…';
+        }
+        if (r.error) { talkClose(session); showTyped(`Live talk: ${r.error} Type your question instead.`); }
+        if (msg.type === 'done') {
+          talkClose(session);
+          if (r.final) { $('caption').textContent = r.final; submitQuestion(r.final); }
+          else showTyped("I didn't catch anything. Type your question instead.");
+        }
+      };
+      session.ws.onclose = () => talkClose(session);
+      tap.port.onmessage = (ev) => {
+        if (session.ended || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+        for (const chunk of session.chunks.push(ev.data)) session.ws.send(chunk);
+      };
+    } catch (e) {
+      talkClose(session);
+      showTyped(`The microphone isn't available (${e.message || e}). Type your question instead.`);
+    }
+  }
+
+  function talkStop() {
+    const session = st.talking;
+    if (!session || session.ended) return;
+    session.ended = true;
+    setAskState('thinking');
+    $('ask-live').textContent = 'Got it…';
+    if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+      const rest = session.chunks.flush();
+      if (rest) session.ws.send(rest);
+      session.ws.send(JSON.stringify({ type: 'end' }));
+    } else talkClose(session);
+    if (session.stream) session.stream.getTracks().forEach((t) => t.stop());
+  }
+
+  function talkClose(session) {
+    if (session.stream) session.stream.getTracks().forEach((t) => t.stop());
+    if (session.ctx) session.ctx.close().catch(() => {});
+    if (session.ws && session.ws.readyState <= WebSocket.OPEN) session.ws.close();
+    if (st.talking === session) st.talking = null;
+  }
+
+  async function submitQuestion(question) {
+    const body = A.askBody(st.lessonName, st.index, question);
+    if (!body) { setAskState('asking'); showTyped('Name the lesson from Lantern and ask a question first.'); return; }
+    setAskState('thinking');
+    $('ask-form').hidden = true;
+    $('ask-live').textContent = 'Thinking…';
+    if (!st.host) { showAnswer({ spoken: 'Open this lesson from the Lantern app to ask questions about it.', related: false, actions: [] }); return; }
+    try {
+      const r = await fetch(`${String(st.host.apiBase).replace(/\/$/, '')}/lesson/ask`, {
+        method: 'POST',
+        headers: { 'X-Lantern-Token': st.host.token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((data && data.detail) || `HTTP ${r.status}`);
+      const ans = A.showable(data);
+      if (!ans) throw new Error('the answer came back in an unexpected shape');
+      showAnswer(ans);
+    } catch (e) {
+      showAnswer({ spoken: `I couldn't get an answer: ${e.message || e}`, related: false, actions: [] });
+    }
+  }
+
+  async function showAnswer(ans) {
+    st.answer = ans.spoken;
+    setAskState('answered');
+    $('ask-panel').hidden = true;
+    $('answer-text').textContent = ans.spoken;   // shown once, here; the caption keeps the question/lesson line
+    $('answer').hidden = false;
+    st.answerMode = true;
+    const gen = st.gen;
+    for (const a of ans.actions) {
+      try { await perform(a, gen); } catch (e) { if (e !== CANCELLED) { /* one bad action never blocks the answer */ } }
+      if (gen !== st.gen) return;
+    }
+    // Spoken with the board's own speech synthesis (the operating system's voice, not a Meta model),
+    // without writing the caption: the answer is already on show in the answer box.
+    if (hasVoice && !st.muted) window.speechSynthesis.resume();
+    try { await speak(ans.spoken, gen, false); } catch (e) { if (e !== CANCELLED) throw e; }
+  }
+
+  function resumeLesson() {
+    if (st.askState !== 'answered') return;
+    $('answer').hidden = true;
+    setAskState('idle');
+    st.answerMode = false;
+    st.answer = null;
+    if (st.wasPlaying) setPlaying(true);
   }
 
   // ---- placing things ---------------------------------------------------------------------------------
@@ -369,9 +529,16 @@
     document.body.dataset.state = 'error';
   }
 
-  function load(lesson, autoplay) {
+  function load(lesson, autoplay, name) {
     st.gen += 1;
     clearBoard();
+    if (st.talking) talkClose(st.talking);
+    st.lessonName = name || null;
+    st.answerMode = false;
+    st.answer = null;
+    setAskState('idle');
+    $('ask-panel').hidden = true;
+    $('answer').hidden = true;
     const errs = T.validate(lesson);
     if (!window.katex) errs.push('the math renderer (KaTeX) did not load');
     st.lesson = errs.length ? null : lesson;
@@ -390,7 +557,7 @@
   }
 
   function restart() {
-    if (st.lesson) load(st.lesson, true);
+    if (st.lesson) load(st.lesson, true, st.lessonName);
   }
 
   function step() {
@@ -421,6 +588,19 @@
                                       transform: `translate(-50%, -50%) scale(${Math.max(0.1, s)})` });
   }
 
+  /** The panel's live-talk helpers (desktop/renderer/lib/talk.js), loaded only inside the desktop app:
+   * standalone, that path isn't served, and questions are typed anyway. */
+  function loadTalk() {
+    if (window.LanternTalk) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = '../renderer/lib/talk.js';
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.append(s);
+    });
+  }
+
   // ---- wiring -------------------------------------------------------------------------------------------
   async function fetchJSON(url) {
     const r = await fetch(url);
@@ -441,6 +621,12 @@
     }
     $('speed').value = String(st.speed);
     $('play').addEventListener('click', togglePlay);
+    $('ask').addEventListener('pointerdown', (e) => { e.preventDefault(); holdStart(); });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('ask').addEventListener(ev, holdEnd);
+    $('ask').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); holdStart(); } });
+    $('ask').addEventListener('keyup', (e) => { if (e.key === 'Enter') holdEnd(); });
+    $('ask-form').addEventListener('submit', (e) => { e.preventDefault(); submitQuestion($('ask-q').value); });
+    $('resume').addEventListener('click', resumeLesson);
     $('step').addEventListener('click', step);
     $('restart').addEventListener('click', restart);
     $('mute').addEventListener('click', () => setMuted(!st.muted));
@@ -453,16 +639,46 @@
       });
     });
     window.addEventListener('keydown', (e) => {
-      if (e.target && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.target.tagName) && e.key !== 'ArrowRight') return;
-      if (e.key === ' ') { e.preventDefault(); togglePlay(); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); step(); }
-      else if (e.key === 'r' || e.key === 'R') restart();
+      const tag = e.target && e.target.tagName;
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag || '')) return;   // typing a question: Space is just a space
+      if (e.key === ' ') {   // hold Space to ask; a tap on Space resumes after an answer
+        e.preventDefault();
+        if (e.repeat) return;
+        const act = A.space(st.askState, 'down');
+        if (act === 'start') holdStart();
+        else if (act === 'resume') resumeLesson();
+        return;
+      }
+      if (e.key === 'ArrowRight') { e.preventDefault(); step(); return; }   // even from a focused button
+      if (/^(BUTTON)$/.test(tag || '')) return;
+      if (e.key === 'r' || e.key === 'R') restart();
       else if (e.key === 'm' || e.key === 'M') setMuted(!st.muted);
     });
+    window.addEventListener('keyup', (e) => {
+      if (e.key !== ' ') return;
+      if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+      e.preventDefault();
+      if (A.space(st.askState, 'up') === 'stop') holdEnd();
+    });
     const autoplay = params.get('autoplay') === '1';
-    // In the desktop app, the panel hands the board a lesson Lantern planned and checked (S16).
+    // In the desktop app, the panel hands the board a lesson Lantern planned and checked (S16), with its
+    // saved name (for questions) and the server's address and token (for /talk and /lesson/ask).
     let hosted = false;
-    if (window.lanternBoardHost) window.lanternBoardHost.onLesson((lesson) => { hosted = true; load(lesson, true); });
+    if (window.lanternBoardHost) {
+      window.lanternBoardHost.onLesson((payload) => {
+        hosted = true;
+        const lesson = payload && payload.lesson ? payload.lesson : payload;
+        load(lesson, true, payload && payload.name ? payload.name : null);
+      });
+      if (window.lanternBoardHost.config) {
+        try {
+          st.host = await window.lanternBoardHost.config();
+          const health = await fetchJSON(`${String(st.host.apiBase).replace(/\/$/, '')}/health`);
+          st.askMode = A.mode(health);   // rehearsal or no key: the typed question box instead of the mic
+          if (st.askMode === 'voice') await loadTalk();   // the panel's live-talk code, only in the app
+        } catch (e) { st.askMode = 'typed'; }
+      }
+    }
     try {
       const index = await fetchJSON('lessons/index.json');
       const pick = $('lesson-pick');
@@ -470,8 +686,8 @@
       const wanted = params.get('lesson');
       const first = index.lessons.find((l) => wanted && l.file === `${wanted}.json`) || index.lessons[0];
       pick.value = first.file;
-      pick.addEventListener('change', async () => load(await fetchJSON(`lessons/${pick.value}`), false));
-      if (!hosted) load(await fetchJSON(`lessons/${first.file}`), autoplay);
+      pick.addEventListener('change', async () => load(await fetchJSON(`lessons/${pick.value}`), false, pick.value.replace(/\.json$/, '')));
+      if (!hosted) load(await fetchJSON(`lessons/${first.file}`), autoplay, first.file.replace(/\.json$/, ''));
     } catch (e) {
       if (hosted) return;
       // Opened straight from disk (file://): lessons can't be fetched, so offer the file picker instead.
@@ -481,15 +697,17 @@
   }
 
   window.LanternBoard = {
-    load: (lesson, autoplay) => load(lesson, autoplay),
+    load: (lesson, autoplay, name) => load(lesson, autoplay, name),
     play: () => st.lesson && setPlaying(true),
     pause: () => setPlaying(false),
     step, restart,
+    holdAsk: holdStart, releaseAsk: holdEnd, resume: resumeLesson,
     setSpeed: (s) => { st.speed = num(s, 1, 0.25, 40); },
     setMuted,
     validate: T.validate,
     state: () => ({ title: st.lesson && st.lesson.title, index: st.index, total: st.lesson ? st.lesson.actions.length : 0,
-                    playing: st.playing, done: st.done, muted: st.muted, items: [...st.items.keys()] }),
+                    playing: st.playing, done: st.done, muted: st.muted, items: [...st.items.keys()],
+                    lessonName: st.lessonName, ask: st.askState, askMode: st.askMode, answer: st.answer }),
   };
   start();
 })();

@@ -102,6 +102,7 @@ class DemoModel:
 
     def __init__(self, locate: Callable[[], dict] | None = None):
         self.responses = self
+        self.chat = NS(completions=self)   # structured calls (lesson plan / lesson question) are scripted too
         self.locate = locate or measure_form
         self._spots: dict | None = None
         self._chains: dict[str, Any] = {}
@@ -114,6 +115,8 @@ class DemoModel:
             self._n += 1
             rid = f"demo_resp_{self._n}"
             self.requests.append(kw)
+        if kw.get("response_format"):   # a structured Chat Completions call (the lesson planner / board question)
+            return self._chat(rid, kw)
         tools = kw.get("tools") or []
         names = {t.get("name") for t in tools if t.get("type") == "function"}
         if kw.get("model") == models.SAM:
@@ -128,6 +131,30 @@ class DemoModel:
         if "finish" in names:
             return self._agent(rid, kw)
         raise DemoError("that request isn't part of the rehearsal script")
+
+    def _chat(self, rid: str, kw: dict) -> NS:
+        """The scripted structured answers: a canned factoring lesson, and a canned answer to a board
+        question that highlights the last verified line it was given. Anything else isn't in the script."""
+        name = kw["response_format"]["json_schema"]["name"]
+        usage = NS(prompt_tokens=0, completion_tokens=0, prompt_tokens_details=NS(cached_tokens=0),
+                   completion_tokens_details=NS(reasoning_tokens=0))
+        if name == "lesson_plan":
+            data: Any = canned_lesson()
+        elif name == "lesson_ask":
+            try:
+                given = json.loads(kw["messages"][-1]["content"])
+            except (ValueError, IndexError, KeyError):
+                given = {}
+            lines = given.get("verified_lines_so_far") or []
+            last = lines[-1].get("id") if lines and isinstance(lines[-1], dict) else None
+            data = {"related": True,
+                    "spoken": ("Good question. Each line on the board follows from the one before it, and "
+                               "SymPy checked it: we need two numbers that multiply to six and add to "
+                               "minus five, and those are minus two and minus three."),
+                    "actions": [{"do": "highlight", "target": last, "say": "This line is the key step."}] if last else []}
+        else:
+            raise DemoError("that request isn't part of the rehearsal script")
+        return NS(id=rid, choices=[NS(message=NS(content=json.dumps(data)))], usage=usage)
 
     # -- plumbing --
     @staticmethod
@@ -216,6 +243,30 @@ def measure_form(chromium: str = "") -> dict:
             d.page.click("#category")
             spots["travel"] = centre(d.page.locator('li[data-value="travel"]').bounding_box())
     return spots
+
+
+def canned_lesson() -> dict:
+    """The rehearsal's one lesson: solve x^2 - 5x + 6 = 0 by factoring (every step SymPy-checkable)."""
+    return {"title": "Solve x² − 5x + 6 = 0", "subject": "algebra", "language": "en-IN",
+            "summary": "Factor it, then use the zero-product rule.",
+            "actions": [
+                {"do": "write_text", "id": "title", "text": "Solve x² − 5x + 6 = 0", "x": 80, "y": 50,
+                 "size": 46, "color": "yellow", "say": "Let's solve x squared minus five x plus six equals zero."},
+                {"do": "write_math", "id": "eq0", "latex": "x^2 - 5x + 6 = 0", "x": 80, "y": 150,
+                 "check": {"sympy": "Eq(x**2 - 5*x + 6, 0)", "relation": "given", "variable": "x"},
+                 "say": "We need two numbers that multiply to six and add to minus five."},
+                {"do": "write_math", "id": "eq1", "latex": "(x - 2)(x - 3) = 0", "x": 80, "y": 240,
+                 "step": "factor",
+                 "check": {"sympy": "Eq((x - 2)*(x - 3), 0)", "relation": "same_solutions", "of": "eq0",
+                           "variable": "x"},
+                 "say": "Minus two and minus three work, so it factors like this."},
+                {"do": "highlight", "target": "eq1", "say": "A product is zero when one of its factors is zero."},
+                {"do": "write_math", "id": "eq2", "latex": "x = 2 \\text{ or } x = 3", "x": 80, "y": 330,
+                 "step": "solve each", "color": "green",
+                 "check": {"sympy": "[Eq(x, 2), Eq(x, 3)]", "relation": "same_solutions", "of": "eq0"},
+                 "say": "So x is two, or x is three."},
+                {"do": "pause", "seconds": 1},
+            ]}
 
 
 def pick_story(goal: str, instructions: str = "") -> Story:

@@ -55,6 +55,12 @@ async function main() {
   try {
     await until('the Lantern server', async () => (await fetch(`${api}/health`)).ok, 30000);
     console.log(`server up on ${api} (rehearsal)`);
+    // a saved lesson in the rehearsal's own folder, so the board can open it (the panel lists it on connect)
+    const sample = JSON.parse(fs.readFileSync(path.join(DESKTOP, 'board', 'lessons', 'quadratic.json'), 'utf8'));
+    fs.mkdirSync(path.join(tmp, 'rehearsal', 'lessons'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, 'rehearsal', 'lessons', 'solve-x2-5x-6.json'),
+                     JSON.stringify({ lesson: sample, meta: { verified: ['eq0', 'eq1', 'eq2', 'eq3'], removed: [], rounds: 1,
+                                                              checked: true, note: '4 steps checked by SymPy (✓)' } }));
 
     const args = [DESKTOP];
     if (process.getuid && process.getuid() === 0) args.push('--no-sandbox');   // containers run as root
@@ -232,6 +238,52 @@ async function main() {
     const quickHidden = await until('Quick Ask to hide', async () => app.evaluate(({ BrowserWindow }) =>
       !BrowserWindow.getAllWindows().find((w) => w.getTitle() === 'Lantern Quick Ask').isVisible()), 5000);
     check(quickHidden, 'Quick Ask hides itself after starting the task');
+
+    // Teaching board (S16): a saved lesson, interrupted with a typed question, then resumed
+    await panel.click('.tabs button[data-tab=teach]');
+    await panel.click('#lessons button >> text=Open board');
+    const boardPage = await until('the board window', async () => app.windows().find((p) => p.url().includes('board/index.html')), 60000);
+    await until('the lesson on the board', async () => {
+      const s = await boardPage.evaluate(() => window.LanternBoard.state());
+      return s.total > 0 && s;
+    }, 60000);
+    await boardPage.evaluate(() => { window.LanternBoard.setMuted(true); window.LanternBoard.setSpeed(20); window.LanternBoard.pause(); });
+    for (let i = 0; i < 4; i++) {   // title, the given line, a hint, the factored line
+      const at = await boardPage.evaluate(() => window.LanternBoard.state().index);
+      await boardPage.evaluate(() => window.LanternBoard.step());
+      await until(`board step ${at + 1}`, async () => (await boardPage.evaluate(() => window.LanternBoard.state().index)) > at, 30000);
+    }
+    const boardState = await boardPage.evaluate(() => window.LanternBoard.state());
+    check(boardState.askMode === 'typed' && boardState.lessonName,
+          `rehearsal board falls back to a typed question (lesson ${boardState.lessonName})`);
+    await boardPage.evaluate(() => { window.LanternBoard.play(); window.LanternBoard.holdAsk(); });
+    check(await boardPage.isVisible('#ask-form'), 'holding to ask pauses the lesson and opens the typed question box');
+    await boardPage.fill('#ask-q', 'Why minus two and minus three?');
+    await boardPage.click('#ask-form button[type=submit]');
+    const answered = await until('the board answer', async () => {
+      const s = await boardPage.evaluate(() => window.LanternBoard.state());
+      return s.ask === 'answered' && s;
+    }, 30000);
+    check(/SymPy checked it/.test(answered.answer) && !answered.playing,
+          `the answer is spoken on the paused board: “${answered.answer.slice(0, 60)}…”`);
+    // the answer is shown once: in the answer box (with Resume), never repeated in the caption line
+    check((await boardPage.textContent('#answer-text')).trim() === answered.answer,
+          'the answer box shows the full answer');
+    check(!(await boardPage.textContent('#caption')).includes(answered.answer.slice(0, 60)),
+          'the caption line does not repeat the answer (it carries the lesson line / live transcript)');
+    const shownOnce = await boardPage.evaluate((text) => document.body.innerText.split(text).length - 1, answered.answer);
+    check(shownOnce === 1, `the answer appears exactly once on the board (found ${shownOnce})`);
+    check(await boardPage.isVisible('#resume'), 'Resume sits with the answer in its box');
+    await boardPage.screenshot({ path: path.join(OUT, '10-board-ask.png') });
+    await boardPage.evaluate(() => document.activeElement && document.activeElement.blur());
+    await boardPage.keyboard.press('Space');   // a Space tap resumes
+    const resumed = await until('the lesson to finish after resuming', async () => {
+      const s = await boardPage.evaluate(() => window.LanternBoard.state());
+      return s.done && s;
+    }, 60000);
+    check(resumed.index === resumed.total && resumed.ask === 'idle', 'Space resumes the lesson and it plays to the end');
+    await boardPage.close();
+    await panel.click('.tabs button[data-tab=tasks]');
 
     // extras: a reminder and tidying Downloads
     t = await finish('Remind me in 20 minutes to record the demo video.', 0);

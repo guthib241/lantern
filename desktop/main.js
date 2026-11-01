@@ -127,8 +127,9 @@ function createQuick() {
 
 // The teaching board (S16): a full window that plays a lesson the panel fetched from the server. The board page
 // checks the lesson itself (lib/timeline.js) and shows a ✓ only on lines Lantern verified with SymPy.
-function openBoard(lesson) {
-  const send = () => board.webContents.send('board:lesson', lesson);
+// The lesson's saved name goes with it, so the board can ask the server about the current step.
+function openBoard(lesson, name) {
+  const send = () => board.webContents.send('board:lesson', { lesson, name: name || null });
   if (board && !board.isDestroyed()) {
     if (board.webContents.isLoading()) board.webContents.once('did-finish-load', send);
     else send();
@@ -192,12 +193,15 @@ function lockDown() {
     contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   });
   // No device permissions, except for a few seconds after a press in the panel: the camera for a check-in, the
-  // microphone for push to talk. Each asks for one kind of device only.
+  // microphone for push to talk. The board may also use the microphone, for its hold-to-ask question only.
+  // Each asks for one kind of device only.
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => {
     const kinds = permission === 'media' ? (details.mediaTypes || []) : [];
     const only = (kind) => kinds.length > 0 && kinds.every((t) => t === kind);
     const fromPanel = Boolean(panel && wc === panel.webContents);
-    cb(fromPanel && ((only('video') && Date.now() < cameraUntil) || (only('audio') && Date.now() < micUntil)));
+    const fromBoard = Boolean(board && wc === board.webContents);
+    cb((fromPanel && only('video') && Date.now() < cameraUntil)
+       || ((fromPanel || fromBoard) && only('audio') && Date.now() < micUntil));
   });
 }
 
@@ -208,11 +212,11 @@ ipcMain.handle('mic:allow-once', () => { micUntil = Date.now() + 5000; return tr
 ipcMain.on('avatar:hover', (_e, over) => {
   if (avatar) avatar.setIgnoreMouseEvents(!over, { forward: true });
 });
-ipcMain.handle('board:open', (e, lesson) => {
+ipcMain.handle('board:open', (e, lesson, name) => {
   // Only the panel may open the board, and only with something shaped like a lesson.
   if (!panel || e.sender !== panel.webContents) return false;
   if (!lesson || typeof lesson !== 'object' || !Array.isArray(lesson.actions) || lesson.actions.length > 200) return false;
-  openBoard(lesson);
+  openBoard(lesson, typeof name === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(name) ? name : null);
   return true;
 });
 ipcMain.on('panel:toggle', () => togglePanel());

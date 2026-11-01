@@ -31,6 +31,7 @@ in the browser can't drive Lantern through localhost.
   GET  /channel/messages            what the simulated phone received (fake channel)
   POST /channel/fake {text?, button?}   act as the owner on the simulated phone
   POST /lesson {request, notes?}    S16: plan a board lesson (SymPy checks every step) -> {task_id}
+  POST /lesson/ask {name, step, question}   S16: answer a question from the board, mid-lesson
   GET  /lessons, GET /lessons/{name}   saved lessons; one lesson as the board plays it
   POST /checkwork {image: data URL} S16: find the first wrong line in handwritten working -> {task_id}
   GET  /checkwork/image/{name}      the photo with that line circled
@@ -198,6 +199,12 @@ class LendIn(BaseModel):
 class LessonIn(BaseModel):
     request: str
     notes: str = ""
+
+
+class LessonAskIn(BaseModel):
+    name: str
+    step: int
+    question: str
 
 
 class CheckWorkIn(BaseModel):
@@ -622,6 +629,21 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
         try:
             return {"task_id": core.lesson(body.request, body.notes)}
         except (LessonError, ValueError, PolicyError) as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/lesson/ask", dependencies=[Depends(auth)])
+    def lesson_ask(body: LessonAskIn):
+        """S16 voice interruption: a question from the board about the step it is on. The answer is
+        spoken there and may add up to 3 SymPy-checked board actions; the lesson then resumes."""
+        from .lesson import load
+        from .lesson_ask import LessonAskError
+        try:
+            saved = load(core.lessons_folder(), body.name)
+        except KeyError:
+            raise HTTPException(404, "no such lesson")
+        try:
+            return core.lesson_ask(saved["lesson"], body.step, body.question)
+        except LessonAskError as e:
             raise HTTPException(409, str(e))
 
     @app.get("/lessons", dependencies=[Depends(auth)])

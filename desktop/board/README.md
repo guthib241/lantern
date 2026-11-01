@@ -9,7 +9,9 @@ cd desktop/board && python -m http.server 8780
 # open http://127.0.0.1:8780/  (or ?lesson=derivative, ?speed=1.5, ?mute=1, ?autoplay=1)
 ```
 
-**Controls:** **Play/Pause** (Space), **Step** (→, one action then pause), **Restart** (R), **Voice on/off** (M; captions stay), speed, the lesson picker, and **Open lesson file…**. When the page is opened straight from disk, `file://` can't fetch the lessons, so use the file picker.
+**Controls:** **Play/Pause**, **Step** (→, one action then pause), **Restart** (R), **Voice on/off** (M; captions stay), speed, the lesson picker, and **Open lesson file…**. When the page is opened straight from disk, `file://` can't fetch the lessons, so use the file picker.
+
+**Asking a question:** hold **Hold to ask** (or hold Space) and the lesson pauses where it is. In the desktop app with a key set, your voice streams through Lantern's `/talk` (Muse Voice Transcribe, the same path as the panel's push-to-talk) and the words you are saying show as a caption; let go to ask. Without a key, in rehearsal, or if the microphone fails, a typed question box opens instead. Lantern answers from the verified lines shown so far (`POST /lesson/ask`): the answer is spoken (the OS speech engine above, not a Meta model), any new math line on it was checked by SymPy server-side, and **Resume** (or a tap of Space) continues the lesson from the step it paused at. Standalone (no desktop host), questions can be typed but not answered.
 
 ## The voice
 

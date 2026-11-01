@@ -617,6 +617,13 @@ class Core:
                    "note": result["note"]})
         self._photo_done(agent, job_id, "done", f"Lesson ready: “{result['lesson']['title']}” ({result['note']}).")
 
+    def lesson_ask(self, lesson: dict, step: int, question: str) -> dict:
+        """A question asked from the board mid-lesson (S16): answered by Muse Spark from the verified
+        lines up to `step` only, every new math line re-checked by SymPy (lesson_ask.py). Synchronous:
+        the board is paused waiting, and the audited client logs the cost like other calls."""
+        from .lesson_ask import ask
+        return ask(self.client, lesson, step, question, memory=self.memory, emit=self.emit)
+
     def check_work(self, image: bytes) -> int:
         """A photo of handwritten working: find the first line that doesn't follow, circle it, say why."""
         if self.compiler is None:

@@ -239,7 +239,7 @@
   async function openLesson(name) {
     try {
       const data = await api.get(`/lessons/${encodeURIComponent(name)}`);
-      if (!(await window.lantern.openBoard(data.lesson))) toast("The board couldn't open that lesson.");
+      if (!(await window.lantern.openBoard(data.lesson, name))) toast("The board couldn't open that lesson.");
     } catch (e) {
       toast(`Couldn't open the board: ${e.message}`);
     }

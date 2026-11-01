@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'">
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*">
 <title>Lantern board</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
@@ -33,8 +33,23 @@
     <p class="voice-note" id="voice-note">Voice: your computer's built-in speech engine (not a Meta model)</p>
   </section>
 
+  <section class="ask-area">
+    <div id="ask-panel" hidden>
+      <p class="ask-live" id="ask-live" aria-live="polite"></p>
+      <form id="ask-form" hidden>
+        <label>Ask about this step <input type="text" id="ask-q" autocomplete="off" maxlength="500"></label>
+        <button type="submit">Ask</button>
+      </form>
+    </div>
+    <div id="answer" hidden>
+      <p class="answer-text" id="answer-text" aria-live="polite"></p>
+      <button id="resume" class="primary">Resume</button>
+    </div>
+  </section>
+
   <nav class="controls" aria-label="Playback">
-    <button id="play" class="primary" aria-keyshortcuts="Space">Play</button>
+    <button id="play" class="primary">Play</button>
+    <button id="ask" title="Hold to ask a question about this step (or hold Space)">Hold to ask</button>
     <button id="step" aria-keyshortcuts="ArrowRight" title="Next step (→)">Step ›</button>
     <button id="restart" aria-keyshortcuts="R" title="Start again (R)">↺ Restart</button>
     <button id="mute" aria-pressed="false" aria-keyshortcuts="M" title="Mute the voice (M); captions stay">Voice on</button>
@@ -52,6 +67,7 @@
 
   <script src="vendor/katex/katex.min.js"></script>
   <script src="lib/timeline.js"></script>
+  <script src="lib/ask.js"></script>
   <script src="board.js"></script>
 </body>
 </html>
