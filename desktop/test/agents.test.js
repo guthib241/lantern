@@ -63,6 +63,44 @@ test('faces: drawn icons and emoji from the server, short emoji from the form', 
   assert.equal(G.parseEmoji('x'.repeat(9)).ok, false);
 });
 
+test('schedule words mirror the server: every day at 09:00, every 2 hours', () => {
+  assert.equal(G.scheduleText({ every: 'day', at: '09:00' }), 'every day at 09:00');
+  assert.equal(G.scheduleText({ every: 'weekday', at: '17:00' }), 'every weekday at 17:00');
+  assert.equal(G.scheduleText({ every: 'week', at: '17:00' }), 'every week at 17:00');
+  assert.equal(G.scheduleText({ every: 'hours', hours: 2 }), 'every 2 hours');
+  assert.equal(G.scheduleText({ every: 'hours', hours: 1 }), 'every 1 hour');
+  assert.equal(G.scheduleText({ every: 'minutely' }), '');
+  assert.equal(G.scheduleText({ every: 'day', at: '9am' }), '');
+  assert.equal(G.scheduleText(null), '');
+});
+
+test('next-run dates: today, tomorrow, then a weekday date', () => {
+  const now = new Date(2026, 10, 2, 8, 0).getTime();   // Mon 2 Nov 2026, local
+  const at = (d, h, m) => new Date(2026, 10, d, h, m).getTime() / 1000;
+  assert.equal(G.formatDue(at(2, 9, 0), now), 'today 09:00');
+  assert.equal(G.formatDue(at(3, 9, 0), now), 'tomorrow 09:00');
+  assert.equal(G.formatDue(at(9, 9, 0), now), 'Mon 9 Nov 09:00');
+  assert.equal(G.formatDue(null, now), '');
+});
+
+test('loop view: schedule line, next and last run, off state', () => {
+  const now = new Date(2026, 10, 2, 8, 0).getTime();
+  assert.deepEqual(G.loopView({}, now), { schedulable: false, enabled: false });
+  const sched = { every: 'day', at: '09:00' };
+  const off = G.loopView({ schedule: sched, loop: { enabled: false } }, now);
+  assert.equal(off.schedulable, true);
+  assert.equal(off.schedule, 'every day at 09:00');
+  assert.equal(off.next, 'Off');
+  assert.equal(off.last, 'Never run yet');
+  const next = new Date(2026, 10, 2, 9, 0).getTime() / 1000;
+  const on = G.loopView({ schedule: sched, loop: { enabled: true, next_run: next, last_task: 7, last_status: 'done' } }, now);
+  assert.equal(on.enabled, true);
+  assert.equal(on.next, 'Next run today 09:00');
+  assert.equal(on.last, 'Last run #7 · ok');
+  assert.equal(G.loopView({ schedule: sched, loop: { last_task: 8, last_status: 'failed' } }, now).last, 'Last run #8 · failed');
+  assert.equal(G.loopView({ schedule: sched, loop: { last_task: 9, last_status: 'cancelled' } }, now).last, 'Last run #9 · stopped');
+});
+
 test('draft round-trips through editable fields', () => {
   const fields = G.draftFields({ ...PACK, extra: 1 });
   assert.equal(fields.tools, 'list_dir\nsearch_files\norganize_files');

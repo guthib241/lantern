@@ -65,3 +65,32 @@ question per input, then starts an ordinary task you watch on the Today tab
 (approved on the card first); **Share** saves the exact file to send someone.
 On a finished task, **Make an agent** drafts a new pack from what it did —
 you edit the blanks and install it like any other pack.
+
+## Loop agents (packs on a schedule)
+
+A pack can carry an optional `schedule`, a suggestion for running on its own:
+
+```json
+"schedule": {"every": "day", "at": "09:00", "inputs": {"folder": "Downloads"}}
+```
+
+`every` is `day`, `weekday` (Monday–Friday), `week` or `hours`. Day-style
+schedules take `at` as `HH:MM` local time; `hours` schedules take `hours`
+(a number, at least 1 — the shortest loop is every hour). `inputs` fills the
+goal's `{blanks}` for every run, so it must cover each one. Schedules are
+validated like the rest of the pack: unknown fields, bad times, short
+intervals and secrets are all refused.
+
+A schedule is only a suggestion: it starts **OFF** when installed. Turning it
+on in the Agents tab asks first — the card shows how often the pack runs and
+the per-run budget — and each due run is an ordinary task with its own
+timeline, receipt and **Stop**. Two runs of the same pack never overlap. Every
+change still needs its own approval card (unanswered cards count as declined,
+never approved), and each run is capped at `LANTERN_TASK_BUDGET_USD`
+($0.10 by default, less than an interactive task's $3).
+
+After **3 failed or stopped runs in a row**, the loop pauses itself and tells
+you on the phone and the desktop. The Agents tab shows "next run at …" and
+"last run: ok / failed / stopped" with its receipt, plus **Pause** / **Resume**
+and **Run now**. From the phone, `loops` lists the loops and `pause <name>`
+turns one off.

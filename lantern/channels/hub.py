@@ -6,6 +6,7 @@ Incoming, from the owner only (everyone else is ignored and counted):
   "status"      -> what Lantern is doing
   "resume"      -> run the tasks cut short when Lantern stopped
   "undo"        -> put back the files the last task moved (one approval, no model call)
+  "loops"       -> scheduled agents and whether each loop is on; "pause <name>" turns one off
   "receipt [N]" -> the last finished task's receipt (or task N's): changes, checks, approvals, data sent, cost
   voice note    -> download -> ffmpeg 16 kHz WAV -> Muse Voice Transcribe (biased toward the
                    names Lantern knows) -> handled like text, with the transcript echoed back
@@ -43,6 +44,8 @@ STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 HELP = re.compile(r"^\W*/?(help|start)\W*$", re.I)
 RESUME = re.compile(r"^\W*/?(resume|continue)\W*$", re.I)
 RECEIPT = re.compile(r"^\W*/?receipt(?:\s+(?:for\s+)?(?:task\s+)?#?(\d+))?\W*$", re.I)
+LOOPS = re.compile(r"^\W*/?loops\W*$", re.I)
+PAUSE = re.compile(r"^\W*/?pause\s+([A-Za-z0-9][A-Za-z0-9-]*)\W*$", re.I)
 LINK_OPEN = re.compile(r"^\W*(?:open\s+this\s+on\s+my\s+laptop\s+|open\s+)?(https?://\S+)\W*$", re.I)
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
@@ -197,6 +200,10 @@ class ChannelHub:
                                      f"(#{', #'.join(map(str, new_ids))})." if new_ids else "Nothing to resume.")
         if m := RECEIPT.match(t):
             return self.say(ch.name, self._receipt(int(m.group(1)) if m.group(1) else None))
+        if LOOPS.match(t):
+            return self.say(ch.name, self._loops())
+        if m := PAUSE.match(t):
+            return self.say(ch.name, self._pause(m.group(1)))
         if UNDO_WORDS.match(t):
             try:
                 task_id = self.core.undo_last()
@@ -213,6 +220,30 @@ class ChannelHub:
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
+
+    def _loops(self) -> str:
+        """Every scheduled pack and whether its loop is on."""
+        from ..reminders import describe
+        loops = self.core.loops()
+        if not loops:
+            return "No scheduled agents. Turn one on in the Agents tab."
+        lines = []
+        for loop in loops:
+            state = "on" if loop["enabled"] else "off"
+            extra = f", next run {describe(loop['next_run'])}" if loop["enabled"] and loop["next_run"] else ""
+            last = f", last run {loop['last_status']}" if loop.get("last_status") else ""
+            lines.append(f"{loop['name']} ({loop.get('description') or 'scheduled'}): {state}{extra}{last}")
+        lines.append("Reply 'pause <name>' to turn one off.")
+        return "\n".join(lines)
+
+    def _pause(self, name: str) -> str:
+        try:
+            self.core.loop_pause(name)
+        except KeyError:
+            return f"No loop called '{name}': no agent by that name is installed."
+        except Exception as e:   # a tampered file refuses instead of pausing
+            return f"Couldn't pause '{name}': {e}."
+        return f"Paused the '{name}' loop."
 
     def _receipt(self, task_id: int | None) -> str:
         from ..receipt import as_text, build
@@ -331,6 +362,8 @@ class ChannelHub:
         elif kind == "reminder":
             note = " (it was due while Lantern was off)" if event.get("late") else ""
             self._outbox.put((None, "text", (f"⏰ Reminder: {event.get('text', '')}{note}",)))
+        elif kind == "loop" and event.get("event") == "paused":
+            self._outbox.put((None, "text", (f"⏸️ {event.get('text', 'A loop paused itself.')}",)))
         elif kind == "done":
             name = self.origin.pop(event.get("id"), None)
             if name and event.get("status") != "cancelled":  # STOP already got its own reply

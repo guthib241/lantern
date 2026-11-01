@@ -128,6 +128,61 @@
     return { kind: 'none' };
   }
 
+  /** Words for a pack's schedule: 'every day at 09:00'. Mirrors lantern/agentpacks.py. */
+  function scheduleText(sched) {
+    const s = sched || {};
+    if (s.every === 'hours') {
+      const n = Number(s.hours);
+      if (!(n >= 1)) return '';
+      return `every ${n} hour${n === 1 ? '' : 's'}`;
+    }
+    if (s.every === 'day' || s.every === 'weekday' || s.every === 'week') {
+      if (typeof s.at !== 'string' || !/^\d\d:\d\d$/.test(s.at)) return '';
+      const every = s.every === 'day' ? 'every day' : s.every === 'weekday' ? 'every weekday' : 'every week';
+      return `${every} at ${s.at}`;
+    }
+    return '';
+  }
+
+  /** 'today 09:00', 'tomorrow 09:00' or 'Mon 3 Nov 09:00' for a loop's next run (seconds). Pure. */
+  function formatDue(ts, nowMs) {
+    if (ts == null) return '';
+    const now = new Date(nowMs);
+    const due = new Date(ts * 1000);
+    const hhmm = `${String(due.getHours()).padStart(2, '0')}:${String(due.getMinutes()).padStart(2, '0')}`;
+    const atMidnight = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diff = Math.round((atMidnight(due) - atMidnight(now)) / 86400000);
+    if (diff === 0) return `today ${hhmm}`;
+    if (diff === 1) return `tomorrow ${hhmm}`;
+    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${DAYS[due.getDay()]} ${due.getDate()} ${MONTHS[due.getMonth()]} ${hhmm}`;
+  }
+
+  /** A finished run's status in the card's words: done -> ok, failed stays, anything stopped. */
+  function lastWord(status) {
+    if (status === 'done') return 'ok';
+    if (status === 'failed') return 'failed';
+    if (status === 'cancelled' || status === 'interrupted') return 'stopped';
+    return String(status || 'unknown');
+  }
+
+  /** Loop state for a card: schedule line, next/last run. `nowMs` is Date.now(). Pure. */
+  function loopView(pack, nowMs) {
+    const p = pack || {};
+    if (!p.schedule) return { schedulable: false, enabled: false };
+    const loop = p.loop || {};
+    return {
+      schedulable: true,
+      enabled: !!loop.enabled,
+      schedule: scheduleText(p.schedule),
+      next: loop.enabled && loop.next_run ? `Next run ${formatDue(loop.next_run, nowMs)}`
+        : loop.enabled ? 'Due on the next check' : 'Off',
+      last: loop.last_status ? `Last run #${loop.last_task} · ${lastWord(loop.last_status)}` : 'Never run yet',
+      lastTask: loop.last_task || null,
+    };
+  }
+
   /** An emoji typed for "Make a face" -> {ok, emoji} or {ok:false, error}. */
   function parseEmoji(text) {
     const emoji = String(text == null ? '' : text).trim();
@@ -137,5 +192,6 @@
   }
 
   return { FORMAT, MAX_VALUE, cardView, runPayload, parsePackFile, packFileName, packFileText,
-           draftFields, packFromFields, faceView, parseEmoji, signatureBadge };
+           draftFields, packFromFields, faceView, parseEmoji, signatureBadge,
+           scheduleText, formatDue, loopView };
 });

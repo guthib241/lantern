@@ -13,6 +13,7 @@ Safety, in code rather than prompts:
 """
 from __future__ import annotations
 
+import datetime as dt
 import fnmatch
 import json
 import re
@@ -39,8 +40,13 @@ PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
 MCP_TOOL = re.compile(r"^[a-z0-9_-]{1,24}\.[A-Za-z0-9_*-]+$")
 
 KEYS = {"format", "name", "title", "description", "author", "version",
-        "inputs", "goal", "instructions", "tools", "signature"}
+        "inputs", "goal", "instructions", "tools", "schedule", "signature"}
 INPUT_KEYS = {"key", "question", "example"}
+SCHEDULE_KEYS = {"every", "at", "hours", "inputs"}
+SCHEDULE_EVERY = ("day", "weekday", "week", "hours")
+AT = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+MIN_INTERVAL_HOURS = 1.0   # the shortest loop: every hour
+MAX_LOOP_FAILURES = 3      # failed/stopped runs in a row before the loop pauses itself
 EMOJI_MAX = 8             # an emoji face is a glance, not a sentence
 FACE_ICON_SUFFIX = ".webp"   # the generated icon lives next to the pack as <name>.webp
 
@@ -63,6 +69,26 @@ class Input:
 
 
 @dataclass
+class Schedule:
+    """A loop suggestion from the pack file: when to run on its own. It starts
+    OFF when installed; the user turns it on per pack (Core's loop state)."""
+    every: str = "day"          # day | weekday | week | hours
+    at: str | None = None       # "09:00" local time (day, weekday, week)
+    hours: float | None = None  # every N hours, at least 1 (hours)
+    inputs: dict = field(default_factory=dict)  # blanks for the goal at each run
+
+    def as_dict(self) -> dict:
+        d: dict = {"every": self.every}
+        if self.at is not None:
+            d["at"] = self.at
+        if self.hours is not None:
+            d["hours"] = self.hours
+        if self.inputs:
+            d["inputs"] = dict(self.inputs)
+        return d
+
+
+@dataclass
 class Pack:
     name: str
     title: str
@@ -74,6 +100,7 @@ class Pack:
     instructions: str = ""
     tools: list[str] = field(default_factory=list)
     disabled: bool = False
+    schedule: Schedule | None = None   # a loop suggestion; None means no schedule
     signature: dict | None = None   # Ed25519 trust seal (packsign.py); None when unsigned
 
     def render_goal(self, inputs: dict | None) -> str:
@@ -95,10 +122,12 @@ class Pack:
         return out
 
     def as_dict(self) -> dict:
-        d = {"format": FORMAT, "name": self.name, "title": self.title,
-             "description": self.description, "author": self.author, "version": self.version,
-             "inputs": [i.as_dict() for i in self.inputs],
-             "goal": self.goal, "instructions": self.instructions, "tools": list(self.tools)}
+        d: dict = {"format": FORMAT, "name": self.name, "title": self.title,
+                   "description": self.description, "author": self.author, "version": self.version,
+                   "inputs": [i.as_dict() for i in self.inputs],
+                   "goal": self.goal, "instructions": self.instructions, "tools": list(self.tools)}
+        if self.schedule is not None:
+            d["schedule"] = self.schedule.as_dict()
         if self.signature is not None:
             d["signature"] = dict(self.signature)
         return d
@@ -176,12 +205,97 @@ def validate(data: dict) -> Pack:
             tools.append(tool)
         else:
             raise PackError(f"unknown tool {tool!r}")
+    schedule = _validate_schedule(data.get("schedule"), seen, goal)
     pack = Pack(name, title, description, author, version, inputs, goal, instructions, tools,
-                signature=signature)
+                schedule=schedule, signature=signature)
     _refuse_secrets(pack)
     if signature is not None and packsign.verify(data) == packsign.TAMPERED:
         raise PackError("this pack was changed after it was signed")
     return pack
+
+
+def _validate_schedule(raw: Any, input_keys: set[str], goal: str) -> Schedule | None:
+    """The optional loop suggestion. Strict: unknown keys, a bad `every`, a clock
+    time that isn't HH:MM, an interval under an hour, or inputs the pack doesn't
+    declare are all refused. Every `{blank}` in the goal needs a schedule input,
+    or the loop could never run on its own."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise PackError("a pack's schedule must be an object")
+    if unknown := sorted(set(raw) - SCHEDULE_KEYS):
+        raise PackError(f"unknown schedule field{'s' if len(unknown) != 1 else ''}: {', '.join(unknown)}")
+    every = raw.get("every")
+    if every not in SCHEDULE_EVERY:
+        raise PackError(f"schedule.every must be one of {', '.join(SCHEDULE_EVERY)}")
+    at = raw.get("at")
+    hours = raw.get("hours")
+    if every == "hours":
+        if at is not None:
+            raise PackError("a schedule with every='hours' takes 'hours', not 'at'")
+        if isinstance(hours, bool) or not isinstance(hours, (int, float)):
+            raise PackError("a schedule with every='hours' needs a number in 'hours'")
+        if hours < MIN_INTERVAL_HOURS:
+            raise PackError("a schedule with every='hours' needs at least 1 hour")
+        hours = float(hours)
+    else:
+        if hours is not None:
+            raise PackError(f"a schedule with every={every!r} takes 'at' (HH:MM), not 'hours'")
+        if not isinstance(at, str) or not AT.match(at):
+            raise PackError(f"a schedule with every={every!r} needs 'at' as HH:MM (e.g. '09:00')")
+    sched_inputs = raw.get("inputs", {})
+    if not isinstance(sched_inputs, dict):
+        raise PackError("a schedule's inputs must be an object")
+    for key, value in sched_inputs.items():
+        if key not in input_keys:
+            raise PackError(f"the schedule fills '{key}' but the pack has no such input")
+        if not isinstance(value, str) or len(value) > MAX_VALUE:
+            raise PackError(f"schedule value for '{key}' must be plain text (at most {MAX_VALUE} characters)")
+    for key in PLACEHOLDER.findall(goal):
+        if key not in sched_inputs:
+            raise PackError(f"the schedule must fill '{{{key}}}' or the loop could never run")
+    return Schedule(every=every, at=at, hours=hours, inputs=dict(sched_inputs))
+
+
+def _at_on(day: dt.datetime, at: str) -> dt.datetime:
+    """That date at HH:MM local time (naive local, like reminders.py)."""
+    hour, minute = int(at[:2]), int(at[3:])
+    return day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def schedule_next(schedule: Schedule, after: float, last: float | None = None) -> float:
+    """The next run strictly after `after` (a timestamp; `last` is the previous
+    run, for the weekly anchor and the hourly cadence). Pure: tests pass a fake clock."""
+    if schedule.every == "hours":
+        interval = float(schedule.hours or MIN_INTERVAL_HOURS)
+        base = last if last is not None else after
+        nxt = base + interval * 3600
+        while nxt <= after:
+            nxt += interval * 3600
+        return nxt
+    at = schedule.at or "09:00"
+    if schedule.every == "week" and last is not None:
+        cand = _at_on(dt.datetime.fromtimestamp(last) + dt.timedelta(days=7), at)
+        while cand.timestamp() <= after:
+            cand += dt.timedelta(days=7)
+        return cand.timestamp()
+    base = dt.datetime.fromtimestamp(after)
+    for ahead in range(8):   # a weekday run is never more than a weekend away
+        cand = _at_on(base + dt.timedelta(days=ahead), at)
+        if cand.timestamp() > after and (schedule.every != "weekday" or cand.weekday() < 5):
+            return cand.timestamp()
+    raise PackError("no weekday in the next 8 days")  # unreachable
+
+
+def schedule_description(schedule: Schedule) -> str:
+    """Plain words for the approval card and the Agents tab: 'every day at 09:00'."""
+    if schedule.every == "hours":
+        n = float(schedule.hours or MIN_INTERVAL_HOURS)
+        word = "hour" if n == 1 else "hours"
+        return f"every {n:g} {word}"
+    at = schedule.at or "09:00"
+    return {"day": f"every day at {at}", "weekday": f"every weekday at {at}",
+            "week": f"every week at {at}"}[schedule.every]
 
 
 def _checked_signature(sig: Any) -> dict | None:
@@ -201,6 +315,8 @@ def _refuse_secrets(pack: Pack) -> None:
     texts = [pack.title, pack.description, pack.author, pack.version,
              pack.goal, pack.instructions, *pack.tools]
     texts += [t for i in pack.inputs for t in (i.key, i.question, i.example)]
+    if pack.schedule is not None:
+        texts += [str(v) for v in pack.schedule.inputs.values()]
     for text in texts:
         if SCRUBBER.scrub(text).count:
             raise PackError("that pack holds something that looks like a secret; refusing it")
@@ -231,6 +347,44 @@ def canonical_bytes(data: dict) -> bytes:
     return (json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode()
 
 
+LOOP_DEFAULT = {"enabled": False, "next_run": None, "last_task": None,
+                "last_status": None, "failures": 0, "running": None}
+LOOP_TYPES = {"enabled": bool, "next_run": (int, float, type(None)), "last_task": (int, type(None)),
+              "last_status": (str, type(None)), "failures": int, "running": (int, type(None))}
+
+
+def _loop_of(raw: Any, *, strict: bool = False) -> dict:
+    """Local loop state from a store wrapper. Missing or hand-edited state means
+    OFF; `save_loop` is strict and refuses unknown or wrongly typed fields."""
+    if raw is None:
+        return dict(LOOP_DEFAULT)
+    if not isinstance(raw, dict):
+        if strict:
+            raise PackError("a loop must be an object")
+        return dict(LOOP_DEFAULT)
+    if strict and (unknown := sorted(set(raw) - set(LOOP_DEFAULT))):
+        raise PackError(f"unknown loop field{'s' if len(unknown) != 1 else ''}: {', '.join(unknown)}")
+    loop = dict(LOOP_DEFAULT)
+    for key in LOOP_DEFAULT:
+        if key not in raw:
+            continue
+        value = raw[key]
+        if isinstance(value, bool) and LOOP_TYPES[key] is int:   # True is an int, but not a count
+            if strict:
+                raise PackError(f"loop field '{key}' must be a number")
+            continue
+        if not isinstance(value, LOOP_TYPES[key]):
+            if strict:
+                raise PackError(f"loop field '{key}' has the wrong type")
+            continue
+        loop[key] = value
+    if not isinstance(loop["failures"], int) or isinstance(loop["failures"], bool) or loop["failures"] < 0:
+        if strict:
+            raise PackError("loop field 'failures' must be a number")
+        loop["failures"] = 0
+    return loop
+
+
 @dataclass
 class PackStore:
     """Packs in Lantern's own folder. Files hold the pack plus a `disabled`
@@ -249,11 +403,12 @@ class PackStore:
         if self.dir.exists():
             for path in sorted(self.dir.glob("*.json")):
                 try:
-                    pack, disabled = self._load(path)
+                    pack, disabled, loop = self._load(path)
                 except (PackError, ValueError, OSError):
                     continue   # a hand-edited file that no longer validates stays unlisted
                 info = packsign.signature_info(pack.as_dict())
-                out.append({**pack.as_dict(), "disabled": disabled, "face": self._listed_face(path, pack.name),
+                out.append({**pack.as_dict(), "disabled": disabled, "loop": loop,
+                            "face": self._listed_face(path, pack.name),
                             "signature_status": info["status"], "fingerprint": info["fingerprint"]})
         return out
 
@@ -269,15 +424,15 @@ class PackStore:
         path = self._path(name)
         if not path.exists():
             raise KeyError(f"no agent called {name!r}")
-        pack, disabled = self._load(path)
+        pack, disabled, _ = self._load(path)
         pack.disabled = disabled
         return pack
 
-    def _load(self, path: Path) -> tuple[Pack, bool]:
+    def _load(self, path: Path) -> tuple[Pack, bool, dict]:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict) or not isinstance(raw.get("pack"), dict):
             raise PackError(f"{path.name} is not an agent pack file")
-        return validate(raw["pack"]), bool(raw.get("disabled", False))
+        return validate(raw["pack"]), bool(raw.get("disabled", False)), _loop_of(raw.get("loop"))
 
     @staticmethod
     def _stored_face(path: Path) -> str | None:
@@ -290,30 +445,32 @@ class PackStore:
         emoji = face.get("emoji") if isinstance(face, dict) else None
         return emoji if isinstance(emoji, str) and emoji else None
 
-    def _write(self, pack: Pack, *, disabled: bool, face: dict | None) -> None:
-        """Store the wrapper: the pack plus local-only state (disabled, face)."""
+    def _write(self, pack: Pack, *, disabled: bool, face: dict | None, loop: dict | None = None) -> None:
+        """Store the wrapper: the pack plus local-only state (disabled, face, loop)."""
         wrapper: dict[str, Any] = {"format": STORE_FORMAT, "disabled": disabled, "pack": pack.as_dict()}
         if face:
             wrapper["face"] = face
+        wrapper["loop"] = _loop_of(loop)   # the loop is local state, never shared
         self.dir.mkdir(parents=True, exist_ok=True)
         self._path(pack.name).write_text(json.dumps(wrapper, ensure_ascii=False, indent=2,
                                                     sort_keys=True) + "\n", encoding="utf-8")
 
     def install(self, data: dict, *, replace: bool = False) -> Pack:
         """Validate and store `<name>.json`. Refuses to overwrite a different
-        author's pack with the same name unless `replace=True`."""
+        author's pack with the same name unless `replace=True`. A fresh install
+        starts the loop OFF, even when the pack suggests a schedule."""
         pack = validate(data)
         path = self._path(pack.name)
         face = self._stored_face(path) if path.exists() else None
         if path.exists():
             try:
-                old, _ = self._load(path)
+                old, _, _ = self._load(path)
             except (PackError, ValueError, OSError) as e:
                 raise PackError(f"existing file for {pack.name!r} is broken ({e}); refusing to touch it") from e
             if old.author != pack.author and not replace:
                 raise PackError(f"an agent called {pack.name!r} by {old.author} is already installed "
                                 f"(pass replace=True to take its place)")
-        self._write(pack, disabled=False, face={"emoji": face} if face else None)
+        self._write(pack, disabled=False, face={"emoji": face} if face else None, loop=None)
         stored = self.get(pack.name)   # verify: read it back
         if stored.as_dict() != pack.as_dict():
             raise PackError(f"agent {pack.name!r} didn't store correctly")
@@ -321,7 +478,7 @@ class PackStore:
 
     def store_signed(self, name: str, data: dict) -> Pack:
         """Keep a freshly signed pack: same name, validated, with the laptop's
-        disabled flag and face left alone. Raises PackError when refused."""
+        disabled flag, face and loop left alone. Raises PackError when refused."""
         pack = validate(data)   # refuses a tampered file, like every other load
         if pack.name != name:
             raise PackError(f"signed pack is for {pack.name!r}, not {name!r}")
@@ -329,8 +486,8 @@ class PackStore:
         if not path.exists():
             raise KeyError(f"no agent called {name!r}")
         face = self._stored_face(path)
-        _, disabled = self._load(path)
-        self._write(pack, disabled=disabled, face={"emoji": face} if face else None)
+        _, disabled, loop = self._load(path)
+        self._write(pack, disabled=disabled, face={"emoji": face} if face else None, loop=loop)
         stored = self.get(pack.name)   # verify: read it back
         if stored.as_dict() != pack.as_dict():
             raise PackError(f"agent {pack.name!r} didn't store correctly")
@@ -346,11 +503,36 @@ class PackStore:
         path = self._path(name)
         if not path.exists():
             raise KeyError(f"no agent called {name!r}")
-        pack, _ = self._load(path)
+        pack, _, loop = self._load(path)
         face = self._stored_face(path)
-        self._write(pack, disabled=disabled, face={"emoji": face} if face else None)
+        self._write(pack, disabled=disabled, face={"emoji": face} if face else None, loop=loop)
         pack.disabled = disabled
         return pack
+
+    # ---- loops: a pack's schedule suggestion, and whether it runs on its own --
+    def loop_state(self, name: str) -> dict:
+        """Local loop state for a pack. Defaults to OFF. Raises KeyError if unknown."""
+        path = self._path(name)
+        if not path.exists():
+            raise KeyError(f"no agent called {name!r}")
+        _, _, loop = self._load(path)   # re-validates the pack, like every other load
+        return loop
+
+    def save_loop(self, name: str, loop: dict) -> dict:
+        """Keep new loop state (enabled, next_run, last task, failures). The pack
+        itself is untouched; unknown or wrongly typed fields are refused. Verifies
+        by reading the file back. Raises KeyError if unknown."""
+        kept = _loop_of(loop, strict=True)
+        path = self._path(name)
+        if not path.exists():
+            raise KeyError(f"no agent called {name!r}")
+        pack, disabled, _ = self._load(path)
+        face = self._stored_face(path)
+        self._write(pack, disabled=disabled, face={"emoji": face} if face else None, loop=kept)
+        back, _, saved = self._load(path)   # verify: read it back
+        if back.as_dict() != pack.as_dict() or saved != kept:
+            raise PackError(f"agent {name!r}'s loop didn't store correctly")
+        return saved
 
     def export(self, name: str) -> bytes:
         """The exact pack file, to share. Faces stay on this laptop: the export
@@ -370,7 +552,7 @@ class PackStore:
         """Keep a short emoji as this agent's face. No model call, no approval."""
         pack = self.get(name)   # KeyError if not installed
         face = {"emoji": validate_emoji(emoji)}
-        self._write(pack, disabled=pack.disabled, face=face)
+        self._write(pack, disabled=pack.disabled, face=face, loop=self.loop_state(name))
         return face
 
     def save_face_icon(self, name: str, image: bytes) -> dict:

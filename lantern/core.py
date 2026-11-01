@@ -21,10 +21,10 @@ from . import config as config_mod
 from . import models, packsign
 from . import studio as studio_mod
 from .agent import Agent
-from .agentpacks import PackError, PackStore, draft_pack, pack_suffix
+from .agentpacks import MAX_LOOP_FAILURES, Pack, PackError, PackStore, Schedule, draft_pack, pack_suffix, schedule_description, schedule_next
 from .approvals import ApprovalBus, ApprovalError, BusGate
 from .audit import AuditLog, GuardedClient
-from .budget import BudgetGuard, Limits
+from .budget import BudgetGuard, Limits, scheduled_task_budget, usd
 from .crypto import cipher_for
 from .email_tool import EmailService, EmailSettings
 from .envmap import EnvMap
@@ -137,6 +137,7 @@ class Core:
                            on_event=self._agent_event)
         self._sinks: list[EventSink] = []
         self._queue: queue.Queue = queue.Queue()
+        self._loops_lock = threading.Lock()   # loop state lives in the pack files; the reminder thread and routes share it
         self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
         self._undo_lock = threading.Lock()
         self.interrupted = recover_interrupted(self.memory)   # before the worker starts taking tasks
@@ -198,12 +199,12 @@ class Core:
         self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": None})
         return task.id
 
-    def submit_pack(self, name: str, inputs: dict) -> int:
+    def submit_pack(self, name: str, inputs: dict, task_budget: float | None = None) -> int:
         """Run an installed agent pack: the goal is rendered from its blanks,
         its instructions run last, its tools are allowlisted and the task starts
         tainted. The pack is re-validated on every run, so a file edited on disk
         afterwards is refused. Stopping uses the kill switch; watching uses the
-        task timeline."""
+        task timeline. `task_budget` caps one run's spending (scheduled loops)."""
         try:
             found = self.packs.get(name)   # re-verifies the signature, not only at install
         except KeyError:
@@ -216,13 +217,19 @@ class Core:
             rendered = found.render_goal(inputs)
         except PackError as e:
             raise ValueError(str(e)) from None
-        goal = f"[agent:{found.name}] {rendered}"
-        suffix, allowed = pack_suffix(found), set(found.tools)
+        return self._queue_pack_task(found, rendered, task_budget=task_budget)
+
+    def _queue_pack_task(self, pack: Pack, rendered: str, task_budget: float | None = None) -> int:
+        """Queue a validated pack's run as an ordinary task (timeline, receipt, Stop)."""
+        goal = f"[agent:{pack.name}] {rendered}"
+        suffix, allowed = pack_suffix(pack), set(pack.tools)
         task = self.memory.start_task(goal)
+        if task_budget is not None:
+            self.budget.set_task_budget(task.id, task_budget)
         self._queue.put((task.id, goal,
                          lambda: self.agent.run(goal, task_id=task.id, instructions_suffix=suffix,
                                                 allowed_tools=allowed, taint=True)))
-        self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": found.name})
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": pack.name})
         return task.id
 
     def _work(self) -> None:
@@ -560,6 +567,176 @@ class Core:
             raise ValueError(str(e)) from None
         return data
 
+    # ---- loop agents (packs on a schedule; T3c) -----------------------------------
+    def scheduled_budget(self) -> float | None:
+        """One scheduled run's own task budget: LANTERN_TASK_BUDGET_USD, default $0.10."""
+        return scheduled_task_budget(dict(os.environ))
+
+    def loops(self) -> list[dict]:
+        """Loop status for every installed pack that suggests a schedule."""
+        return [self._loop_view(e["name"], e) for e in self.packs.list() if e.get("schedule") is not None]
+
+    def loop_status(self, name: str) -> dict:
+        """Loop status for one pack (scheduled or not). Raises KeyError if unknown."""
+        pack = self.packs.get(name)   # KeyError if unknown; PackError if tampered
+        return self._loop_view(name, {**pack.as_dict(), "loop": self.packs.loop_state(name)})
+
+    @staticmethod
+    def _loop_view(name: str, entry: dict) -> dict:
+        sched = entry.get("schedule")
+        words = None
+        if isinstance(sched, Schedule):
+            words, sched = schedule_description(sched), sched.as_dict()
+        elif isinstance(sched, dict):
+            try:
+                words = schedule_description(Schedule(**{k: sched.get(k)
+                                                         for k in ("every", "at", "hours", "inputs")}))
+            except (TypeError, KeyError):
+                words = None
+        loop = dict(entry.get("loop") or {})
+        return {"name": name, "title": entry.get("title", name), "scheduled": sched is not None,
+                "schedule": sched, "description": words,
+                "enabled": bool(loop.get("enabled", False)), "next_run": loop.get("next_run"),
+                "last_task": loop.get("last_task"), "last_status": loop.get("last_status"),
+                "failures": loop.get("failures", 0), "running": loop.get("running")}
+
+    def loop_resume(self, name: str) -> dict:
+        """Turn a loop on, after an approval card showing how often it runs and the
+        per-run budget. A run still needs its own approvals; unanswered cards count
+        as declined. The loop starts from now, never by catching up."""
+        try:
+            pack = self.packs.get(name)   # re-validated: a changed file is refused, not looped
+        except KeyError:
+            raise KeyError(name) from None
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        if pack.schedule is None:
+            raise ValueError(f"agent {name!r} has no schedule")
+        if pack.disabled:
+            raise ValueError(f"agent {name!r} is disabled")
+        budget = self.scheduled_budget()
+        per_run = usd(budget) if budget is not None else "no per-run cap"
+        summary = (f"Run agent '{pack.title}' {schedule_description(pack.schedule)} (about {per_run} per run). "
+                   f"Each run is an ordinary task with its own timeline and receipt; every change still needs "
+                   f"approval, unanswered cards count as declined, and it pauses itself after "
+                   f"{MAX_LOOP_FAILURES} failed runs in a row.")
+        payload = {"name": name, "schedule": pack.schedule.as_dict(), "budget_usd": budget}
+        commit = self.toolbox.gate.ask("enable_loop", summary, payload, tainted=False)
+        if commit is None:
+            return {"enabled": False, "reason": "user declined", "name": name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"enabled": False, "reason": str(e), "name": name}
+        loop = self.packs.loop_state(name)
+        loop.update(enabled=True, failures=0, next_run=schedule_next(pack.schedule, time.time()))
+        saved = self.packs.save_loop(name, loop)
+        self.emit({"type": "loop", "event": "resumed", "name": name, "next_run": saved["next_run"]})
+        return {"enabled": True, "name": name, "next_run": saved["next_run"], "budget_usd": budget}
+
+    def loop_pause(self, name: str) -> dict:
+        """Turn a loop off. A run already going keeps going (STOP stops it).
+        No approval: pausing spends nothing."""
+        try:
+            loop = self.packs.loop_state(name)
+        except KeyError:
+            raise KeyError(name) from None
+        loop["enabled"] = False
+        saved = self.packs.save_loop(name, loop)
+        self.emit({"type": "loop", "event": "paused", "name": name, "failures": saved["failures"],
+                   "text": f"Paused the '{name}' loop."})
+        return {"name": name, "enabled": False}
+
+    def loop_run_now(self, name: str) -> int:
+        """Start this loop's scheduled run right away, as an ordinary task."""
+        try:
+            pack = self.packs.get(name)
+        except KeyError:
+            raise KeyError(name) from None
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        if pack.schedule is None:
+            raise ValueError(f"agent {name!r} has no schedule")
+        if pack.disabled:
+            raise ValueError(f"agent {name!r} is disabled")
+        try:
+            rendered = pack.render_goal(pack.schedule.inputs)
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        return self._queue_pack_task(pack, rendered)
+
+    def check_loops(self, now: float | None = None) -> list[dict]:
+        """Settle finished loop runs and fire every due loop (each run is an ordinary
+        pack task: allowlisted, tainted, budgeted). Called from the reminder loop;
+        tests pass a fake clock. One bad pack never stops the other loops."""
+        now = time.time() if now is None else now
+        fired = []
+        with self._loops_lock:
+            for entry in self.packs.list():
+                try:
+                    self._check_loop(entry, now, fired)
+                except Exception:
+                    pass
+        return fired
+
+    def _check_loop(self, entry: dict, now: float, fired: list) -> None:
+        name = entry["name"]
+        try:
+            pack = self.packs.get(name)   # re-validated: an edited file refuses instead of running
+        except (KeyError, PackError, ValueError, OSError):
+            return
+        loop = dict(entry.get("loop") or self.packs.loop_state(name))
+        if loop.get("running") is not None and not self._loop_running(loop["running"]):
+            loop = self._settle_loop(pack, loop)
+            if loop is None:   # just paused itself after repeated failures: stay quiet this tick
+                return
+        if not loop["enabled"] or pack.disabled or pack.schedule is None:
+            return
+        if loop["running"] is not None:
+            return   # the previous run is still going: never overlap
+        if loop["next_run"] is None or now < loop["next_run"]:
+            return
+        try:
+            rendered = pack.render_goal(pack.schedule.inputs)
+        except PackError:
+            return
+        try:
+            task_id = self._queue_pack_task(pack, rendered, task_budget=self.scheduled_budget())
+        except Exception:
+            loop["next_run"] = schedule_next(pack.schedule, now, last=now)   # try again next time, not every tick
+            self.packs.save_loop(name, loop)
+            return
+        loop["running"] = task_id
+        loop["next_run"] = schedule_next(pack.schedule, now, last=now)
+        self.packs.save_loop(name, loop)
+        event = {"type": "loop", "event": "fired", "name": name, "task_id": task_id}
+        self.emit(event)
+        fired.append(event)
+
+    def _loop_running(self, task_id: int) -> bool:
+        try:
+            return self.memory.get_task(task_id).status == "active"
+        except KeyError:
+            return False   # forgotten while running: treat it as settled
+
+    def _settle_loop(self, pack, loop: dict) -> dict | None:
+        try:
+            status = self.memory.get_task(loop["running"]).status
+        except KeyError:
+            status = "failed"
+        self.budget.clear_task_budget(loop["running"])
+        loop["last_task"], loop["last_status"], loop["running"] = loop["running"], status, None
+        loop["failures"] = 0 if status == "done" else loop["failures"] + 1
+        if loop["failures"] >= MAX_LOOP_FAILURES and loop["enabled"]:
+            loop["enabled"] = False
+            self.packs.save_loop(pack.name, loop)
+            self.emit({"type": "loop", "event": "paused", "name": pack.name, "failures": loop["failures"],
+                       "text": (f"Paused agent '{pack.title}': {loop['failures']} failed runs in a row. "
+                                "Resume it in the Agents tab.")})
+            return None
+        self.packs.save_loop(pack.name, loop)
+        return loop
+
     # ---- forgetting (real deletes: secure_delete + VACUUM; Lantern's own files overwritten) -------
     def forget_task(self, task_id: int) -> dict:
         if task_id == self.current_task:
@@ -593,7 +770,8 @@ class Core:
                 pass
 
     def check_reminders(self, now: float | None = None) -> list[dict]:
-        """Deliver every due reminder (late ones say so); repeating ones move to their next time."""
+        """Deliver every due reminder (late ones say so); repeating ones move to their next time.
+        Loop agents ride the same timer (no second thread): due loops fire here too."""
         from .reminders import LATE_AFTER, next_due
         now = time.time() if now is None else now
         fired = []
@@ -604,6 +782,7 @@ class Core:
                      "late": now - r.due_at > LATE_AFTER, "next_due": nxt}
             self.emit(event)
             fired.append(event)
+        self.check_loops(now)
         return fired
 
     def cancel_reminder(self, reminder_id: int) -> bool:

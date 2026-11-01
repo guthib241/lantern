@@ -748,6 +748,7 @@
           h('div', { class: `agent-sig ${sig.kind}` }, sig.text))),
       c.description ? h('p', { class: 'reply' }, c.description) : null,
       c.tools.length ? h('div', { class: 'agent-tools' }, c.tools.map((t) => h('span', { class: 'chip' }, t))) : null,
+      loopBox(pack),
       run ? h('div', { class: 'agent-run' },
         h('span', {}, run.live ? `Running as task #${run.id}` : `Last run: #${run.id} · ${run.status}`),
         h('div', { class: 'row-btns' },
@@ -821,6 +822,54 @@
       loadAgents();
     } catch (e) {
       toast(`Couldn't change it: ${e.message}`);
+    }
+  }
+
+  // ---- loops: packs that run on a schedule (the loop state rides on the agent list) --
+  function loopBox(pack) {
+    const lv = LanternAgents.loopView(pack, Date.now());
+    if (!lv.schedulable) return null;
+    return h('div', { class: 'agent-loop' },
+      h('div', { class: 'status' }, `🔁 ${lv.schedule || 'On a schedule'}`),
+      h('div', { class: 'status' }, lv.next),
+      h('div', { class: 'status' },
+        h('span', {}, lv.last),
+        lv.lastTask ? h('button', { class: 'forget quiet', onclick: () => showReceipt(lv.lastTask) }, 'Receipt') : null),
+      h('div', { class: 'actions' },
+        lv.enabled
+          ? h('button', { class: 'forget', onclick: () => pauseLoop(pack) }, 'Pause')
+          : h('button', { class: 'forget', onclick: () => resumeLoop(pack) }, 'Resume'),
+        h('button', { class: 'forget', onclick: () => runLoopNow(pack) }, 'Run now')));
+  }
+
+  async function resumeLoop(pack) {
+    try {   // approval card first: how often it runs and the per-run budget
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/loop/resume`);
+      toast(r.enabled ? `“${pack.title || pack.name}” runs on schedule now.` : `Not turned on: ${r.reason || 'declined'}.`);
+    } catch (e) {
+      toast(`Couldn't turn it on: ${e.message}`);
+    }
+    loadAgents();
+  }
+
+  async function pauseLoop(pack) {
+    try {
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/loop/pause`);
+      toast(`Paused “${pack.title || pack.name}”. A run already going keeps going.`);
+    } catch (e) {
+      toast(`Couldn't pause it: ${e.message}`);
+    }
+    loadAgents();
+  }
+
+  async function runLoopNow(pack) {
+    try {
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/loop/run-now`);
+      agentRunTask[pack.name] = r.task_id;
+      renderAgents();
+      showTab('tasks');   // the live timeline is the Today task view; Stop is in the header
+    } catch (e) {
+      toast(`Couldn't start it: ${e.message}`);
     }
   }
 
@@ -987,11 +1036,13 @@
   api.events((e) => {
     state = LanternState.reduce(state, { ts: now(), ...e });
     renderAll();
-    // A tracked agent run finished or stopped: refresh its Watch/Stop line, unless the
-    // user is mid-form (re-rendering would wipe what they typed).
-    if ((e.type === 'done' || e.type === 'stopped') && tab === 'agents' && !agentRunOpen && !agentDraft) {
+    // A tracked agent run finished or stopped, or a loop changed: refresh its
+    // Watch/Stop line, unless the user is mid-form (re-rendering would wipe typing).
+    if ((e.type === 'done' || e.type === 'stopped' || e.type === 'loop')
+        && tab === 'agents' && !agentRunOpen && !agentDraft) {
       renderAgents();
     }
+    if (e.type === 'loop' && e.event === 'paused') toast(`⏸️ ${e.text || 'A loop paused itself.'}`);
     if (e.type === 'approval' && e.event === 'requested') window.lantern.showPanel();
     if (e.type === 'done' && tab === 'privacy') loadPrivacy();
     if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);

@@ -23,6 +23,7 @@ in the browser can't drive Lantern through localhost.
   GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/sign,
   POST /agents/{name}/run, POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft,
   POST /agents/{name}/face {emoji}|{generate}, GET /agents/{name}/face   the icon file (T4c)
+  GET  /loops, POST /agents/{name}/loop/resume|pause|run-now   loop agents: packs on a schedule (T3c)
   POST /avatar/design {brief, style}   one preview image; POST /avatar/design/{id}/accept
   GET  /avatar/manifest, GET /avatar/file/{id}/{expression}   the active avatar (T4a)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
@@ -400,6 +401,7 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(422, str(e))
         info = packsign.signature_info(pack.as_dict())
         return {**pack.as_dict(), "disabled": pack.disabled, "face": core.packs.face(name),
+                "loop": core.packs.loop_state(name),
                 "signature_status": info["status"], "fingerprint": info["fingerprint"],
                 "mine": core.pack_author_is_you(pack.author)}
 
@@ -438,6 +440,45 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             raise HTTPException(404, f"no agent called {name!r}")
         except PackError as e:
             raise HTTPException(422, str(e))
+
+    @app.get("/loops", dependencies=[Depends(auth)])
+    def list_loops():
+        """Loop status for every installed pack that suggests a schedule."""
+        return {"loops": core.loops()}
+
+    @app.post("/agents/{name}/loop/resume", dependencies=[Depends(auth)])
+    def resume_loop(name: str):
+        """Turn a loop on. Blocks until the enable card (how often, per-run budget) is approved."""
+        from .agentpacks import PackError as _PackError
+        try:
+            return core.loop_resume(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/{name}/loop/pause", dependencies=[Depends(auth)])
+    def pause_loop(name: str):
+        """Turn a loop off. No approval: pausing spends nothing."""
+        try:
+            return core.loop_pause(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+
+    @app.post("/agents/{name}/loop/run-now", dependencies=[Depends(auth)])
+    def run_loop_now(name: str):
+        """Start this loop's scheduled run right away, as an ordinary task."""
+        from .agentpacks import PackError as _PackError
+        try:
+            return {"task_id": core.loop_run_now(name)}
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.post("/agents/{name}/disable", dependencies=[Depends(auth)])
     def disable_agent(name: str):

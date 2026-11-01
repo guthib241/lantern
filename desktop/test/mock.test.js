@@ -107,6 +107,25 @@ test('mock agents: list, run, disable, export, draft', async (t) => {
   assert.equal((await api.get('/agents/tidy-downloads')).signature_status, 'signed');
 });
 
+test('mock loops: list shows scheduled packs, resume/pause/run-now work', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  const loops = await api.get('/loops');
+  assert.equal(loops.loops.length, 1);
+  assert.equal(loops.loops[0].name, 'tidy-downloads');
+  assert.equal(loops.loops[0].enabled, false);
+  assert.match(loops.loops[0].description, /every day at 09:00/);
+  const resumed = await api.post('/agents/tidy-downloads/loop/resume');
+  assert.equal(resumed.enabled, true);
+  assert.equal((await api.get('/loops')).loops[0].enabled, true);
+  const { task_id } = await api.post('/agents/tidy-downloads/loop/run-now');
+  assert.equal(typeof task_id, 'number');
+  assert.deepEqual(await api.post('/agents/tidy-downloads/loop/pause'), { name: 'tidy-downloads', enabled: false });
+  await assert.rejects(api.post('/agents/hello-agent/loop/resume'), /no schedule/);
+  await assert.rejects(api.post('/agents/no-such-agent/loop/pause'), /no agent/);
+});
+
 test('mock agents: faces (emoji and drawn), and runs name their pack', async (t) => {
   const m = await start(0);
   t.after(() => m.close());

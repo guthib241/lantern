@@ -32,7 +32,8 @@ function createMock() {
       author: 'lantern', version: '1.0.0',
       inputs: [{ key: 'folder', question: 'Which folder to tidy?', example: 'Downloads' }],
       goal: 'Tidy {folder} into subfolders by type.', instructions: 'List the folder, then organize it.',
-      tools: ['list_folders', 'list_dir', 'search_files', 'organize_files', 'move_file'] } }],
+      tools: ['list_folders', 'list_dir', 'search_files', 'organize_files', 'move_file'],
+      schedule: { every: 'day', at: '09:00', inputs: { folder: 'Downloads' } } } }],
     ['hello-agent', { disabled: false, pack: {
       format: 'lantern-agent/1', name: 'hello-agent', title: 'Hello agent',
       description: 'A tiny sample agent for the panel.', author: 'lantern', version: '1.0.0',
@@ -297,8 +298,36 @@ function createMock() {
         emit({ type: 'reminders', changed: 'cancelled', id: r.id });
         return send(200, { cancelled: r.id });
       }
-      const signedView = (a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null,
+      const loopOf = (a) => a.loop || (a.loop = { enabled: false, next_run: null, last_task: null,
+        last_status: null, failures: 0, running: null });
+      const describeSchedule = (s) => !s ? '' : s.every === 'hours' ? `every ${s.hours} hour${s.hours === 1 ? '' : 's'}`
+        : `every ${s.every} at ${s.at}`;
+      const loopView = (name, a) => ({ name, title: a.pack.title, scheduled: !!a.pack.schedule,
+        schedule: a.pack.schedule || null, description: describeSchedule(a.pack.schedule), ...loopOf(a) });
+      const signedView = (a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null, loop: loopOf(a),
         signature_status: a.pack.signature ? 'signed' : 'unsigned', fingerprint: null, mine: false });
+      const lp = url.pathname.match(/^\/agents\/([^/]+)\/loop\/(resume|pause|run-now)$/);
+      if (lp && req.headers['x-lantern-token'] === TOKEN) {
+        const item = agents.get(lp[1]);
+        if (!item) return send(404, { detail: `no agent called '${lp[1]}'` });
+        if (!item.pack.schedule) return send(400, { detail: `agent '${lp[1]}' has no schedule` });
+        if (lp[2] === 'pause') {   // the mock approves at once, like its other shortcuts
+          loopOf(item).enabled = false;
+          return send(200, { name: lp[1], enabled: false });
+        }
+        if (lp[2] === 'resume') {
+          const l = loopOf(item);
+          l.enabled = true; l.failures = 0; l.next_run = now() + 3600;
+          return send(200, { enabled: true, name: lp[1], next_run: l.next_run, budget_usd: 0.1 });
+        }
+        if (item.disabled) return send(400, { detail: `agent '${lp[1]}' is disabled` });
+        const goal = `[agent:${lp[1]}] ` + item.pack.goal.replace(/\{(\w+)\}/g, (_, k) => item.pack.schedule.inputs[k] || `{${k}}`);
+        return send(200, { task_id: submit(goal, lp[1]) });
+      }
+      if (req.method === 'GET' && url.pathname === '/loops' && req.headers['x-lantern-token'] === TOKEN) {
+        return send(200, { loops: [...agents.entries()].filter(([, a]) => a.pack.schedule)
+          .map(([name, a]) => loopView(name, a)) });
+      }
       const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face|sign))?)?$/);
       if (g && req.headers['x-lantern-token'] === TOKEN) {
         // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
