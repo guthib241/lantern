@@ -6,15 +6,15 @@ Deadline: **Nov 4, 9:00 PM ET** (Nov 5, 7:30 AM IST); aim to submit on the eveni
 | # | Feature | Why people will love it | Status |
 |---|---|---|---|
 | T1 | **Open on my laptop**: share a link from any phone app → it opens on the laptop | One tap from the couch to the big screen | ✅ built (Muse Code), tested |
-| T3a | **Agent packs**: an agent saved as one small file, shareable like an extension | Get a friend's agent without writing prompts | 🔨 Muse Code building |
-| T3b | **Agents tab**: run, watch live, stop midway, share, "make an agent from this task" | One place for all your agents | next |
-| T4 | **Avatar studio**: describe your Lantern and Muse Image draws it; **clock skin**; **Lantern turns into its agents** while they run | Personal and visual; the "wow" shot in the video | next |
+| T3a | **Agent packs**: an agent saved as one small file, shareable like an extension | Get a friend's agent without writing prompts | ✅ built (Muse Code), reviewed |
+| T3b | **Agents tab**: run, watch live, stop midway, share, "make an agent from this task" | One place for all your agents | ✅ built, reviewed |
+| T4 | **Avatar studio**: describe your Lantern and Muse Image draws it; **clock skin**; **Lantern turns into its agents** while they run | Personal and visual; the "wow" shot in the video | ✅ built; 2 bugs found by review, fixed |
 | T3c | **Loop agents**: agents on a schedule (every morning, every 2 h…), with brakes | Lantern works while you don't | after |
 | T3d | **Runs on laptop / phone / both** | Start and approve agents from your pocket | after |
 | T2 | **Send this file to my phone** (Telegram) | Your laptop's files, anywhere | after (needs Telegram) |
-| T3e | **Signed packs**: "✓ signed by achan", tampered packs refused | Trust what you install | queued (chain 2) |
-| T6 | **Learn a GitHub repo**: Lantern reads it, installs a pinned MCP server or builds a wrapper with Muse Code, then makes an agent | Lantern extends itself | queued (chain 2) |
-| T5 | **LocalSend receiver** (our own implementation of the public protocol): phone → laptop over home Wi-Fi | Private, no cloud, works on iPhone | queued (chain 2) |
+| T3e | **Signed packs**: "✓ signed by achan", tampered packs refused | Trust what you install | ✅ built, reviewed |
+| T6 | **Learn a GitHub repo**: Lantern reads it, installs a pinned MCP server or builds a wrapper with Muse Code, then makes an agent | Lantern extends itself | ✅ built, reviewed |
+| T5 | **LocalSend receiver** (our own implementation of the public protocol): phone → laptop over home Wi-Fi | Private, no cloud, works on iPhone | ✅ built; needs a real-phone test |
 
 ## Strong next ideas (after the hackathon, or if time is left)
 - **"Time saved" counter:** each receipt estimates the minutes saved; a weekly total in the panel. People love a number that grows.
