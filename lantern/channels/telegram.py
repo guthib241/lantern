@@ -4,8 +4,11 @@
   sendMessage(chat_id, text, reply_markup={"inline_keyboard": [[{text, callback_data}]]})
   answerCallbackQuery(callback_query_id, text)                               stop the button spinner
   getFile(file_id) -> file_path; GET https://api.telegram.org/file/bot<token>/<file_path>   voice notes
+  sendPhoto(chat_id, photo=<multipart file>, caption)                       send a photo Lantern made
 callback_data is limited to 64 bytes; Lantern's approval buttons use about 50.
 Only the owner's chat id (LANTERN_TELEGRAM_OWNER) is listened to.
+sendPhoto (core.telegram.org/bots/api#sendphoto, read Nov 1 2026): multipart/form-data,
+photo at most 10 MB, width+height at most 10000, caption 0-1024 characters.
 """
 from __future__ import annotations
 
@@ -13,9 +16,14 @@ import threading
 import time
 from typing import Callable
 
-from .base import Channel, ChannelError, Http, Incoming, json_call, urllib_http
+from pathlib import Path
+
+from .base import (Channel, ChannelError, Http, Incoming, json_call, multipart_call, read_image,
+                   urllib_http)
 
 API = "https://api.telegram.org"
+MAX_CAPTION = 1024   # sendPhoto caption
+MAX_IMAGE_BYTES = 10 * 1024 * 1024   # photos sent by multipart upload
 
 
 class TelegramChannel(Channel):
@@ -39,7 +47,23 @@ class TelegramChannel(Channel):
             raise ChannelError(f"telegram {method}: {data.get('description', 'not ok')}")
         return data.get("result")
 
+    def _call_multipart(self, method: str, fields: dict, file_field: str, filename: str,
+                        data: bytes, mime: str) -> dict:
+        out = multipart_call(self.http, f"{API}/bot{self.token}/{method}", fields, file_field,
+                             filename, data, mime)
+        if not out.get("ok"):
+            raise ChannelError(f"telegram {method}: {out.get('description', 'not ok')}")
+        return out.get("result")
+
     # ---- sending ------------------------------------------------------------------
+    def send_image(self, path, caption: str = "") -> None:
+        """sendPhoto: upload a PNG/JPEG Lantern made, with the caption."""
+        data, mime = read_image(path, MAX_IMAGE_BYTES)
+        fields = {"chat_id": self.owner}
+        if caption:
+            fields["caption"] = caption[:MAX_CAPTION]
+        self._call_multipart("sendPhoto", fields, "photo", Path(path).name, data, mime)
+
     def send_text(self, text: str) -> None:
         self._call("sendMessage", {"chat_id": self.owner, "text": text[:4096]})
 

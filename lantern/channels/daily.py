@@ -14,11 +14,13 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 DEFAULT_AT = "21:00"
 ENV_NAME = "LANTERN_DAILY_SUMMARY"
 MAX_TASKS = 30
+SENT_FILE = "daily-summary.json"   # under Lantern's home: {"last_sent": "YYYY-MM-DD"}
 
 
 def summary_at(env: dict | None = None) -> tuple[int, int] | None:
@@ -34,6 +36,43 @@ def summary_at(env: dict | None = None) -> tuple[int, int] | None:
     except ValueError:
         return None
     return (h, m) if 0 <= h < 24 and 0 <= m < 60 else None
+
+
+def sent_path(core: Any) -> Path | None:
+    """Where the last-sent date lives: next to Lantern's memory DB (its home)."""
+    cfg = getattr(core, "cfg", None)
+    for attr in ("db_path", "media_dir"):
+        value = getattr(cfg, attr, None)
+        if value:
+            return Path(value).expanduser().parent / SENT_FILE
+    return None
+
+
+def load_sent(core: Any) -> set[str]:
+    """Local dates a daily summary already went out, remembered across restarts."""
+    path = sent_path(core)
+    if path is None:
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    last = data.get("last_sent") if isinstance(data, dict) else None
+    return {str(last)} if last else set()
+
+
+def record_sent(core: Any, day: str) -> None:
+    """Persist the last sent local date (written atomically; a failure keeps the in-memory mark)."""
+    path = sent_path(core)
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"last_sent": day}), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        pass
 
 
 def due(sent: set[str], now: float | None = None, env: dict | None = None) -> bool:

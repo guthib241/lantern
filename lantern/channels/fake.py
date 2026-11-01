@@ -6,6 +6,8 @@ import threading
 import time
 from collections import deque
 
+from pathlib import Path
+
 from .base import Channel, Incoming
 
 FAKE_OWNER = "owner"
@@ -23,6 +25,18 @@ class FakeChannel(Channel):
     def send_text(self, text: str) -> None:
         with self._lock:
             self.sent.append({"type": "text", "text": text, "ts": time.time()})
+
+    def send_image(self, path, caption: str = "") -> None:
+        """Record an image send; the desktop phone shows it as "📷 image: caption"."""
+        p = Path(path)
+        try:
+            size = p.stat().st_size
+        except OSError:
+            size = 0
+        with self._lock:
+            self.sent.append({"type": "image", "text": f"📷 image: {caption}" if caption else "📷 image",
+                              "caption": caption, "path": str(p), "name": p.name, "bytes": size,
+                              "ts": time.time()})
 
     def send_to(self, address: str, text: str) -> None:
         with self._lock:

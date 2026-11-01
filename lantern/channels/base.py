@@ -11,9 +11,11 @@ computer, not a general chatbot.
 from __future__ import annotations
 
 import json
+import secrets
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 # http(method, url, headers, body) -> (status, body_bytes); swapped out in tests
@@ -51,6 +53,58 @@ def json_call(http: Http, method: str, url: str, payload: dict | None = None,
     if status >= 300:
         raise ChannelError(f"{method} {url.split('?')[0]} failed [{status}]: {json.dumps(parsed)[:300]}")
     return parsed
+
+
+def build_multipart(fields: dict, file_field: str, filename: str, data: bytes,
+                    mime: str) -> tuple[bytes, str]:
+    """One multipart/form-data body (standard library only): text fields, then one file part."""
+    boundary = "lantern-" + secrets.token_hex(16)
+    out = bytearray()
+    for name, value in fields.items():
+        out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n"
+                f"{value}\r\n").encode()
+    safe = str(filename).replace('"', "_").replace("\r", "_").replace("\n", "_")
+    out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{file_field}\"; "
+            f"filename=\"{safe}\"\r\nContent-Type: {mime}\r\n\r\n").encode()
+    out += data + f"\r\n--{boundary}--\r\n".encode()
+    return bytes(out), f"multipart/form-data; boundary={boundary}"
+
+
+def multipart_call(http: Http, url: str, fields: dict, file_field: str, filename: str,
+                   data: bytes, mime: str, headers: dict | None = None) -> dict:
+    """POST one file as multipart/form-data; returns the parsed JSON body."""
+    body, content_type = build_multipart(fields, file_field, filename, data, mime)
+    h = {"Accept": "application/json", "Content-Type": content_type, **(headers or {})}
+    status, raw = http("POST", url, h, body)
+    try:
+        parsed = json.loads(raw or b"{}")
+    except json.JSONDecodeError:
+        parsed = {"raw": raw[:200].decode(errors="replace")}
+    if status >= 300:
+        raise ChannelError(f"POST {url.split('?')[0]} failed [{status}]: {json.dumps(parsed)[:300]}")
+    return parsed
+
+
+IMAGE_MIMES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+
+def image_mime(path: str | Path) -> str:
+    """The MIME type for a sendable image path, or a refusal for anything else."""
+    mime = IMAGE_MIMES.get(Path(path).suffix.lower())
+    if mime is None:
+        raise ChannelError("only PNG or JPEG images can be sent")
+    return mime
+
+
+def read_image(path: str | Path, max_bytes: int) -> tuple[bytes, str]:
+    """Read an image file for sending, enforcing its type and a size limit."""
+    mime = image_mime(path)
+    data = Path(path).read_bytes()
+    if len(data) > max_bytes:
+        raise ChannelError(f"image is {len(data)} bytes; the limit is {max_bytes}")
+    if not data:
+        raise ChannelError("image file is empty")
+    return data, mime
 
 
 @dataclass
@@ -92,6 +146,10 @@ class Channel:
         is numbered plain text; the owner answers by typing the number."""
         numbered = "\n".join(f"{i}. {title}" for i, (_, title, _) in enumerate(rows, 1))
         self.send_text(f"{text}\n{numbered}" + (f"\n{footer}" if footer else ""))
+
+    def send_image(self, path: str | Path, caption: str = "") -> None:
+        """Send an image Lantern made, with `caption`. Text-only fallback: the caption as text."""
+        self.send_text(f"📷 image: {caption}" if caption else "📷 image")
 
     def send_to(self, address: str, text: str) -> None:
         """S6: a Lantern Network message to another Lantern's address (not the owner's chat)."""

@@ -13,6 +13,11 @@ Sending: POST https://graph.facebook.com/<version>/<phone_number_id>/messages wi
 token. Reply buttons: interactive type "button", at most 3, titles at most 20 characters.
 Voice notes: GET /<media-id> -> {url, mime_type, ...}; GET url with the same bearer token
 (the URL lives 5 minutes).
+Images Lantern made: POST /<phone_number_id>/media (multipart: messaging_product=whatsapp,
+type=<mime>, file=<bytes>) -> {id}, then an image message {"type": "image",
+"image": {"id": ..., "caption": ...}}. Images: JPEG/PNG only, at most 5 MB, caption at
+most 1024 characters (developers.facebook.com/docs/whatsapp/cloud-api/reference/media and
+.../messages/image-messages, read Nov 1 2026; see docs/DECISIONS.md).
 
 Free-form messages (text and buttons) only go out within 24 hours of the owner's last
 message, so send Lantern anything ("hi", or a voice note from the glasses) to open the window.
@@ -24,7 +29,10 @@ import hmac
 import secrets
 from typing import Any
 
-from .base import Channel, ChannelError, Http, Incoming, json_call, urllib_http
+from pathlib import Path
+
+from .base import (Channel, ChannelError, Http, Incoming, json_call, multipart_call, read_image,
+                   urllib_http)
 
 GRAPH = "https://graph.facebook.com"
 DEFAULT_VERSION = "v23.0"
@@ -33,6 +41,8 @@ MAX_LIST_BODY = 4096  # interactive list body
 MAX_FOOTER = 60    # interactive footer
 MAX_TEXT = 4096
 MAX_TITLE = 20
+MAX_CAPTION = 1024   # image message caption
+MAX_IMAGE_BYTES = 5 * 1024 * 1024   # JPEG/PNG image messages
 
 
 def verify_signature(raw: bytes, header: str | None, app_secret: str) -> bool:
@@ -74,6 +84,31 @@ class WhatsAppChannel(Channel):
         payload = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to or self.owner, **message}
         return json_call(self.http, "POST", f"{GRAPH}/{self.version}/{self.phone_number_id}/messages",
                          payload, self._auth())
+
+    def upload_media(self, data: bytes, mime: str, filename: str) -> str:
+        """Upload image bytes; returns the media id (valid 30 days)."""
+        if mime not in ("image/jpeg", "image/png"):
+            raise ChannelError("only PNG or JPEG images can be sent")
+        if len(data) > MAX_IMAGE_BYTES:
+            raise ChannelError(f"image is {len(data)} bytes; the limit is {MAX_IMAGE_BYTES}")
+        if not data:
+            raise ChannelError("image file is empty")
+        out = multipart_call(self.http, f"{GRAPH}/{self.version}/{self.phone_number_id}/media",
+                             {"messaging_product": "whatsapp", "type": mime}, "file", filename, data, mime,
+                             self._auth())
+        media_id = str(out.get("id") or "")
+        if not media_id:
+            raise ChannelError("media upload returned no id")
+        return media_id
+
+    def send_image(self, path, caption: str = "") -> None:
+        """Upload a PNG/JPEG Lantern made, then send it as an image message with the caption."""
+        data, mime = read_image(path, MAX_IMAGE_BYTES)
+        media_id = self.upload_media(data, mime, Path(path).name)
+        image: dict = {"id": media_id}
+        if caption:
+            image["caption"] = caption[:MAX_CAPTION]
+        self._send({"type": "image", "image": image})
 
     def send_text(self, text: str) -> None:
         self._send({"type": "text", "text": {"preview_url": False, "body": text[:MAX_TEXT]}})

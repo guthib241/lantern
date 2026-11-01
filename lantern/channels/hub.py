@@ -102,7 +102,8 @@ class ChannelHub:
         self._suggestions: dict[str, str] = {}   # short id -> full suggested request (server-side, never in buttons)
         self._suggest_lock = threading.Lock()
         self._menus: dict[str, list[str]] = {}   # channel -> last menu's row ids (for typed numbers)
-        self._daily_sent: set[str] = set()       # local dates a daily summary already went out
+        self._daily_sent: set[str] = daily_mod.load_sent(core)   # persisted: a restart must not resend
+        self._check_images: dict[int, str] = {}   # check-work task id -> circled image waiting for its reply
         self._daily_stop = threading.Event()
         self.photo_wait = PHOTO_WAIT              # S9: seconds to wait for words after a photo without a caption
         self._photos: dict[str, tuple[bytes, int]] = {}   # channel -> (photo waiting for words, its number)
@@ -197,8 +198,46 @@ class ChannelHub:
         self.errors.append(msg)
         self.core.emit({"type": "channel_error", "error": msg})
 
+    def _media_image(self, path: str | Path) -> Path:
+        """Resolve an image Lantern made; refuse anything outside its media folder (never a user file)."""
+        resolved = Path(path).expanduser().resolve()
+        media = self.media_dir.expanduser().resolve()
+        if not resolved.is_relative_to(media) or not resolved.is_file():
+            raise ValueError("only images Lantern made in its media folder can be sent")
+        if resolved.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+            raise ValueError("only PNG or JPEG images can be sent")
+        return resolved
+
+    def _is_private(self, task_id: int | None, event: dict | None = None) -> bool:
+        """True when a task's reply must stay on the laptop, so its image must not leave either."""
+        if event is not None and "reply_public" in event and event["reply_public"] != event.get("reply"):
+            return True
+        if task_id is not None:
+            try:
+                return bool(self.core.memory.is_private_task(task_id))
+            except Exception:
+                return False
+        return False
+
+    def say_image(self, channel: str | None, path: str | Path, caption: str, *,
+                  task_id: int | None = None, event: dict | None = None) -> bool:
+        """Queue an image Lantern made for one channel (or every channel). False when refused:
+        outside the media folder, or a private task's reply. The caption is scrubbed on delivery."""
+        if self._is_private(task_id, event):
+            self._error("image", ValueError("a private task's image never leaves the laptop"))
+            return False
+        try:
+            resolved = self._media_image(path)
+        except (ValueError, OSError) as e:
+            self._error("image", e)
+            return False
+        self._outbox.put((channel, "image", (str(resolved), caption, task_id)))
+        return True
+
     def _deliver(self, ch: Channel, kind: str, args: tuple) -> None:
         extra: dict = {}
+        if kind == "image":
+            return self._deliver_image(ch, args)
         if kind == "card":
             text, footer, buttons = args[0], args[1], args[2]
             text, footer = SCRUBBER.scrub(text).text, SCRUBBER.scrub(footer).text
@@ -226,6 +265,25 @@ class ChannelHub:
                                "to": extra.get("to", "")}, default=str).encode()
             self.core.audit.record(lane="cloud", destination=destination, endpoint=f"{ch.name}.send",
                                    model=ch.name, payload=body, preview=text)
+
+    def _deliver_image(self, ch: Channel, args: tuple) -> None:
+        """Send one circled image: media-folder check again, scrubbed caption, audited by byte hash."""
+        path, caption = args[0], args[1]
+        task_id = args[2] if len(args) > 2 else None
+        if self._is_private(task_id):
+            raise ValueError("a private task's image never leaves the laptop")
+        resolved = self._media_image(path)   # checked again on the sending thread
+        data = resolved.read_bytes()
+        text = SCRUBBER.scrub(caption or "").text
+        ch.send_image(resolved, text)
+        destination = getattr(ch, "destination", None)
+        if destination:  # what left the laptop: hash of the bytes, destination and size (audit.record)
+            real = type(ch).send_image is not Channel.send_image
+            payload = data if real else json.dumps({"text": text}).encode()
+            preview = text if real else f"📷 image: {text}"
+            self.core.audit.record(lane="cloud", destination=destination,
+                                   endpoint=f"{ch.name}.send_image" if real else f"{ch.name}.send",
+                                   model=ch.name, payload=payload, preview=preview, task_id=task_id)
 
     def say(self, channel: str | None, text: str) -> None:
         self._outbox.put((channel, "text", (text,)))
@@ -653,6 +711,11 @@ class ChannelHub:
         if kind == "approval" and event.get("event") == "requested":
             card = approval_card(event["approval"], time.time())
             self._outbox.put((None, "card", (card.text, card.footer, card.buttons)))
+        elif kind == "checkwork" and event.get("image"):
+            try:
+                self._check_images[int(event.get("task_id"))] = str(event["image"])
+            except (TypeError, ValueError):
+                pass
         elif kind == "learn_offer":
             task_id = event.get("task_id")
             self._offers.append(task_id)
@@ -690,6 +753,7 @@ class ChannelHub:
                 self.tell(ch, who, f"🔑 The loan of this Lantern {ended}. Thank you!")
                 self.say(None, f"🔑 {event.get('name')}'s loan {ended}.")
         elif kind == "done" and event.get("id") in self.borrowed:   # S13: reply to the borrower, receipt to the owner
+            self._check_images.pop(event.get("id"), None)   # a borrower's chat never gets the image either
             ch, who, name = self.borrowed.pop(event["id"])
             reply = (event.get("reply_public") or event.get("reply") or event.get("summary") or "").strip()
             self.tell(ch, who, reply or "That didn't work.")
@@ -701,6 +765,7 @@ class ChannelHub:
                 self._finished[event.get("id")] = name
                 while len(self._finished) > 50:
                     self._finished.pop(next(iter(self._finished)))
+            image = self._check_images.pop(event.get("id"), None)
             if name and event.get("status") != "cancelled":  # STOP already got its own reply
                 # S0: a reply that quotes private content goes out with that part kept on the computer
                 reply = (event.get("reply_public") or event.get("reply") or event.get("summary") or "").strip()
@@ -708,7 +773,10 @@ class ChannelHub:
                 if status == "failed" and not reply:
                     reply = f"That didn't work: {event.get('summary', '')}"
                 if reply:
-                    self.say(name, reply)
+                    sent = bool(image and status == "done"
+                                and self.say_image(name, image, reply, task_id=event.get("id"), event=event))
+                    if not sent:
+                        self.say(name, reply)
                     self._maybe_suggest(event, name, reply)
 
 
@@ -758,11 +826,15 @@ class ChannelHub:
                 self._error("daily", e)
 
     def check_daily(self, now: float | None = None) -> bool:
-        """Send today's summary to every channel if it's due. True if sent."""
+        """Send today's summary to every channel if it's due. True if sent.
+        The sent date is persisted first, so a restart after the time must not send it again."""
         now = time.time() if now is None else now
+        self._daily_sent |= daily_mod.load_sent(self.core)   # another hub may have sent it
         if not daily_mod.due(self._daily_sent, now):
             return False
-        self._daily_sent.add(time.strftime("%Y-%m-%d", time.localtime(now)))
+        day = time.strftime("%Y-%m-%d", time.localtime(now))
+        self._daily_sent.add(day)
+        daily_mod.record_sent(self.core, day)
         self.say(None, daily_mod.render(self.core, now))
         return True
 

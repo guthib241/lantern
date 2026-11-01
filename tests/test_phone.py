@@ -388,8 +388,11 @@ def test_daily_summary_command_and_schedule(tmp_path, monkeypatch):
     core.shutdown()
     hub.stop()
 
-    core2, hub2, phone2 = make_fake(tmp_path, [])   # no chat client: the schedule sends the fallback
-    assert hub2.check_daily(now=at_today(22, 0))
+    core2, hub2, phone2 = make_fake(tmp_path, [])   # a restart the same evening must not send it again
+    assert not hub2.check_daily(now=at_today(22, 0))
+    assert hub2.wait_idle(10)
+    assert texts(phone2) == []
+    assert hub2.check_daily(now=at_today(22, 0) + 86400)   # next day, no chat client: the fallback goes out
     assert hub2.wait_idle(10)
     assert texts(phone2)[-1].startswith("☀️ Today:")
     core2.shutdown()
