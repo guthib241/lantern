@@ -764,6 +764,7 @@
           ? h('button', { class: 'forget', onclick: () => { agentFaceOpen = c.name; renderAgents(); } },
             face.kind === 'none' ? 'Make a face' : 'Change face') : null,
         h('button', { class: 'forget', onclick: () => shareAgent(pack) }, 'Share'),
+        h('button', { class: 'forget', onclick: () => shareAgentCard(pack) }, 'Share as A2A card'),
         c.disabled
           ? h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, true) }, 'Enable')
           : h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, false) }, 'Disable')));
@@ -954,6 +955,101 @@
     }
   }
 
+  async function shareAgentCard(pack) {
+    if (!window.lantern.saveAgentFile) {
+      toast('Sharing needs the newest Lantern app.');
+      return;
+    }
+    try {
+      const card = await api.get(`/agents/${encodeURIComponent(pack.name)}/a2a-card`);
+      const text = `${JSON.stringify(card, null, 2)}\n`;
+      const r = await window.lantern.saveAgentFile({ name: LanternAgents.a2aFileName(pack), text });
+      if (r && !r.cancelled) toast(`Saved ${r.path || 'the agent card'}.`);
+    } catch (e) {
+      toast(`Couldn't share it: ${e.message}`);
+    }
+  }
+
+  // ---- import: a community SKILL.md becomes a pack (scripts are never imported) --
+  let skillPreview = null;   // the /agents/import-skill preview being reviewed, or null
+
+  async function pickSkillFile() {
+    if (window.lantern.openSkillFile) {
+      const r = await window.lantern.openSkillFile();
+      if (r && !r.cancelled) importSkillPath(r.path || '');
+      return;
+    }
+    $('skill-file').click();   // older app: the hidden file input (text only)
+  }
+
+  async function importSkillPath(path) {
+    if (!path) return;
+    try {
+      skillPreview = await api.post('/agents/import-skill', { path });
+    } catch (e) {
+      toast(`Couldn't import it: ${e.message}`);
+      return;
+    }
+    renderSkillImport();
+  }
+
+  async function importSkillText(text, filename) {
+    try {
+      skillPreview = await api.post('/agents/import-skill', { text, filename });
+    } catch (e) {
+      toast(`Couldn't import it: ${e.message}`);
+      return;
+    }
+    renderSkillImport();
+  }
+
+  function renderSkillImport() {
+    const box = $('agent-import-form');
+    box.textContent = '';
+    if (!skillPreview) return;
+    const view = LanternAgents.importView(skillPreview);
+    const boxes = {};
+    const notes = [];
+    if (view.skipped.length) {
+      notes.push(`Not imported (packs never run code): ${view.skipped.join(', ')}`);
+    }
+    if (view.truncated) notes.push('The instructions were cut to 4000 characters; the full text stays in SKILL.md.');
+    box.append(h('div', { class: 'group' },
+      h('div', { class: 'goal' }, `Import “${view.title}” as an agent?`),
+      view.description ? h('p', { class: 'reply' }, view.description) : null,
+      notes.length ? h('div', { class: 'status' }, notes.join(' ') + ' Unsigned: anyone could have changed it.') : null,
+      h('div', { class: 'agent-tools' },
+        view.available.map((name) => {
+          const el = h('input', { type: 'checkbox', value: name, 'aria-label': name });
+          el.checked = view.tools.includes(name);
+          boxes[name] = el;
+          return h('label', { class: 'chip' }, el, ` ${name}`);
+        })),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'tinted', onclick: () => installSkillPreview(skillPreview, boxes) }, 'Install'),
+        h('button', { class: 'forget', onclick: () => { skillPreview = null; renderSkillImport(); } }, 'Cancel'))));
+  }
+
+  async function installSkillPreview(preview, boxes) {
+    const tools = Object.keys(boxes).filter((name) => boxes[name] && boxes[name].checked);
+    const data = LanternAgents.packWithTools(preview.pack || {}, tools);
+    data.source = 'imported skill';
+    if (Array.isArray(preview.skipped) && preview.skipped.length) data.skipped = preview.skipped;
+    try {
+      const r = await api.post('/agents/install', data);
+      if (r.installed) {
+        toast(`Agent “${r.name}” installed.`);
+        skillPreview = null;
+        renderSkillImport();
+        loadAgents();
+        return;
+      }
+      toast(`Couldn't install it: ${r.reason || 'the server refused it'}`);
+    } catch (e) {
+      toast(`Couldn't install it: ${e.message}`);   // a bad pack explains itself here
+    }
+  }
+
   async function pickAgentFile() {
     if (window.lantern.openAgentFile) {
       const r = await window.lantern.openAgentFile();
@@ -968,6 +1064,12 @@
     const f = e.target.files[0];
     e.target.value = '';
     if (f) f.text().then((t) => installPackText(t));
+  });
+  $('agent-import').addEventListener('click', pickSkillFile);
+  $('skill-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) f.text().then((t) => importSkillText(t, f.name || 'SKILL.md'));
   });
   for (const ev of ['dragenter', 'dragover']) {
     $('agent-drop').addEventListener(ev, (e) => { e.preventDefault(); $('agent-drop').classList.add('over'); });

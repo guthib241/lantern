@@ -184,6 +184,15 @@ ipcMain.handle('agent:open', async () => {
   if (r.canceled || !r.filePaths.length) return { cancelled: true };
   return { cancelled: false, path: r.filePaths[0], text: fs.readFileSync(r.filePaths[0], 'utf8') };
 });
+// Agent Skills: importing picks a SKILL.md file or the folder holding one; the server reads it.
+ipcMain.handle('skill:open', async () => {
+  const r = await dialog.showOpenDialog(panel, {
+    title: 'Import a skill', filters: [{ name: 'Agent skill (SKILL.md)', extensions: ['md', 'markdown'] }],
+    properties: ['openFile', 'openDirectory'],
+  });
+  if (r.canceled || !r.filePaths.length) return { cancelled: true };
+  return { cancelled: false, path: r.filePaths[0] };
+});
 ipcMain.handle('agent:save', async (_e, { name, text }) => {
   const r = await dialog.showSaveDialog(panel, { title: 'Share this agent', defaultPath: String(name || 'agent.lantern-agent.json') });
   if (r.canceled || !r.filePath) return { cancelled: true };

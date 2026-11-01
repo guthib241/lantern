@@ -420,6 +420,7 @@ class PackStore:
                 info = packsign.signature_info(pack.as_dict())
                 out.append({**pack.as_dict(), "disabled": disabled, "loop": loop,
                             "surface": self._stored_surface(path) or DEFAULT_SURFACE,
+                            "source": self._stored_source(path),
                             "face": self._listed_face(path, pack.name),
                             "signature_status": info["status"], "fingerprint": info["fingerprint"]})
         return out
@@ -447,6 +448,17 @@ class PackStore:
         return validate(raw["pack"]), bool(raw.get("disabled", False)), _loop_of(raw.get("loop"))
 
     @staticmethod
+    def _stored_source(path: Path) -> str | None:
+        """Where this pack came from (`"imported skill"` for a SKILL.md import,
+        else None). Local-only, never in the shared pack file."""
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        source = raw.get("source") if isinstance(raw, dict) else None
+        return source if isinstance(source, str) and source else None
+
+    @staticmethod
     def _stored_face(path: Path) -> str | None:
         """The emoji face kept in the store wrapper (never in the shared pack file)."""
         try:
@@ -468,12 +480,16 @@ class PackStore:
         return surface if surface in SURFACES else None
 
     def _write(self, pack: Pack, *, disabled: bool, face: dict | None, loop: dict | None = None,
-               surface: str | None = None) -> None:
-        """Store the wrapper: the pack plus local-only state (disabled, face, loop, surface)."""
+               surface: str | None = None, source: str | None = None) -> None:
+        """Store the wrapper: the pack plus local-only state (disabled, face, loop, surface, source)."""
         if surface is None:   # keep the existing setting; a fresh install starts on the laptop
             surface = self._stored_surface(self._path(pack.name)) or DEFAULT_SURFACE
+        if source is None:   # keep where it came from; a fresh install has none
+            source = self._stored_source(self._path(pack.name))
         wrapper: dict[str, Any] = {"format": STORE_FORMAT, "disabled": disabled, "pack": pack.as_dict(),
                                    "surface": surface}
+        if source:
+            wrapper["source"] = source
         if face:
             wrapper["face"] = face
         wrapper["loop"] = _loop_of(loop)   # the loop is local state, never shared
@@ -481,7 +497,7 @@ class PackStore:
         self._path(pack.name).write_text(json.dumps(wrapper, ensure_ascii=False, indent=2,
                                                     sort_keys=True) + "\n", encoding="utf-8")
 
-    def install(self, data: dict, *, replace: bool = False) -> Pack:
+    def install(self, data: dict, *, replace: bool = False, source: str | None = None) -> Pack:
         """Validate and store `<name>.json`. Refuses to overwrite a different
         author's pack with the same name unless `replace=True`. A fresh install
         starts the loop OFF, even when the pack suggests a schedule."""
@@ -496,7 +512,7 @@ class PackStore:
             if old.author != pack.author and not replace:
                 raise PackError(f"an agent called {pack.name!r} by {old.author} is already installed "
                                 f"(pass replace=True to take its place)")
-        self._write(pack, disabled=False, face={"emoji": face} if face else None, loop=None)
+        self._write(pack, disabled=False, face={"emoji": face} if face else None, loop=None, source=source)
         stored = self.get(pack.name)   # verify: read it back
         if stored.as_dict() != pack.as_dict():
             raise PackError(f"agent {pack.name!r} didn't store correctly")

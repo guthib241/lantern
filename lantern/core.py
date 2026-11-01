@@ -387,12 +387,23 @@ class Core:
         approving records the key; the same author name on a different key warns."""
         import hashlib
         from .agentpacks import canonical_bytes, validate
+        data = dict(data)
+        source = data.pop("source", None)   # local-only: where it came from, never in the shared file
+        if source != "imported skill":
+            source = None
+        skipped = data.pop("skipped", None)   # local-only too: scripts the import listed, never copied
+        if not (isinstance(skipped, list) and all(isinstance(s, str) for s in skipped)):
+            skipped = []
         pack = validate(data)   # PackError if invalid or tampered: no approval asked for a bad pack
         raw = canonical_bytes(pack.as_dict())
         payload = {"name": pack.name, "sha256": hashlib.sha256(raw).hexdigest()}
         summary = (f"Install agent '{pack.title}' by {pack.author} (v{pack.version}). "
                    f"It may use: {', '.join(pack.tools)}. "
                    f"Full instructions: {pack.instructions}")
+        if source == "imported skill":
+            summary += " Imported from a community skill (SKILL.md)."
+        if skipped:
+            summary += f" Not imported (packs never run code): {', '.join(skipped)}."
         summary += self._signature_line(pack)
         commit = self.toolbox.gate.ask("install_agent", summary, payload, tainted=False)
         if commit is None:
@@ -402,7 +413,7 @@ class Core:
         except ApprovalError as e:
             return {"installed": False, "reason": str(e), "name": pack.name}
         try:
-            stored = self.packs.install(pack.as_dict(), replace=replace)
+            stored = self.packs.install(pack.as_dict(), replace=replace, source=source)
         except PackError as e:
             return {"installed": False, "reason": str(e), "name": pack.name}
         if pack.signature is not None:   # approving a new key records it; declining records nothing
@@ -554,6 +565,36 @@ class Core:
         cost = models.image_cost(1)
         self.memory.log_usage(None, models.IMAGE, cost_usd=cost)
         return {"made": True, "verified": True, "face": face, "cost_usd": cost, "model_calls": 1}
+
+    def pack_import_skill(self, body: dict) -> dict:
+        """Preview a SKILL.md import: parse it into a validated pack plus the
+        scripts that were listed but never copied. Saving it goes through the
+        normal install (with its approval), where the panel's tool checkboxes
+        land. Imports read only through the privacy policy. No approval: a
+        preview spends nothing, and an imported pack runs tainted like any pack."""
+        from .skillimport import SkillImportError, import_path, import_text
+        if not isinstance(body, dict):
+            raise SkillImportError("send a SKILL.md path or its text")
+        try:
+            if body.get("path"):
+                return import_path(self.policy, body["path"])
+            if body.get("text"):
+                return import_text(body["text"], filename=body.get("filename") or "SKILL.md")
+        except SkillImportError:
+            raise
+        except (ValueError, OSError) as e:
+            raise SkillImportError(str(e)) from None
+        raise SkillImportError("send a SKILL.md path or its text")
+
+    def pack_a2a_card(self, name: str) -> dict:
+        """This installed pack as an A2A Agent Card (no endpoint URL: Lantern
+        doesn't serve agents to the network). Raises KeyError if unknown."""
+        from .a2acard import card_for_pack
+        try:
+            pack = self.packs.get(name)   # re-validated: a changed file is refused, not exported
+        except KeyError:
+            raise KeyError(name) from None
+        return card_for_pack(pack)
 
     def pack_draft(self, task_id: int) -> dict:
         """Draft a pack from a finished task (Muse Spark, structured output).

@@ -122,3 +122,28 @@ test('draft round-trips through editable fields', () => {
   assert.deepEqual(G.packFromFields({ tools: '' }).tools, []);
   assert.deepEqual(G.packFromFields({ inputs: [{ key: '', question: '' }] }).inputs, []);
 });
+
+test('skill import: preview shapes the form, tools apply, A2A file names', () => {
+  const preview = {
+    pack: { name: 'my-skill', title: 'My Skill', description: 'Does things.',
+      tools: ['list_folders', 'read_file'] },
+    skipped: ['helper.py'], truncated: true, source: 'imported skill',
+    available_tools: ['list_folders', 'read_file', 'write_file'],
+  };
+  const view = G.importView(preview);
+  assert.equal(view.name, 'my-skill');
+  assert.equal(view.title, 'My Skill');
+  assert.deepEqual(view.tools, ['list_folders', 'read_file']);
+  assert.deepEqual(view.available, ['list_folders', 'read_file', 'write_file']);
+  assert.deepEqual(view.skipped, ['helper.py']);
+  assert.equal(view.truncated, true);
+  assert.equal(view.source, 'imported skill');
+  assert.equal(G.importView(null).title, 'Untitled agent');
+  assert.deepEqual(G.importView({ pack: null }).tools, []);
+  const withTools = G.packWithTools(preview.pack, ['list_folders', 'write_file']);
+  assert.deepEqual(withTools.tools, ['list_folders', 'write_file']);
+  assert.equal(withTools.name, 'my-skill');   // everything else rides along
+  assert.deepEqual(G.packWithTools(preview.pack, 'nope').tools, []);
+  assert.equal(G.a2aFileName({ name: 'tidy-downloads' }), 'tidy-downloads.agent-card.json');
+  assert.equal(G.a2aFileName({}), 'agent.agent-card.json');
+});

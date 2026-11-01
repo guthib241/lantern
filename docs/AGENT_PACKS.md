@@ -111,6 +111,27 @@ The setting lives in the laptop's store next to `disabled` and the loop
 state — never in the shared pack file, so sharing a pack shares no trace of
 where you run it. New installs start on **Laptop**.
 
+## Community skills in, A2A cards out
+
+**Import.** A community `SKILL.md` (the Agent Skills folder format) imports as
+a pack in one click: **Import a skill…** takes the file or its folder (read
+through the privacy zones, like every other file Lantern touches; at most
+64 KB). The front matter's `name` and `description` become the pack's name and
+goal, the Markdown body becomes its instructions (cut to 4000 characters with
+a note). Scripts and every other file in the folder (`*.py`, `*.sh`, `*.js`,
+`*.ps1`, …) are listed in the preview as "not imported (packs never run
+code)" and never copied. The pack's tools default to the read-only set
+(`list_folders`, `list_dir`, `search_files`, `read_file`); the preview's
+checkboxes offer Lantern's whole tool list. Saving goes through the normal
+install approval, so an imported pack is `"source": "imported skill"` and
+**unsigned**, and it always runs tainted like any pack.
+
+**Export.** **Share as A2A card** saves `<name>.agent-card.json`: the pack's
+name, description, version, the author as provider, and one `skills` entry
+(id, name, description, tags from the tool names, examples from the inputs'
+examples). No endpoint URL is published — other agent tools can discover the
+pack, but Lantern doesn't serve agents to the network.
+
 From the phone, `agents` lists the agents that run on the phone with Run
 buttons, and `run <name> key=value …` starts one (a missing input gets a
 question back in the chat; quotes group values with spaces). A laptop-only

@@ -306,7 +306,7 @@ function createMock() {
         schedule: a.pack.schedule || null, description: describeSchedule(a.pack.schedule), ...loopOf(a) });
       const surfaceOf = (a) => a.surface || 'laptop';
       const signedView = (a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null, loop: loopOf(a),
-        surface: surfaceOf(a),
+        surface: surfaceOf(a), source: a.source || null,
         signature_status: a.pack.signature ? 'signed' : 'unsigned', fingerprint: null, mine: false });
       const lp = url.pathname.match(/^\/agents\/([^/]+)\/loop\/(resume|pause|run-now)$/);
       if (lp && req.headers['x-lantern-token'] === TOKEN) {
@@ -330,6 +330,18 @@ function createMock() {
         return send(200, { loops: [...agents.entries()].filter(([, a]) => a.pack.schedule)
           .map(([name, a]) => loopView(name, a)) });
       }
+      const ac = url.pathname.match(/^\/agents\/([^/]+)\/a2a-card$/);
+      if (ac && req.method === 'GET' && req.headers['x-lantern-token'] === TOKEN) {
+        const card = agents.get(ac[1]);
+        if (!card) return send(404, { detail: `no agent called '${ac[1]}'` });
+        const p = card.pack;
+        const examples = (p.inputs || []).map((i) => i.example).filter(Boolean);
+        const skill = { id: p.name, name: p.title, description: p.description, tags: p.tools };
+        if (examples.length) skill.examples = examples;
+        return send(200, { name: p.name, description: p.description, version: p.version,
+          provider: { organization: p.author }, capabilities: { streaming: false, pushNotifications: false },
+          defaultInputModes: ['text'], defaultOutputModes: ['text'], skills: [skill] });
+      }
       const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face|sign|surface))?)?$/);
       if (g && req.headers['x-lantern-token'] === TOKEN) {
         // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
@@ -345,12 +357,21 @@ function createMock() {
           if (old && old.pack.author !== data.author && !replace) {
             return send(200, { installed: false, reason: `an agent called '${data.name}' is already installed (pass replace=true)`, name: data.name });
           }
-          agents.set(data.name, { disabled: false, pack: data });
+          const { source, ...pack } = data;   // the source stays local, never in the shared file
+          agents.set(data.name, { disabled: false, pack, source: source === 'imported skill' ? source : null });
           return send(200, { installed: true, verified: true, name: data.name });
         }
         if (req.method === 'POST' && url.pathname === '/agents/draft') {
           const sample = agents.get('tidy-downloads').pack;
           return send(200, { ...sample, author: '', version: '1.0.0' });
+        }
+        if (req.method === 'POST' && url.pathname === '/agents/import-skill') {
+          // A canned preview shaped like lantern/server.py's: validated pack, skipped scripts.
+          const skill = { ...agents.get('tidy-downloads').pack, name: 'my-skill', title: 'My Skill',
+            description: 'A community skill, imported.', author: 'unknown', version: '1.0.0',
+            tools: ['list_folders', 'list_dir', 'search_files', 'read_file'] };
+          return send(200, { pack: skill, skipped: ['helper.py'], truncated: false,
+            source: 'imported skill', available_tools: ['list_folders', 'list_dir', 'search_files', 'read_file'] });
         }
         const item = g[1] && agents.get(g[1]);
         if (!item) return send(404, { detail: `no agent called '${g[1] || ''}'` });

@@ -201,7 +201,38 @@
     return { ok: true, emoji };
   }
 
+  /** An /agents/import-skill preview -> what the import form shows. Pure. */
+  function importView(preview) {
+    const p = (preview && preview.pack) || {};
+    const tools = Array.isArray(p.tools) ? p.tools.filter((t) => typeof t === 'string') : [];
+    const available = Array.isArray(preview && preview.available_tools)
+      ? preview.available_tools.filter((t) => typeof t === 'string') : [];
+    const skipped = Array.isArray(preview && preview.skipped)
+      ? preview.skipped.filter((t) => typeof t === 'string') : [];
+    return {
+      name: String(p.name || ''),
+      title: String(p.title || p.name || 'Untitled agent'),
+      description: String(p.description || ''),
+      tools, available,
+      skipped, truncated: !!(preview && preview.truncated),
+      source: String((preview && preview.source) || ''),
+    };
+  }
+
+  /** The previewed pack with the user's tool checkboxes applied. Pure. */
+  function packWithTools(pack, tools) {
+    const p = pack || {};
+    const picked = (Array.isArray(tools) ? tools : []).filter((t) => typeof t === 'string');
+    return { ...p, tools: picked };
+  }
+
+  /** The exact file name to share an A2A card under. */
+  function a2aFileName(pack) {
+    const name = String((pack && pack.name) || 'agent').trim() || 'agent';
+    return `${name}.agent-card.json`;
+  }
+
   return { FORMAT, MAX_VALUE, SURFACES, surfaceView, cardView, runPayload, parsePackFile, packFileName, packFileText,
-           draftFields, packFromFields, faceView, parseEmoji, signatureBadge,
+           draftFields, packFromFields, faceView, parseEmoji, signatureBadge, importView, packWithTools, a2aFileName,
            scheduleText, formatDue, loopView };
 });

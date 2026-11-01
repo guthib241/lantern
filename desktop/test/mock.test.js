@@ -163,3 +163,22 @@ test('mock settings: the Wi-Fi receive switch round-trips', async (t) => {
   assert.equal((await api.get('/settings')).localsend, true);
   assert.equal((await api.post('/settings', { localsend: false })).localsend, false);
 });
+
+test('mock agents: import-skill preview and a2a-card', async (t) => {
+  const m = await start(0);
+  t.after(() => m.close());
+  const api = new Api(m.url, m.token);
+  const preview = await api.post('/agents/import-skill', { path: '/tmp/skill' });
+  assert.equal(preview.pack.name, 'my-skill');
+  assert.deepEqual(preview.skipped, ['helper.py']);
+  assert.equal(preview.source, 'imported skill');
+  assert.ok(preview.available_tools.includes('read_file'));
+  const card = await api.get('/agents/tidy-downloads/a2a-card');
+  assert.equal(card.name, 'tidy-downloads');
+  assert.equal(card.version, '1.0.0');
+  assert.equal(card.provider.organization, 'lantern');
+  assert.equal(card.skills.length, 1);
+  assert.equal(card.skills[0].id, 'tidy-downloads');
+  assert.ok(!('url' in card));
+  await assert.rejects(api.get('/agents/no-such-agent/a2a-card'), /no agent/);
+});

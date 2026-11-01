@@ -22,6 +22,7 @@ in the browser can't drive Lantern through localhost.
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
   GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/sign,
   POST /agents/{name}/run, POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft,
+  POST /agents/import-skill, GET /agents/{name}/a2a-card,
   POST /agents/{name}/face {emoji}|{generate}, GET /agents/{name}/face   the icon file (T4c)
   GET  /loops, POST /agents/{name}/loop/resume|pause|run-now   loop agents: packs on a schedule (T3c)
   POST /avatar/design {brief, style}   one preview image; POST /avatar/design/{id}/accept
@@ -138,6 +139,12 @@ class SurfaceIn(BaseModel):
 
 class PackDraftIn(BaseModel):
     task_id: int
+
+
+class SkillImportIn(BaseModel):
+    path: str | None = None
+    text: str | None = None
+    filename: str = "SKILL.md"
 
 
 class AvatarDesignIn(BaseModel):
@@ -425,6 +432,29 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None) -> FastAPI
             return core.pack_draft(body.task_id)
         except ValueError as e:
             raise HTTPException(404 if str(e).startswith("no task") else 502, str(e))
+
+    @app.post("/agents/import-skill", dependencies=[Depends(auth)])
+    def import_skill(body: SkillImportIn):
+        """Preview a SKILL.md import: the validated pack, skipped scripts and
+        whether the body was cut. The panel's tool checkboxes land when the
+        preview is saved through install (with its approval)."""
+        from .skillimport import SkillImportError
+        try:
+            return core.pack_import_skill({"path": body.path, "text": body.text,
+                                           "filename": body.filename})
+        except SkillImportError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/agents/{name}/a2a-card", dependencies=[Depends(auth)])
+    def a2a_card(name: str):
+        """This installed pack as an A2A Agent Card (`agent-card.json`), so
+        other agent tools can discover it. No endpoint URL is published."""
+        try:
+            return core.pack_a2a_card(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
 
     @app.post("/agents/{name}/run", dependencies=[Depends(auth)])
     def run_agent(name: str, body: PackRunIn):
