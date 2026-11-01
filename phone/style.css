@@ -203,6 +203,24 @@ main {
   color: var(--tint-text);
   font-size: 20px;
 }
+.composer input[type="file"] { display: none; }
+.composer .cambtn {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-size: 19px;
+  cursor: pointer;
+  flex: none;
+}
+.composer button#mic { background: var(--card); border: 1px solid var(--line); font-size: 19px; }
+.composer button#mic.recording { background: #b3261e; color: #ffffff; }
+.taskimg { width: 100%; max-width: 420px; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.taskimg-holder { min-height: 20px; }
 .sheet-backdrop {
   position: fixed;
   inset: 0;

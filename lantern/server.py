@@ -58,18 +58,30 @@ from pydantic import BaseModel, Field
 from . import __version__, models
 from .approvals import ApprovalError
 from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
+from .channels.hub import CHECK_WORK
 from .core import Core
 from .forms import Vault, VaultError
 from .pairing import PairingError, PairingStore
 from . import phone as phone_view
 from .policy import ZONES, PolicyError
 from .sam import IDEAS, CheckInError
+from .voice import MAX_BYTES as VOICE_MAX_BYTES, to_wav16k, transcribe
 from .widgets import WidgetError
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 
-PHONE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
-             "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+# blob: only so the phone can show a circled image it fetched with its device token (an <img>
+# cannot send that header) and play back a voice note it just recorded; nothing loads from
+# another origin, and no script is ever inline or blob-loaded. See docs/DECISIONS.md, Nov 1.
+PHONE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
+             "media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; "
+             "form-action 'self'")
+
+PHONE_PHOTO_MAX_BYTES = 20_000_000   # like POST /checkwork's data-URL limit
+PHONE_VOICE_MAX_BYTES = VOICE_MAX_BYTES
+AUDIO_TYPES = {"audio/webm": ".webm", "audio/ogg": ".ogg", "audio/wav": ".wav", "audio/x-wav": ".wav",
+               "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/opus": ".opus"}
+AUDIO_EXTS = {".webm", ".ogg", ".opus", ".wav", ".mp3", ".m4a", ".mp4", ".aac"}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PHONE_DIR = REPO_ROOT / "phone"
@@ -100,6 +112,37 @@ def lan_ip() -> str:
             return s.getsockname()[0]
     except Exception:
         return "127.0.0.1"
+
+
+def _audio_ext(content_type: str, data: bytes, filename: str = "") -> str | None:
+    """The voice note's extension from its file name or type, checked against the bytes when
+    they carry a known container signature. None means: not an audio type Lantern accepts."""
+    ext = Path(filename or "").suffix.lower()
+    if ext not in AUDIO_EXTS:
+        ext = AUDIO_TYPES.get((content_type or "").split(";")[0].strip().lower(), "")
+    if not ext:
+        if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+            ext = ".wav"
+        elif data[:4] == b"OggS":
+            ext = ".ogg"
+        elif data[:4] == b"\x1aE\xdf\xa3":
+            ext = ".webm"
+        else:
+            return None
+    if ext == ".wav" and not (data[:4] == b"RIFF" and data[8:12] == b"WAVE"):
+        return None   # a .wav name on non-WAV bytes: ffmpeg would only fail later and less plainly
+    return ext
+
+
+def _voice_error(e: Exception) -> str:
+    """A plain sentence for a failed voice note, naming the missing piece when there is one."""
+    msg = str(e)
+    if "ffmpeg is not installed" in msg:
+        return "I couldn't hear that voice note: ffmpeg is not installed on this computer, so I can't convert it."
+    if models.API_KEY_ENV in msg:
+        return (f"I couldn't hear that voice note: no model key is set ({models.API_KEY_ENV}), "
+                "so it can't be transcribed yet.")
+    return f"I couldn't hear that voice note ({type(e).__name__}). Try again or type it."
 
 
 def load_token(home: Path) -> str:
@@ -347,6 +390,154 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
     @app.post("/m/api/task")
     def phone_task(body: PhoneTaskIn, _dev: dict = Depends(device_auth)):
         return {"task_id": _submit_goal(core, body.goal)}
+
+    async def _upload(request: Request, file_fields: tuple[str, ...], max_bytes: int,
+                      too_large: str) -> tuple[bytes, dict, str, str]:
+        """One uploaded file, as (bytes, text fields, filename, content type). The phone app sends
+        the raw file as the body; a multipart form with a file part is accepted too, so the route
+        can be driven by any HTTP client. Nothing about the file is trusted from either shape.
+
+        Size is refused early, before the body is held whole in memory: a declared
+        Content-Length over the limit is rejected without reading at all (the only check a
+        multipart body gets, before it is parsed), and a raw body is streamed and rejected
+        the moment the bytes read pass the limit, whatever its headers claimed."""
+        declared = request.headers.get("content-length")
+        if declared:
+            try:
+                declared_n = int(declared)
+            except ValueError:
+                declared_n = None   # a nonsense header proves nothing; the stream check still applies
+            if declared_n is not None and declared_n > max_bytes:
+                raise HTTPException(413, too_large)
+        ctype = request.headers.get("content-type", "")
+        if ctype.startswith("multipart/form-data"):
+            from starlette.datastructures import UploadFile
+            try:
+                form = await request.form()
+            except Exception:
+                raise HTTPException(400, "send the file as multipart form data or as the request body")
+            data, filename, fields = None, "", {}
+            for key, value in form.multi_items():
+                if isinstance(value, UploadFile):
+                    if data is None and (key in file_fields or not file_fields):
+                        data, filename = await value.read(), value.filename or ""
+                elif key not in fields:
+                    fields[key] = str(value)
+            if data is None:
+                raise HTTPException(400, "send the file itself")
+            if len(data) > max_bytes:   # a chunked multipart body had no length to check up front
+                raise HTTPException(413, too_large)
+            return data, fields, filename, ctype
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > max_bytes:
+                raise HTTPException(413, too_large)   # stop reading; the rest is never buffered
+            body += chunk
+        return bytes(body), {}, "", ctype
+
+    def _transcribe_phone_voice(data: bytes, ext: str) -> dict:
+        """A phone voice note through exactly the WhatsApp pipeline (hub.py `_voice`): kept in
+        Lantern's media folder, ffmpeg to 16 kHz WAV, then Muse Voice Transcribe's file endpoint
+        (voice.transcribe), biased toward the names Lantern knows, audited and costed the same way.
+        In rehearsal the hub already carries the scripted converter/transcriber (demo.build); a
+        demo core with no hub gets the scripted transcript directly, so no key or ffmpeg is needed."""
+        import datetime as _dt
+        if hub is None and getattr(core, "demo", False):
+            from .demo import STORY
+            return {"transcript": STORY[0].goal, "audioDurationMs": 0}
+        media = Path(core.cfg.media_dir).expanduser()
+        media.mkdir(parents=True, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")   # short digit runs: never card-shaped
+        src = media / f"phone-voice-{stamp}{ext}"
+        src.write_bytes(data)
+        converter = getattr(hub, "converter", None) or to_wav16k
+        transcriber = getattr(hub, "transcriber", None) or transcribe
+        keywords = hub.keywords() if hub is not None and hasattr(hub, "keywords") else []
+        wav = converter(src, src.with_name(src.stem + ".16k.wav"))   # never onto itself (.wav in)
+        core.audit.record(lane="cloud", destination=getattr(core.cfg, "base_url", models.BASE_URL),
+                          endpoint="asr.transcribe",
+                          model=models.VOICE, payload=Path(wav).read_bytes(), preview="[voice note]")
+        result = transcriber(wav, keywords=keywords)
+        ms = int(result.get("audioDurationMs") or 0)
+        cost = models.audio_cost(ms)
+        core.memory.log_usage(None, models.VOICE, cost_usd=cost)
+        core.emit({"type": "usage", "model": models.VOICE, "badge": models.badge(models.VOICE),
+                   "audio_ms": ms, "cost_usd": cost})
+        return result
+
+    @app.post("/m/api/photo")
+    async def phone_photo(request: Request, text: str = "", _dev: dict = Depends(device_auth)):
+        """A photo from the phone, with the words in the message box as its caption: "check my
+        work" goes to check-work, anything else to the scan pipeline (hub.py `_start_photo`,
+        core.photo / core.check_work, unchanged). The type is sniffed from the bytes."""
+        data, fields, _name, _ctype = await _upload(
+            request, ("image", "file", "photo"), PHONE_PHOTO_MAX_BYTES,
+            f"that photo is over {PHONE_PHOTO_MAX_BYTES // 1_000_000} MB")
+        if not data:
+            raise HTTPException(400, "send the photo itself")
+        if len(data) > PHONE_PHOTO_MAX_BYTES:
+            raise HTTPException(413, f"that photo is over {PHONE_PHOTO_MAX_BYTES // 1_000_000} MB")
+        sniffed = phone_view.sniff_image(data)
+        if sniffed is None:
+            raise HTTPException(415, "send a JPEG, PNG or WebP photo (checked from the file itself, "
+                                     "not from its name)")
+        words = " ".join(str(text or fields.get("text") or fields.get("caption") or "").split())[:2000]
+        try:
+            # Off the event loop: scanning / checking a photo takes seconds of model work to
+            # queue up, and every other request and websocket must stay responsive meanwhile.
+            if CHECK_WORK.search(words):
+                task_id = await asyncio.to_thread(core.check_work, data)
+            else:
+                task_id = await asyncio.to_thread(core.photo, data, words)
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        return {"task_id": task_id, "image_type": sniffed[1]}
+
+    @app.post("/m/api/voice")
+    async def phone_voice(request: Request, _dev: dict = Depends(device_auth)):
+        """A voice note from the phone: transcribed exactly like a WhatsApp voice note, shown back
+        as the user's message ("🎙 …"), then handled like typed text (the same _submit_goal)."""
+        data, fields, filename, ctype = await _upload(
+            request, ("audio", "file", "voice"), PHONE_VOICE_MAX_BYTES,
+            "that voice note is too long (Muse Voice Transcribe takes at most 10 minutes or 32 MB)")
+        if not data:
+            raise HTTPException(400, "send the voice note itself")
+        if len(data) > PHONE_VOICE_MAX_BYTES:
+            raise HTTPException(413, "that voice note is too long (Muse Voice Transcribe takes "
+                                     "at most 10 minutes or 32 MB)")
+        ext = _audio_ext(fields.get("content_type", "") or ctype, data, filename)
+        if ext is None:
+            raise HTTPException(415, "send a voice note in a format Lantern can convert "
+                                     "(WebM, OGG, WAV, MP3 or M4A from the recorder)")
+        try:
+            # Off the event loop: ffmpeg and the transcription call take seconds, during which
+            # every other request and websocket (the desktop's /events included) must stay live.
+            result = await asyncio.to_thread(_transcribe_phone_voice, data, ext)
+        except HTTPException:
+            raise
+        except Exception as e:   # download, ffmpeg, transcription: all end the same plain way
+            raise HTTPException(503, _voice_error(e))
+        text = str(result.get("transcript", "")).strip()
+        if not text:
+            raise HTTPException(422, "I got the voice note but couldn't make out any words.")
+        task_id = _submit_goal(core, text)
+        return {"task_id": task_id, "transcript": text, "message": f"🎙 {text}",
+                "audio_ms": int(result.get("audioDurationMs") or 0)}
+
+    @app.get("/m/api/tasks/{task_id}/image")
+    def phone_task_image(task_id: int, _dev: dict = Depends(device_auth)):
+        """This task's circled check-work image, and nothing else (phone.task_image_path holds the
+        media-folder / own-task / private checks)."""
+        try:
+            path = phone_view.task_image_path(core, task_id)
+        except KeyError:
+            raise HTTPException(404, "no such task")
+        except PermissionError:
+            raise HTTPException(403, "that task is private; its image stays on this computer")
+        if path is None:
+            raise HTTPException(404, "that task made no circled image")
+        media = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+        return FileResponse(path, media_type=media)
 
     @app.get("/m/api/tasks")
     def phone_tasks(limit: int = 20, _dev: dict = Depends(device_auth)):

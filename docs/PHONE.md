@@ -65,6 +65,35 @@ curl -X POST -H "X-Lantern-Token: $(cat ~/.lantern/token)" localhost:8765/device
 
 A revoked phone gets 401 on every `/m/api` call and must pair again.
 
+## Photos and voice notes
+
+The composer has the same two extra inputs as WhatsApp:
+
+- **📷 Photo.** Tap the camera button and take (or pick) a photo. Any words in
+  the message box go with it as its caption, exactly like a WhatsApp caption:
+  "check my work" sends it to Check my work, anything else (or nothing) sends
+  it to the scan pipeline, which reads the paper and runs the learned routine
+  it's for. The phone shrinks the photo first — at most 2000 px on the long
+  side, as JPEG — so uploads stay small. The server checks the image type
+  from the bytes themselves (JPEG, PNG or WebP), never from the file name,
+  and refuses anything over 20 MB. `POST /m/api/photo` (device token; the raw
+  image is the body, the caption is `?text=`; a multipart form with an
+  `image` file part works too).
+- **🎙 Voice note.** Hold the mic button, speak, let go to send (it stops by
+  itself at 60 seconds). `POST /m/api/voice` (device token; the recording is
+  the body) converts it on the laptop exactly like a WhatsApp voice note —
+  ffmpeg to 16 kHz WAV, then Muse Voice Transcribe — shows the transcript
+  back in the chat as your message ("🎙 …"), and handles it like typed text.
+  Without ffmpeg or without a model key the reply says so plainly instead of
+  failing quietly; in rehearsal (`--demo`) a scripted transcript keeps the
+  flow testable with neither.
+
+When a check-my-work task circles a line, the circled photo appears under
+Lantern's answer in the chat. The phone fetches it from
+`GET /m/api/tasks/{id}/image` with its device token: that route only serves
+an image Lantern itself made in its media folder and recorded as that task's
+check-work result, and it refuses private tasks outright.
+
 ## What the phone can and cannot see
 
 The phone gets what WhatsApp gets (`lantern/phone.py`, one filter function):

@@ -8,11 +8,69 @@ needs, but never the raw payload.
 """
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 from typing import Any
 
 from .channels.cards import approval_card
 from .memory import PRIVATE_SUMMARY
+
+
+def sniff_image(data: bytes) -> tuple[str, str] | None:
+    """(extension, MIME) from the bytes themselves, never from a client-supplied name or type.
+    JPEG, PNG and WebP are the photo types Lantern's scan / check-work pipelines open."""
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg", "image/jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png", "image/png"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    return None
+
+
+def task_image_path(core: Any, task_id: int) -> Path | None:
+    """The circled check-work image Lantern made for this task, or None when it made none.
+    KeyError for an unknown task; PermissionError for a private task (its image never leaves
+    the laptop, exactly like its reply). Only a file inside Lantern's media folder that this
+    task's own check-work result names can be served: never a user file, never another task's."""
+    core.memory.get_task(task_id)   # KeyError if unknown
+    try:
+        if core.memory.is_private_task(task_id):
+            raise PermissionError("a private task's image stays on this computer")
+    except PermissionError:
+        raise
+    except Exception:
+        pass
+    media = Path(core.cfg.media_dir).expanduser().resolve()
+    for step in reversed(core.memory.steps(task_id)):
+        if step.get("kind") != "tool_result":
+            continue
+        try:
+            content = json.loads(step.get("content") or "")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(content, dict) or content.get("name") != "check_work":
+            continue
+        result = content.get("result") or {}
+        name = result.get("image") if isinstance(result, dict) else None
+        if not name:
+            return None
+        resolved = Path(str(name)).expanduser().resolve()
+        if not resolved.is_relative_to(media) or not resolved.is_file():
+            return None
+        if resolved.suffix.lower() not in (".png", ".jpg", ".jpeg"):
+            return None
+        return resolved
+    return None
+
+
+def has_task_image(core: Any, task_id: int) -> bool:
+    """Whether the phone may fetch this task's circled image (False for private tasks)."""
+    try:
+        return task_image_path(core, task_id) is not None
+    except Exception:
+        return False
 
 
 def _reply_public(core: Any, task_id: int, summary: str | None, steps: list[dict]) -> str:
@@ -81,7 +139,7 @@ def task_view(core: Any, task_id: int) -> dict:
     view: dict[str, Any] = {"id": t.id, "goal": str(t.goal).splitlines()[0][:200] if t.goal else "",
                             "status": t.status, "reply": reply,
                             "created_at": t.created_at, "updated_at": t.updated_at,
-                            "private": bool(private),
+                            "private": bool(private), "has_image": has_task_image(core, task_id),
                             "steps": _fold_steps(core, task_id, steps)}
     try:
         view["usage"] = core.memory.task_usage(t.id)
@@ -102,7 +160,8 @@ def tasks_view(core: Any, limit: int = 20) -> list[dict]:
         reply = PRIVATE_SUMMARY if private else " ".join(str(t.summary or "").split())[:300]
         out.append({"id": t.id, "goal": str(t.goal).splitlines()[0][:200] if t.goal else "",
                     "status": t.status, "reply": reply,
-                    "created_at": t.created_at, "updated_at": t.updated_at, "private": bool(private)})
+                    "created_at": t.created_at, "updated_at": t.updated_at, "private": bool(private),
+                    "has_image": False if private else has_task_image(core, t.id)})
     return out
 
 

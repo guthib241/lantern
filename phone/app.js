@@ -29,6 +29,31 @@
     return data;
   }
 
+  async function apiRaw(path, body, contentType) {
+    var tok = device();
+    var headers = {};
+    if (contentType) headers["Content-Type"] = contentType;
+    if (tok) headers["X-Lantern-Device"] = tok;
+    var res = await fetch(path, { method: "POST", headers: headers, body: body });
+    if (res.status === 401) {
+      unpair(true);
+      throw new Error("This phone is unpaired. Pair it again from the desktop.");
+    }
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+    if (!res.ok) throw new Error((data && (data.detail || data.message)) || ("Request failed (" + res.status + ")"));
+    return data;
+  }
+
+  async function apiBlob(path) {
+    var tok = device();
+    var headers = {};
+    if (tok) headers["X-Lantern-Device"] = tok;
+    var res = await fetch(path, { headers: headers });
+    if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+    return res.blob();
+  }
+
   function show(which) {
     $("screen-pair").hidden = which !== "pair";
     $("screen-chat").hidden = which !== "chat";
@@ -76,6 +101,16 @@
   // ---- chat -----------------------------------------------------------------
   var lastIds = [];
   var sending = false;
+  var LS_VOICE = "lantern_voice_tasks";
+  var voiceIds = {};
+  try { (JSON.parse(localStorage.getItem(LS_VOICE) || "[]") || []).forEach(function (id) { voiceIds[id] = true; }); }
+  catch (e) { voiceIds = {}; }
+
+  function markVoice(taskId) {
+    if (!taskId) return;
+    voiceIds[taskId] = true;
+    try { localStorage.setItem(LS_VOICE, JSON.stringify(Object.keys(voiceIds).slice(-50))); } catch (e) { /* full/blocked */ }
+  }
 
   function renderThread(tasks) {
     var thread = $("thread");
@@ -85,9 +120,15 @@
     for (var i = 0; i < list.length; i++) {
       (function (t) {
         var wrap = el("div", "task");
-        wrap.appendChild(taskBubble("me", t.goal || ""));
+        wrap.appendChild(taskBubble("me", (voiceIds[t.id] ? "🎙 " : "") + (t.goal || "")));
         var them = el("div", "them");
         them.appendChild(taskBubble("bubble", t.reply || (t.status === "active" ? "Working on it…" : "")));
+        if (t.has_image) {
+          var holder = el("div", "taskimg-holder");
+          holder.appendChild(el("span", "status", "Loading the circled photo…"));
+          them.appendChild(holder);
+          loadTaskImage(t.id, holder);
+        }
         var steps = t.steps || [];
         if (steps.length) {
           var det = document.createElement("details");
@@ -120,6 +161,20 @@
       return wrap;
     }
     return side;
+  }
+
+  async function loadTaskImage(taskId, holder) {
+    try {
+      var blob = await apiBlob("/m/api/tasks/" + encodeURIComponent(taskId) + "/image");
+      var img = document.createElement("img");
+      img.className = "taskimg";
+      img.alt = "Your working with the first line that does not follow circled";
+      img.src = URL.createObjectURL(blob);
+      holder.textContent = "";
+      holder.appendChild(img);
+    } catch (err) {
+      holder.textContent = "";
+    }
   }
 
   async function refreshTasks() {
@@ -156,6 +211,134 @@
       sending = false;
     }
   });
+
+  // ---- photo: downscale on the phone, then upload with the words in the box --------
+  function downscale(file) {
+    var url = URL.createObjectURL(file);
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () {
+        try {
+          var scale = Math.min(1, 2000 / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * scale));
+          canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * scale));
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(function (blob) { resolve(blob || file); }, "image/jpeg", 0.85);
+        } catch (e) {
+          URL.revokeObjectURL(url);
+          resolve(file);
+        }
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+
+  $("photo-input").addEventListener("change", async function () {
+    var input = $("photo-input");
+    var file = input.files && input.files[0];
+    input.value = "";
+    if (!file || sending) return;
+    var words = $("goal").value.trim();
+    sending = true;
+    $("goal").value = "";
+    $("working").hidden = false;
+    $("empty").hidden = true;
+    $("status").textContent = "sending photo…";
+    try {
+      var blob = await downscale(file);
+      await apiRaw("/m/api/photo?text=" + encodeURIComponent(words), blob, blob.type || "image/jpeg");
+      await refreshTasks();
+      setTimeout(refreshTasks, 1500);
+      setTimeout(refreshTasks, 4000);
+    } catch (err) {
+      $("status").textContent = err.message;
+    } finally {
+      sending = false;
+    }
+  });
+
+  // ---- voice note: hold the mic, let go to send (at most 60 seconds) ----------------
+  var recorder = null;
+  var recStream = null;
+  var recChunks = [];
+  var recTimer = null;
+
+  function stopTracks() {
+    if (recStream) recStream.getTracks().forEach(function (t) { t.stop(); });
+    recStream = null;
+  }
+
+  async function startRecording() {
+    if (recorder || sending) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+      $("status").textContent = "Voice notes need microphone access in this browser.";
+      return;
+    }
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      $("status").textContent = "Voice notes need microphone access; allow it and hold the mic again.";
+      return;
+    }
+    recChunks = [];
+    try {
+      recorder = new MediaRecorder(recStream);
+    } catch (e) {
+      stopTracks();
+      $("status").textContent = "This browser cannot record voice notes.";
+      return;
+    }
+    recorder.addEventListener("dataavailable", function (e) { if (e.data && e.data.size) recChunks.push(e.data); });
+    recorder.addEventListener("stop", sendRecording);
+    recorder.start();
+    $("mic").classList.add("recording");
+    $("status").textContent = "Recording… let go to send.";
+    recTimer = setTimeout(stopRecording, 60000);
+  }
+
+  function stopRecording() {
+    if (recTimer) { clearTimeout(recTimer); recTimer = null; }
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recorder = null;
+    $("mic").classList.remove("recording");
+  }
+
+  async function sendRecording() {
+    stopTracks();
+    var type = (recChunks[0] && recChunks[0].type) || "audio/webm";
+    var blob = new Blob(recChunks, { type: type });
+    recChunks = [];
+    if (!blob.size || sending) return;
+    sending = true;
+    $("working").hidden = false;
+    $("empty").hidden = true;
+    $("status").textContent = "Transcribing…";
+    try {
+      var data = await apiRaw("/m/api/voice", blob, type);
+      if (data && data.task_id) markVoice(data.task_id);
+      $("status").textContent = (data && data.message) || "Voice note sent.";
+      await refreshTasks();
+      setTimeout(refreshTasks, 1500);
+      setTimeout(refreshTasks, 4000);
+    } catch (err) {
+      $("status").textContent = err.message;
+    } finally {
+      sending = false;
+    }
+  }
+
+  $("mic").addEventListener("pointerdown", function (e) {
+    e.preventDefault();
+    try { $("mic").setPointerCapture(e.pointerId); } catch (err) { /* older browsers: leave still stops */ }
+    startRecording();
+  });
+  $("mic").addEventListener("pointerup", stopRecording);
+  $("mic").addEventListener("pointercancel", stopRecording);
+  $("mic").addEventListener("pointerleave", stopRecording);
+  $("mic").addEventListener("contextmenu", function (e) { e.preventDefault(); });
 
   // ---- approvals (sheet) ------------------------------------------------------
   var current = null;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; base-uri 'self'; form-action 'self'">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#1c1c1e">
 <title>Lantern</title>
@@ -67,7 +67,10 @@
 
 <div class="composer" id="composer" hidden>
   <form id="ask">
+    <label class="cambtn" for="photo-input" aria-label="Take or send a photo">📷</label>
+    <input type="file" id="photo-input" accept="image/*" capture="environment" aria-label="Take or send a photo">
     <input id="goal" autocomplete="off" maxlength="2000" placeholder="Message Lantern" aria-label="Message Lantern">
+    <button type="button" id="mic" aria-label="Hold to record a voice note">🎙</button>
     <button type="submit" aria-label="Send">↑</button>
   </form>
 </div>

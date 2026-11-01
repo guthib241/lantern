@@ -1,4 +1,5 @@
 """Paired phone: pairing codes, device auth, LAN guard, WhatsApp-level privacy."""
+import asyncio
 import json
 import os
 import stat
@@ -209,7 +210,9 @@ def test_tunnelled_requests_and_desktop_sockets_are_not_local_when_phone_on(tmp_
     assert c.get("/m/").status_code == 200 and c.get("/m/", headers={"X-Forwarded-For": "1.2.3.4"}).status_code == 200
     token = H["X-Lantern-Token"]
     for path in ("/events", "/talk"):
-        with pytest.raises(Exception):
+        # refused before accept: the test client raises WebSocketDisconnect, or sometimes CancelledError (a
+        # BaseException) as its task is torn down; either way the socket never opened
+        with pytest.raises((Exception, asyncio.CancelledError)):
             with c.websocket_connect(f"{path}?token={token}", headers={"X-Forwarded-For": "203.0.113.7"}) as ws:
                 ws.receive_json()
     with c.websocket_connect(f"/events?token={token}") as ws:   # the desktop itself still connects
