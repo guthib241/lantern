@@ -44,7 +44,10 @@ class ToolError(Exception):
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None, forms=None, email=None, envmap=None, widgets=None, mcp=None):
+                 router=None, forms=None, email=None, envmap=None, widgets=None, mcp=None,
+                 phone_sender=None, audit=None):
+        """phone_sender: (data, filename, caption) -> {"ok", "bytes"} (a channel's send_file,
+        wired where the hub is created). audit: AuditLog, for recording what left the laptop."""
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -60,6 +63,8 @@ class Toolbox:
         self.widgets = widgets  # widgets.Widgets
         self.client = None      # the (audited) model client, for tools that write with a model (widgets)
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
+        self.phone_sender = phone_sender  # a channel's send_file; None means no phone is connected
+        self.audit = audit                # AuditLog: every send is recorded as leaving the laptop
         self.github_get = None    # repolearn's network hook (url -> bytes); None means real GitHub
         self.mcp_probe = None     # repolearn.probe_server hook (name, spec -> [tools]); tests swap it
         self.mcp_config = None    # Lantern's mcp.json path (Core sets it); learned servers go there
@@ -419,6 +424,60 @@ class Toolbox:
                                    task_id=self.task_id)
         except EmailError as e:
             raise ToolError(str(e)) from e
+
+    # ---- phone (send a file to the owner's Telegram) -------------------------
+    def send_to_phone(self, path: str, caption: str = "") -> dict:
+        """Send a file to the owner's phone on Telegram, after approval.
+
+        Private-zone files are refused (they stay on this laptop). The approval is
+        bound to the file's name, size and SHA-256; the file is re-read right before
+        sending and refused if it changed. `verified` is true only when the channel
+        reports the send ok with the same byte count."""
+        from .channels.base import ChannelError
+        from .channels.telegram import MAX_FILE_BYTES
+        from .email_tool import _size
+        if self.phone_sender is None:
+            return {"done": False, "verified": False,
+                    "reason": "no phone connected (set up Telegram, see README)"}
+        try:
+            p, zone = self.policy.check_visible(path)
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
+        if zone == PRIVATE:
+            return {"done": False, "verified": False,
+                    "reason": f"{p} is in a private zone; it stays on this laptop"}
+        if not p.is_file():
+            raise ToolError(f"{p} is not a file")
+        size = self.policy.stat(p).st_size
+        if size > MAX_FILE_BYTES:
+            return {"done": False, "verified": False,
+                    "reason": f"{p.name} is {_size(size)}; Telegram bots can only send 50 MB"}
+        data = self.policy.read_bytes(p)
+
+        def plan(raw: bytes) -> dict:
+            return {"file": p.name, "bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(), "to": "Telegram (owner)"}
+        commit = self._approve("send_to_phone", f"Send {p} ({_size(len(data))}) to your phone on Telegram",
+                               plan(data))
+        if commit is None:
+            return {"done": False, "verified": False, "reason": "user declined"}
+        final = self.policy.read_bytes(p)   # re-read: what's on disk now is what goes out
+        if refused := self._commit(commit, plan(final)):
+            return {"done": False, "verified": False, "reason": refused["reason"]}
+        try:
+            reply = self.phone_sender(final, p.name, caption or "")
+        except NotImplementedError:
+            return {"done": False, "verified": False, "reason": "Telegram only for now"}
+        except (ChannelError, OSError) as e:
+            raise ToolError(f"send_to_phone failed: {e}") from e
+        ok = bool(reply.get("ok"))
+        verified = ok and reply.get("bytes") == len(final)
+        if self.audit is not None:   # what left the laptop: lane, destination, name and size, no contents
+            self.audit.record(lane="cloud", destination="api.telegram.org", endpoint="telegram.send",
+                              model="telegram", task_id=self.task_id,
+                              payload=json.dumps({"file": p.name, "bytes": len(final)}).encode(),
+                              preview=f"sent {p.name} ({_size(len(final))}) to Telegram")
+        return {"done": ok, "verified": verified, "file": p.name, "bytes": len(final)}
 
     # ---- projects (environment map) ------------------------------------------
     def _envmap(self):
@@ -864,6 +923,11 @@ TOOL_SPECS = [
     _fn("open_link",
         "Open a web link (YouTube, a website) in the browser on this laptop. The user approves the exact link first.",
         {"url": {**S, "description": "The link to open, e.g. a shared YouTube URL"}}, ["url"]),
+    _fn("send_to_phone",
+        "Send a file to the owner's phone on Telegram as a document. The user approves the exact file first; "
+        "the result says whether the send was verified. Private-zone files stay on this laptop.",
+        {"path": {**S, "description": "The file to send"},
+         "caption": {**S, "description": "An optional short note sent with the file"}}, ["path"]),
     _fn("learn_repo", "Learn a GitHub repo from its link (reads it, never runs code): explain what it is; "
         "install its MCP server pinned to a commit after approval; or draft an agent pack from its docs.",
         {"url": {**S, "description": "https://github.com/<owner>/<repo>, optionally /tree/<ref>"}}, ["url"]),

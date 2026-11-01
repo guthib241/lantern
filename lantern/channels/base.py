@@ -79,6 +79,11 @@ class Channel:
         """buttons: [(id, title)], at most 3, titles at most 20 characters."""
         raise NotImplementedError
 
+    def send_file(self, data: bytes, filename: str, caption: str = "") -> dict:
+        """Send a file to the owner. Returns {"ok": bool, "bytes": int},
+        where "bytes" is the size the service reports back."""
+        raise NotImplementedError
+
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         """Optional: confirm a button tap in the channel's own UI (Telegram spinner)."""
 

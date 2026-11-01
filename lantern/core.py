@@ -124,7 +124,7 @@ class Core:
         self.mcp = mcp if mcp is not None else MCPHub.from_file(cfg.mcp_config).start()
         self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
                                forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
-                               mcp=self.mcp)
+                               mcp=self.mcp, audit=self.audit)
         self.toolbox.client = self.client
         self.toolbox.mcp_config = cfg.mcp_config   # learn_repo writes learned servers to Lantern's mcp.json
         if "freecad" in getattr(self.mcp, "servers", {}):

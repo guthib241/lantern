@@ -115,7 +115,8 @@ def build_agent(cfg, mem: Memory) -> Agent:
     email = EmailService(EmailSettings.from_env(dict(os.environ)), policy, audit,
                          outbox_dir=os.path.join(cfg.media_dir, "outbox"))
     tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms, email=email,
-                    envmap=EnvMap(policy, cfg.envmap_path), widgets=Widgets(Path(cfg.widgets_dir)))
+                    envmap=EnvMap(policy, cfg.envmap_path), widgets=Widgets(Path(cfg.widgets_dir)),
+                    audit=audit)
     tools.client = client
     tools.on_event = show_event
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
@@ -330,6 +331,10 @@ def main(argv=None) -> None:
         mem.close()
         core = Core(cfg)
         hub = ChannelHub(core, channels_from_env(dict(os.environ)))
+        from .channels.base import Channel
+        core.toolbox.phone_sender = next(
+            (c.send_file for c in hub.channels.values() if type(c).send_file is not Channel.send_file),
+            None)
         if a.channel_test:  # prove the phone side works before the demo
             for ch in hub.channels.values():
                 ch.send_text(a.channel_test)

@@ -9,6 +9,8 @@ Only the owner's chat id (LANTERN_TELEGRAM_OWNER) is listened to.
 """
 from __future__ import annotations
 
+import json
+import secrets
 import threading
 import time
 from typing import Callable
@@ -16,6 +18,24 @@ from typing import Callable
 from .base import Channel, ChannelError, Http, Incoming, json_call, urllib_http
 
 API = "https://api.telegram.org"
+MAX_FILE_BYTES = 50 * 1024 * 1024   # bots can't send more than 50 MB
+MAX_CAPTION = 1024                  # sendDocument captions are cut at 1024 chars
+
+
+def _multipart(fields: dict[str, str], filename: str, data: bytes) -> tuple[str, bytes]:
+    """Encode text fields plus one file as multipart/form-data, stdlib only."""
+    boundary = "----Lantern" + secrets.token_hex(16)
+    safe = "".join(c for c in filename if c not in '"\r\n') or "file"
+    parts: list[bytes] = []
+    for name, value in fields.items():
+        parts += [f"--{boundary}".encode(),
+                  f'Content-Disposition: form-data; name="{name}"'.encode(), b"",
+                  value.encode()]
+    parts += [f"--{boundary}".encode(),
+              f'Content-Disposition: form-data; name="document"; filename="{safe}"'.encode(),
+              b"Content-Type: application/octet-stream", b"", data,
+              f"--{boundary}--".encode()]
+    return f"multipart/form-data; boundary={boundary}", b"\r\n".join(parts) + b"\r\n"
 
 
 class TelegramChannel(Channel):
@@ -49,6 +69,27 @@ class TelegramChannel(Channel):
                 raise ValueError("telegram callback_data is limited to 64 bytes")
         self._call("sendMessage", {"chat_id": self.owner, "text": text[:4096], "reply_markup": {
             "inline_keyboard": [[{"text": title, "callback_data": bid} for bid, title in buttons]]}})
+
+    def send_file(self, data: bytes, filename: str, caption: str = "") -> dict:
+        """Send a file as a Telegram document (Bot API sendDocument, multipart).
+        Returns {"ok": bool, "bytes": int} with the size Telegram reports back."""
+        if len(data) > MAX_FILE_BYTES:
+            raise ChannelError(f"telegram can't send {filename}: {len(data)} bytes is over the 50 MB bot limit")
+        content_type, body = _multipart({"chat_id": self.owner, "caption": caption[:MAX_CAPTION]},
+                                       filename, data)
+        status, raw = self.http("POST", f"{API}/bot{self.token}/sendDocument",
+                                {"Content-Type": content_type}, body)
+        try:
+            parsed = json.loads(raw or b"{}")
+        except json.JSONDecodeError:
+            parsed = {}
+        if status >= 300 or not parsed.get("ok"):
+            raise ChannelError(f"telegram sendDocument failed [{status}]: {json.dumps(parsed)[:200]}")
+        try:
+            size = int(parsed["result"]["document"]["file_size"])
+        except (KeyError, TypeError, ValueError):
+            raise ChannelError("telegram sendDocument gave no document file_size") from None
+        return {"ok": True, "bytes": size}
 
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         if incoming.callback_id:

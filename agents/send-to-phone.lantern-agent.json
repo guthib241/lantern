@@ -1,0 +1,21 @@
+{
+  "author": "lantern",
+  "description": "Finds a file on this laptop and sends it to your phone on Telegram.",
+  "format": "lantern-agent/1",
+  "goal": "Find {file} and send it to my phone.",
+  "inputs": [
+    {
+      "example": "Documents/CAD/enclosure.stl",
+      "key": "file",
+      "question": "Which file to send?"
+    }
+  ],
+  "instructions": "Search for the file with search_files, then call send_to_phone once with its path. Never send private-zone files.",
+  "name": "send-to-phone",
+  "title": "Send to phone",
+  "tools": [
+    "search_files",
+    "send_to_phone"
+  ],
+  "version": "1.0.0"
+}
