@@ -52,9 +52,10 @@ def test_a_fully_set_up_laptop(tmp_path, monkeypatch):
     (tmp_path / "desktop" / "node_modules" / "electron").mkdir(parents=True)
     e, probed = env(dict(READY))
     checks = doctor.run_checks(cfg_for(tmp_path), e)
-    assert {c.id: c.status for c in checks if c.status != "ok"} == {"localsend": "off"}
+    assert {c.id: c.status for c in checks if c.status != "ok"} == {"localsend": "off", "github": "warn"}
     assert probed == ["http://127.0.0.1:8080/v1/models"]
-    assert doctor.readiness(checks) == {"rehearsal": {"blocked_by": [], "to_do": []}, "demo": {"blocked_by": [], "to_do": []}}
+    assert doctor.readiness(checks) == {"rehearsal": {"blocked_by": [], "to_do": []},
+                                           "demo": {"blocked_by": [], "to_do": ["github"]}}
     text = doctor.report(checks)
     assert "Real demo: ready ✓" in text
     for secret in (KEY, "abcd efgh", "t" * 40, "s" * 32):   # secrets are never shown

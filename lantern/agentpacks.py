@@ -40,7 +40,10 @@ PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
 MCP_TOOL = re.compile(r"^[a-z0-9_-]{1,24}\.[A-Za-z0-9_*-]+$")
 
 KEYS = {"format", "name", "title", "description", "author", "version",
-        "inputs", "goal", "instructions", "tools", "schedule", "signature"}
+        "inputs", "goal", "instructions", "tools", "needs", "schedule", "signature"}
+NEED_KEYS = {"mcp", "repo", "why"}
+MAX_NEEDS = 4
+NEED_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 INPUT_KEYS = {"key", "question", "example"}
 SCHEDULE_KEYS = {"every", "at", "hours", "inputs"}
 SCHEDULE_EVERY = ("day", "weekday", "week", "hours")
@@ -66,6 +69,19 @@ class Input:
         if self.example:
             d["example"] = self.example
         return d
+
+
+@dataclass
+class Need:
+    """One MCP server this pack needs: its name in mcp.json, the repo it comes
+    from, and one line saying why. Adding it always asks first; never silent."""
+
+    mcp: str
+    repo: str
+    why: str
+
+    def as_dict(self) -> dict:
+        return {"mcp": self.mcp, "repo": self.repo, "why": self.why}
 
 
 @dataclass
@@ -99,6 +115,7 @@ class Pack:
     goal: str = ""
     instructions: str = ""
     tools: list[str] = field(default_factory=list)
+    needs: list[Need] = field(default_factory=list)
     disabled: bool = False
     schedule: Schedule | None = None   # a loop suggestion; None means no schedule
     signature: dict | None = None   # Ed25519 trust seal (packsign.py); None when unsigned
@@ -126,6 +143,8 @@ class Pack:
                    "description": self.description, "author": self.author, "version": self.version,
                    "inputs": [i.as_dict() for i in self.inputs],
                    "goal": self.goal, "instructions": self.instructions, "tools": list(self.tools)}
+        if self.needs:
+            d["needs"] = [n.as_dict() for n in self.needs]
         if self.schedule is not None:
             d["schedule"] = self.schedule.as_dict()
         if self.signature is not None:
@@ -206,8 +225,9 @@ def validate(data: dict) -> Pack:
         else:
             raise PackError(f"unknown tool {tool!r}")
     schedule = _validate_schedule(data.get("schedule"), seen, goal)
+    needs = _validate_needs(data.get("needs"))
     pack = Pack(name, title, description, author, version, inputs, goal, instructions, tools,
-                schedule=schedule, signature=signature)
+                needs=needs, schedule=schedule, signature=signature)
     _refuse_secrets(pack)
     if signature is not None and packsign.verify(data) == packsign.TAMPERED:
         raise PackError("this pack was changed after it was signed")
@@ -255,6 +275,34 @@ def _validate_schedule(raw: Any, input_keys: set[str], goal: str) -> Schedule | 
         if key not in sched_inputs:
             raise PackError(f"the schedule must fill '{{{key}}}' or the loop could never run")
     return Schedule(every=every, at=at, hours=hours, inputs=dict(sched_inputs))
+
+
+def _validate_needs(raw: Any) -> list[Need]:
+    """The optional `needs` list: MCP servers this pack reads through. Strict:
+    unknown keys, a bad server name, a repo that isn't `owner/name`, or a `why`
+    that is empty, too long, or looks like a secret are all refused."""
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > MAX_NEEDS:
+        raise PackError(f"needs must be a list of at most {MAX_NEEDS} MCP servers")
+    from .mcp_client import SERVER_NAME
+    needs: list[Need] = []
+    seen: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) - NEED_KEYS or NEED_KEYS - set(entry):
+            raise PackError("each need holds exactly 'mcp', 'repo' and 'why'")
+        mcp, repo, why = entry["mcp"], entry["repo"], entry["why"]
+        if not isinstance(mcp, str) or not SERVER_NAME.match(mcp):
+            raise PackError(f"bad needed server name {mcp!r}")
+        if mcp in seen:
+            raise PackError(f"the pack needs '{mcp}' twice")
+        seen.add(mcp)
+        if not isinstance(repo, str) or not NEED_REPO.match(repo):
+            raise PackError(f"a need's repo must look like 'owner/name' (got {repo!r})")
+        if not isinstance(why, str) or not why.strip() or len(why) > MAX_TEXT:
+            raise PackError(f"a need's 'why' must be plain text (at most {MAX_TEXT} characters)")
+        needs.append(Need(mcp, repo, why.strip()))
+    return needs
 
 
 def _at_on(day: dt.datetime, at: str) -> dt.datetime:
@@ -315,6 +363,7 @@ def _refuse_secrets(pack: Pack) -> None:
     texts = [pack.title, pack.description, pack.author, pack.version,
              pack.goal, pack.instructions, *pack.tools]
     texts += [t for i in pack.inputs for t in (i.key, i.question, i.example)]
+    texts += [t for n in pack.needs for t in (n.mcp, n.repo, n.why)]
     if pack.schedule is not None:
         texts += [str(v) for v in pack.schedule.inputs.values()]
     for text in texts:

@@ -1,0 +1,42 @@
+{
+  "author": "lantern",
+  "description": "Summarizes your open issues, what changed this week, and PRs waiting for review. Read-only.",
+  "format": "lantern-agent/1",
+  "goal": "For the repo {repo}, answer this question: {question}.",
+  "inputs": [
+    {
+      "example": "octocat/hello-world",
+      "key": "repo",
+      "question": "Which repo (owner/name)?"
+    },
+    {
+      "example": "summarize my open issues",
+      "key": "question",
+      "question": "What do you want to know (open issues, this week's changes, PRs waiting for review)?"
+    }
+  ],
+  "instructions": "Use only the github read tools to answer. Reply with links to the issues and pull requests you found. Never change anything on GitHub: no comments, labels, merges or edits. If the GitHub token is missing, say so and stop.",
+  "name": "github-helper",
+  "needs": [
+    {
+      "mcp": "github",
+      "repo": "github/github-mcp-server",
+      "why": "read your issues and PRs"
+    }
+  ],
+  "title": "GitHub helper",
+  "tools": [
+    "github.get_commit",
+    "github.get_issue",
+    "github.get_pull_request",
+    "github.get_pull_request_diff",
+    "github.get_pull_request_files",
+    "github.get_pull_request_reviews",
+    "github.list_commits",
+    "github.list_issues",
+    "github.list_pull_requests",
+    "github.search_issues",
+    "github.search_pull_requests"
+  ],
+  "version": "1.0.0"
+}

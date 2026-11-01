@@ -111,6 +111,26 @@ The setting lives in the laptop's store next to `disabled` and the loop
 state — never in the shared pack file, so sharing a pack shares no trace of
 where you run it. New installs start on **Laptop**.
 
+## Packs that need an MCP server
+
+A pack can declare the tool servers it reads through:
+
+```json
+"needs": [{"mcp": "github", "repo": "github/github-mcp-server", "why": "read your issues and PRs"}]
+```
+
+When the pack is installed or run and that server isn't in `mcp.json` yet,
+Lantern shows a card — "This agent needs the GitHub tool server: Add it?" —
+with the repo's pinned commit, license and exact launch command, and adds it
+only on approval (never silently). Added servers land with an empty
+`read_only`, so every one of their tool calls still needs approval, plus
+`"source": {"repo": ..., "sha": ...}` recording what was pinned. Declining
+runs nothing. Secrets are refused in `needs` like everywhere else. The
+GitHub server runs read-only (`--read-only`, only the repos/issues/pulls
+toolsets) and takes its token only from the `GITHUB_TOKEN` environment
+variable: `mcp.json` keeps the `${GITHUB_TOKEN}` reference, expanded when
+Lantern starts, never the token itself.
+
 ## Community skills in, A2A cards out
 
 **Import.** A community `SKILL.md` (the Agent Skills folder format) imports as

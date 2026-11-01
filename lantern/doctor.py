@@ -198,6 +198,12 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
         gone = [k for k in ("TELEGRAM_BOT_TOKEN", "LANTERN_TELEGRAM_OWNER") if not v.get(k)]
         add(Check("telegram", "Telegram", FAIL if gone else OK, "missing: " + ", ".join(gone) if gone else "configured",
                   "Create a bot with @BotFather and set both variables" if gone else "", []))
+    gh = (v.get("GITHUB_TOKEN") or "").strip()
+    from .repolearn import GITHUB_TOKEN_ENV
+    add(Check("github", "GitHub helper", OK if gh else WARN,
+              f"{GITHUB_TOKEN_ENV} is set (not shown)" if gh else f"{GITHUB_TOKEN_ENV} is not set",
+              "" if gh else f"Add {GITHUB_TOKEN_ENV}=<a fine-grained read-only token> to .env "
+                            f"(the GitHub agent stays read-only; the token is never stored or shown)"))
     mode = v.get("LANTERN_EMAIL_MODE", "fake")
     if mode == "smtp":
         gone = [k for k in ("LANTERN_SMTP_USER", "LANTERN_SMTP_PASSWORD") if not v.get(k)]

@@ -213,6 +213,13 @@ class Core:
             raise ValueError(str(e)) from None
         if found.disabled:
             raise ValueError(f"agent {name!r} is disabled")
+        if found.needs:
+            outcome = self.ensure_pack_servers(found)
+            missing = list(outcome["declined"]) + sorted(outcome["failed"])
+            if missing:
+                raise ValueError(f"agent {name!r} needs {', '.join(missing)} "
+                                 f"({'; '.join(outcome['failed'].values()) or 'user declined'}); "
+                                 "nothing was started")
         try:
             rendered = found.render_goal(inputs)
         except PackError as e:
@@ -419,7 +426,89 @@ class Core:
         if pack.signature is not None:   # approving a new key records it; declining records nothing
             fp = packsign.fingerprint(pack.signature["public_key"])
             packsign.record_trust(self.packs.dir, fp, pack.author)
-        return {"installed": True, "verified": stored.as_dict() == pack.as_dict(), "name": pack.name}
+        result: dict = {"installed": True, "verified": stored.as_dict() == pack.as_dict(), "name": pack.name}
+        if pack.needs:
+            result["needed_servers"] = self.ensure_pack_servers(pack)
+        return result
+
+    # ---- packs that need MCP servers (T8) -----------------------------------------
+    def ensure_pack_servers(self, pack: Pack) -> dict:
+        """Add each MCP server the pack declares in `needs` that isn't in
+        mcp.json yet. Each missing server asks first ("This agent needs the
+        GitHub tool server: Add it?"); declining adds nothing. Reuses the T6
+        flow: the repo is read for its pinned commit and license, the red card
+        shows both plus the exact launch command, and the entry is stored with
+        an empty `read_only` (every tool call still needs approval)."""
+        from . import repolearn
+        added: list[str] = []
+        declined: list[str] = []
+        failed: dict[str, str] = {}
+        if not pack.needs:
+            return {"added": added, "declined": declined, "failed": failed}
+        path = Path(self.toolbox.mcp_config).expanduser() if self.toolbox.mcp_config else None
+        servers: dict = {}
+        if path is not None and path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and isinstance(data.get("servers"), dict):
+                    servers = data["servers"]
+            except ValueError:
+                pass
+        for need in pack.needs:
+            if need.mcp in servers:
+                continue
+            if need.mcp != repolearn.GITHUB_SERVER or need.repo != repolearn.GITHUB_MCP_REPO:
+                failed[need.mcp] = (f"Lantern doesn't know how to add the '{need.mcp}' server "
+                                    f"({need.repo}) yet; add it to mcp.json by hand")
+                continue
+            self._add_github_server(pack, need, servers, added, declined, failed)
+        return {"added": added, "declined": declined, "failed": failed}
+
+    def _add_github_server(self, pack: Pack, need: Any, servers: dict,
+                           added: list[str], declined: list[str], failed: dict[str, str]) -> None:
+        """One missing GitHub tool server: read the repo (pinned SHA, license),
+        ask on the red card, and write the mcp.json entry on yes."""
+        from . import repolearn
+        if not self.toolbox.mcp_config:
+            failed[need.mcp] = "mcp.json isn't set up on this computer"
+            return
+        owner, repo_name = need.repo.split("/", 1)
+        try:
+            repo = repolearn.fetch_repo(owner, repo_name, None, get=self.toolbox.github_get)
+        except repolearn.RepoError as e:
+            failed[need.mcp] = str(e)   # no approval asked for a repo we can't read
+            return
+        spec = repolearn.github_server_spec(repo.sha)
+        if repo.sha not in json.dumps(spec):
+            failed[need.mcp] = "the install plan doesn't pin the commit"
+            return
+        card = repolearn.github_install_card(repo, spec) + f"\nFor: {need.why}"
+        payload = {"pack": pack.name, "server": need.mcp, "repo": need.repo,
+                   "sha": repo.sha, "spec": spec}
+        commit = self.toolbox.gate.ask("add_needed_server", card, payload, tainted=False)
+        if commit is None:
+            declined.append(need.mcp)
+            return
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            failed[need.mcp] = str(e)
+            return
+        try:
+            repolearn.add_learned_server(self.toolbox.mcp_config, need.mcp, spec)
+        except (OSError, ValueError) as e:
+            failed[need.mcp] = f"couldn't write mcp.json ({e})"
+            return
+        try:   # verify: read it back (the running hub picks it up on restart)
+            back = json.loads(Path(self.toolbox.mcp_config).expanduser().read_text(encoding="utf-8"))
+            stored = back.get("servers", {}).get(need.mcp, {})
+        except (OSError, ValueError):
+            stored = {}
+        if stored.get("source", {}).get("sha") == repo.sha and stored.get("read_only") == []:
+            servers[need.mcp] = spec
+            added.append(need.mcp)
+        else:
+            failed[need.mcp] = "the server didn't store correctly"
 
     def _signature_line(self, pack) -> str:
         """What the install card says about who sealed the pack (packsign; T3e)."""

@@ -32,6 +32,7 @@ from .untrusted import strip_hidden
 SERVER_NAME = re.compile(r"^[a-z0-9_-]{1,24}$")
 MAX_DESCRIPTION = 600
 MAX_RESULT_CHARS = 12_000
+ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
 class MCPError(RuntimeError):
@@ -58,6 +59,22 @@ def clean_schema(schema: Any) -> dict:
     if not isinstance(schema, dict) or schema.get("type") != "object":
         return {"type": "object", "properties": {}}
     return {k: v for k, v in schema.items() if k not in ("$schema", "title")}
+
+
+def expand_env_refs(value: Any, env: Any | None = None) -> Any:
+    """Replace `${NAME}` with the environment value ("" when unset), recursively.
+
+    Secrets stay out of `mcp.json`: a server entry keeps `"${GITHUB_TOKEN}"` on
+    disk and only the in-memory spec carries the real token. Never log the result."""
+    import os as _os
+    source = _os.environ if env is None else env
+    if isinstance(value, str):
+        return ENV_REF.sub(lambda m: str(source.get(m.group(1), "")), value)
+    if isinstance(value, list):
+        return [expand_env_refs(v, source) for v in value]
+    if isinstance(value, dict):
+        return {k: expand_env_refs(v, source) for k, v in value.items()}
+    return value
 
 
 def with_deferred(tools: list[dict], deferred: list[dict]) -> list[dict]:
@@ -89,7 +106,10 @@ class MCPHub:
         p = Path(path).expanduser()
         if not p.exists():
             return cls()
-        return cls(servers=json.loads(p.read_text(encoding="utf-8")).get("servers", {}))
+        raw = json.loads(p.read_text(encoding="utf-8")).get("servers", {})
+        if not isinstance(raw, dict):
+            return cls()
+        return cls(servers={k: expand_env_refs(v) for k, v in raw.items()})
 
     # ---- lifecycle ---------------------------------------------------------------------
     def start(self) -> "MCPHub":

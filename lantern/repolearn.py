@@ -385,3 +385,48 @@ def draft_docs_pack(client: Any, memory: Any, task_id: int | None, repo: Repo) -
         return validate(data).as_dict()
     except Exception as e:
         raise RepoError(f"the draft wasn't a valid agent pack ({e})") from e
+
+
+# ---- (D) servers a pack needs: the GitHub helper ---------------------------------
+GITHUB_MCP_REPO = "github/github-mcp-server"
+GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
+GITHUB_SERVER = "github"   # the mcp.json name packs use (`github.*` tools)
+
+# Read tools only (upstream README's tool list, narrowest set for the helper's
+# three jobs: open issues, what changed this week, PRs waiting for review).
+# The server also runs with `--read-only`, so even a wider list couldn't write.
+GITHUB_READ_TOOLS = (
+    "list_issues", "get_issue", "search_issues",
+    "list_pull_requests", "get_pull_request", "get_pull_request_files",
+    "get_pull_request_diff", "get_pull_request_reviews", "search_pull_requests",
+    "list_commits", "get_commit",
+)
+
+
+def github_server_spec(sha: str) -> dict:
+    """The mcp.json entry for GitHub's MCP server, read-only by default.
+
+    Runs the official image with `--read-only` and only the repos/issues/pulls
+    toolsets. The token is `${GITHUB_TOKEN}` on disk (expanded at start, never
+    stored); the server itself reads it as `GITHUB_PERSONAL_ACCESS_TOKEN`."""
+    return {"command": "docker",
+            "args": ["run", "-i", "--rm", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+                     "ghcr.io/github/github-mcp-server",
+                     "--toolsets", "repos,issues,pull_requests", "--read-only"],
+            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${" + GITHUB_TOKEN_ENV + "}"},
+            "read_only": [],
+            "source": {"repo": GITHUB_MCP_REPO, "sha": sha}}
+
+
+def github_install_card(repo: Repo, spec: dict) -> str:
+    """The red card: this pack needs the GitHub tool server — add it? Shows the
+    pinned commit, the license, and the exact launch command. Never mentions the
+    token: it only ever comes from the GITHUB_TOKEN environment variable."""
+    launch = spec["command"] + " " + " ".join(spec["args"])
+    lines = ["This agent needs the GitHub tool server: Add it?",
+             f"{GITHUB_MCP_REPO}, pinned to commit {repo.sha}. License: {repo.license}; stars: {repo.stars}"
+             + ("; ARCHIVED (read-only upstream)" if repo.archived else "") + ".",
+             f"Launch: {launch}",
+             "It only reads (repos, issues, pull requests); every tool call still needs approval.",
+             "Its token comes from the GITHUB_TOKEN environment variable, never from chat or files."]
+    return "\n".join(lines)
