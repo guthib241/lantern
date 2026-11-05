@@ -13,6 +13,7 @@ from typing import Any
 
 BASE_URL = "https://api.meta.ai/v1"
 API_KEY_ENV = "MODEL_API_KEY"
+BASETEN_BASE_URL = "https://inference.baseten.co/v1"   # Muse Spark Open only (lantern/baseten.py)
 
 SPARK = "muse-spark-1.3"
 WONDER = "muse-wonder-1.0"
@@ -37,7 +38,8 @@ TOKEN_PRICES: dict[str, TokenPrice] = {
     WONDER: TokenPrice(input=4.00, cached_input=0.20, output=20.00),
     # Self-hosted models cost nothing per token here (hardware is paid elsewhere).
     GLIMMER_LOCAL: TokenPrice(0.0, 0.0, 0.0),
-    SPARK_OPEN_BASETEN: TokenPrice(0.0, 0.0, 0.0),
+    # baseten.co/pricing, read Oct 30, 2026. It always reasons; reasoning is billed as output.
+    SPARK_OPEN_BASETEN: TokenPrice(input=1.25, cached_input=0.15, output=4.25),
 }
 
 PER_IMAGE = {IMAGE: 0.01}            # per generated image

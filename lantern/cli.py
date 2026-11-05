@@ -136,7 +136,6 @@ def refuse_second_server(port: int) -> None:
 
 def resume_tasks(cfg, mem: Memory, port: int) -> None:
     """Ask the running server to resume, or (no server) run the cut-short tasks right here."""
-    from .core import recover_interrupted, resume_goal
     if server_running(port):
         import urllib.request
         from .server import load_token
@@ -145,20 +144,30 @@ def resume_tasks(cfg, mem: Memory, port: int) -> None:
         with urllib.request.urlopen(req, timeout=10) as r:
             ids = json.loads(r.read())["task_ids"]
         return print(f"Asked the running Lantern to resume {len(ids)} task(s): {ids}")
-    recover_interrupted(mem)
-    tasks = mem.tasks_with_status("interrupted")
-    if not tasks:
-        return print("Nothing to resume.")
-    agent = build_agent(cfg, mem)
-    for t in tasks:
-        goal = resume_goal(mem, t)
-        mem.finish_task(t.id, "resumed", "resumed from the command line")
-        print(f"\n▶ resuming #{t.id}: {t.goal.splitlines()[0]}")
-        try:
-            r = agent.run(goal)
-            print(f"🏮 {r.reply.strip()}")
-        except Exception as e:
-            print(f"  ✗ {explain(e)}")
+    # no server: resume right here, on the same protected path as everything else (terminal.py)
+    from .terminal import TerminalTasks
+    mem.close()
+    core = terminal_core(cfg, recover=True)
+    try:
+        term = TerminalTasks(core)
+        snap = core.scheduler.snapshot()   # tasks saved mid-step continue by themselves; interrupted ones resume
+        running = [*snap["running"], *snap["queued"], *(p["task_id"] for p in snap["parked"])]
+        new_ids = core.resume()
+        ids = list(dict.fromkeys([*running, *new_ids]))
+        if not ids:
+            return print("Nothing to resume.")
+        for done in term.watch(ids):
+            print(f"\n▶ #{done.get('id', done.get('task_id'))} [{done.get('status')}] "
+                  f"{(done.get('reply') or done.get('summary') or '').strip()}")
+    finally:
+        core.shutdown()
+
+
+def terminal_core(cfg, *, recover: bool = False):
+    """The Core terminal tasks run on: the scheduler with one worker (S0 split, recovery, ladder, routines).
+    recover=False leaves tasks another Lantern left unfinished alone; reminders belong to the server."""
+    from .core import Core
+    return Core(cfg, workers=1, recover=recover, reminder_tick=0)
 
 
 def run_demo(a) -> None:
@@ -395,14 +404,24 @@ def main(argv=None) -> None:
             return
         return serve(core, config_mod.HOME, port=a.port, hub=hub.start(), phone=bool(a.phone))
 
-    agent = build_agent(cfg, mem)
+    # Terminal tasks take the same protected path as the desktop and phone (terminal.py: scheduler, S0 split).
+    from .terminal import TerminalTasks
+    if not os.environ.get("MODEL_API_KEY"):
+        sys.exit("Set MODEL_API_KEY first (your key from dev.meta.ai → API keys).")
+    mem.close()
+    core = terminal_core(cfg)
+    mem = core.memory
+    term = TerminalTasks(core)
 
     def do(goal: str) -> None:
-        r = agent.run(goal)
-        print(f"\n🏮 {r.reply.strip()}\n")
+        done = term.run(goal)
+        print(f"\n🏮 {(done.get('reply') or done.get('summary') or '').strip()}\n")
 
     if a.goal:
-        return do(" ".join(a.goal))
+        try:
+            return do(" ".join(a.goal))
+        finally:
+            core.shutdown()
 
     print(f"🏮 Lantern ({cfg.persona}) watching: {', '.join(cfg.roots)}")
     print("   Type a task, /tasks, /memory, or /quit\n")
@@ -426,6 +445,7 @@ def main(argv=None) -> None:
             do(line)
         except Exception as e:  # keep the chat alive on network/API errors
             print(f"  ✗ {explain(e)}")
+    core.shutdown()
 
 
 if __name__ == "__main__":

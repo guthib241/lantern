@@ -71,6 +71,7 @@ BUTTONS_JS = """() => {
     return {i, label: (e.innerText || e.value || e.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim(),
             disabled: !!e.disabled || e.getAttribute('aria-disabled') === 'true',
             submit: (e.tagName === 'BUTTON' && e.type === 'submit') || e.matches('input[type=submit]'),
+            html_id: e.id || '', name: e.getAttribute('name') || '',
             in_form: !!(e.form || e.closest('form'))}; });
 }"""
 
@@ -219,7 +220,7 @@ class Browser:
         found = _match(fields, label, hints)
         if found is None and ctx.heal is not None:
             new = ctx.heal(ctx.current, kind, label, [{k: f.get(k, "") for k in ("label", "name", "html_id", "type")}
-                                                      for f in fields])
+                                                      for f in fields], page=self._page_info())
             if new:
                 found = _match(fields, new, {})
                 if found is not None:
@@ -261,6 +262,15 @@ class Browser:
             raise ctx.fail(f"the page didn't accept {p.name}")
         ctx.filled[ctx.current] = sha(path)
 
+    def _page_info(self) -> dict:
+        """The page's title and main heading: context for a repair (untrusted page text, kept short)."""
+        try:
+            info = self._ctx.driver.page.evaluate(
+                "() => ({title: document.title || '', heading: (document.querySelector('h1') || {}).innerText || ''})")
+            return {k: " ".join(str(info.get(k, "")).split())[:120] for k in ("title", "heading")}
+        except Exception:
+            return {}
+
     def _buttons(self) -> list[dict]:
         return self._ctx.driver.page.evaluate(BUTTONS_JS)
 
@@ -270,7 +280,9 @@ class Browser:
         buttons = [b for b in self._buttons() if not b["disabled"] and b["label"]]
         found = next((b for b in buttons if norm(b["label"]) == norm(label)), None)
         if found is None and ctx.heal is not None:
-            new = ctx.heal(ctx.current, "button", label, [{"label": b["label"]} for b in buttons])
+            new = ctx.heal(ctx.current, "button", label,
+                           [{k: b.get(k) for k in ("label", "html_id", "submit", "in_form") if b.get(k) not in (None, "")}
+                            for b in buttons], page=self._page_info())
             found = next((b for b in buttons if norm(b["label"]) == norm(new or "")), None)
             if found is not None:
                 ctx.patches.setdefault(ctx.current, {})["button"] = found["label"]

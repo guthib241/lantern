@@ -6,6 +6,7 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
 <meta name="color-scheme" content="light dark">
 <title>Lantern</title>
+<link rel="stylesheet" href="orb.css">
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
@@ -63,6 +64,7 @@
   <div class="content">
     <header class="toolbar">
       <h1 class="window-title" id="section-title">Today</h1>
+      <p class="hero-status" id="hero-status" aria-live="polite" title="What Lantern is doing right now">Ready when you are.</p>
     </header>
 
     <div class="banners">
@@ -303,6 +305,9 @@
   <script src="../assets/avatar/manifest.js"></script>
   <script src="lib/state.js"></script>
   <script src="lib/cards.js"></script>
+  <script src="lib/sprite.js"></script>
+  <script src="lib/expression.js"></script>
+  <script src="lib/activity.js"></script>
   <script src="lib/audit.js"></script>
   <script src="lib/widgets.js"></script>
   <script src="lib/api.js"></script>

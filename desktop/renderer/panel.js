@@ -8,11 +8,45 @@
   let health = {};
   const now = () => Date.now() / 1000;
 
-  // Lantern's Muse-made face in the header, when the avatar sheet exists.
+  // Lantern's look in the panel: its Muse-made face by default (desktop/assets/avatar); with the orb look, a live
+  // orb in the sidebar and on Today instead, following what Lantern is doing. Under the greeting, a line says what
+  // Lantern is working on right now, whatever the look.
   const face = ((window.LanternAvatarManifest || {}).expressions || {}).idle;
-  if (face && /\.(webp|png)$/.test(face.file)) {
-    const img = h('img', { src: `../assets/avatar/${face.file}`, alt: 'Lantern' });
-    $('mark').replaceChildren(img);
+  const MOODS = /\b(idle|thinking|juggling|smug|celebrating|needs-approval|annoyed|sleeping|healed|listening)\b/g;
+  let orbs = [];
+  let orbShown = '';
+  function showOrbs(on) {   // swap the sidebar mark and the Today face between the portrait and live orbs
+    orbs = [];
+    orbShown = '';
+    for (const [el, size] of [[$('mark'), 'mini'], [document.querySelector('.chat-face'), 'hero-orb']]) {
+      if (!el) continue;
+      el.replaceChildren();
+      el.classList.toggle('orb-host', on);
+      if (!on) { el.append(lanternFace()); continue; }   // the Muse portrait, or the lantern icon without one
+      const orb = h('div', { class: `sprite ${size} idle`, role: 'img', 'aria-label': 'Lantern is ready' });
+      LanternSprite.build(orb);
+      el.append(orb);
+      orbs.push(orb);
+    }
+  }
+  function renderOrb() {
+    const t = now();
+    const mood = LanternExpression.pick(state, t);
+    if (orbs.length && mood !== orbShown) {
+      orbShown = mood;
+      for (const o of orbs) {
+        o.className = `${o.className.replace(MOODS, '').trim()} ${mood}`;
+        o.setAttribute('style', LanternSprite.style(mood));
+        o.setAttribute('aria-label', LanternSprite.LABELS[mood] || 'Lantern');
+      }
+    }
+    const status = $('hero-status');
+    if (!status) return;
+    const a = LanternActivity.activity(state, t);
+    const line = a.mode === 'idle' ? (mood === 'sleeping' ? 'Resting. Ask me anything.' : 'Ready when you are.')
+      : a.mode === 'working' ? `${a.text}${a.badge ? ' · ' + a.badge : ''}` : a.text;
+    if (status.textContent !== line) status.textContent = line;
+    status.dataset.mode = a.mode;
   }
 
   function h(tag, props, ...children) {
@@ -582,7 +616,7 @@
     b.setAttribute('aria-label', n ? `${n} ${what}` : '');
   }
 
-  document.querySelector('.chat-face').append(lanternFace());
+  showOrbs(false);   // the portrait until the avatar settings say otherwise
 
   // ---- welcome (first launch) and preferences ------------------------------------------------------
   const keyName = (k) => k.replace('CommandOrControl', cfg.platform === 'darwin' ? '⌘' : 'Ctrl').replace(/Shift/, '⇧')
@@ -1002,6 +1036,7 @@
 
   // ---- live events -------------------------------------------------------------------------------------------
   function renderAll() {
+    renderOrb();
     renderApprovals();
     renderQuestions();
     renderTasks();
@@ -1051,6 +1086,7 @@
 
   window.lantern.onStopped(() => { state = LanternState.reduce(state, { type: 'stopped', ts: now() }); renderAll(); });
   setInterval(renderApprovals, 1000);   // countdowns
+  setInterval(renderOrb, 1000);          // done → ready, ready → resting
   setInterval(() => { if (tab === 'phone') loadPhone(); }, 3000);
   renderAll();
 })();

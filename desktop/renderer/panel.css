@@ -470,3 +470,31 @@ body.chatting .toast { bottom: 84px; }   /* above the message box */
 @media (prefers-contrast: more) {
   :root { --separator: rgba(0, 0, 0, .5); --label-2: rgba(0, 0, 0, .85); }
 }
+
+/* ==== Lantern's orb look (Settings → Avatar → Orb) ===============================================
+   With the orb, the sidebar mark and Today's face are live orbs (orb.css + lib/sprite.js) instead of the Muse
+   portrait. Their hosts drop the tile behind them so the orb's own glow shows. */
+.orb-host { background: none; box-shadow: none; overflow: visible; border-radius: 0; }
+.chat-face.orb-host { width: 150px; height: 130px; margin-bottom: 4px; }
+.sprite.mini { --size: 26px; width: 34px; height: 34px; cursor: default; }
+.sprite.mini:hover, .sprite.mini:active { transform: none; }
+.sprite.mini .halo { filter: blur(3px); }
+.sprite.mini .flow { filter: blur(4px) saturate(1.3); }
+.sprite.mini .ring, .sprite.mini .sat { display: none; }
+.sprite.mini .sphere { box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--glow) 80%, transparent); animation: none; }
+.sprite.hero-orb { --size: 84px; width: 150px; height: 130px; cursor: default; }
+.sprite.hero-orb:hover, .sprite.hero-orb:active { transform: none; }
+.sprite.hero-orb .sat { --orbit: 56px; }
+
+/* What Lantern is doing right now: a quiet pill on the right of the toolbar, whatever the look */
+.hero-status { flex: none; max-width: 46%; margin: 0; padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 500;
+               color: var(--label-2); background: var(--fill); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+               transition: color .3s, background .3s; }
+.hero-status[data-mode="working"], .hero-status[data-mode="retry"] { color: var(--label); }
+.hero-status[data-mode="working"]::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; vertical-align: 1px;
+                                            border-radius: 50%; background: var(--orange); animation: blink 1.2s ease-in-out infinite; }
+.hero-status[data-mode="approval"] { color: #fff; background: var(--blue); }
+.hero-status[data-mode="done"] { color: var(--green-text); }
+.hero-status[data-mode="failed"], .hero-status[data-mode="stopped"] { color: var(--red-text); }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .hero-status[data-mode="working"]::before { animation: none; } }

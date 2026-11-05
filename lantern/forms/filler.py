@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import json
 import mimetypes
+import os
 import re
 import secrets
 import threading
@@ -89,6 +90,17 @@ Commit = Callable[[Any, dict], "dict | None"]      # Toolbox._commit -> refusal 
 Events = Callable[[str, dict], None]
 
 
+# Native controls whose popups are drawn outside the page, so a screenshot never shows them (live, Oct 28,
+# claude/real-run: Muse Wonder clicked the permit-type <select> twenty times). In "visual" mode these are still set
+# through the page.
+OFF_SCREEN = ("select", "date", "time", "datetime-local", "month", "week", "color")
+
+
+def on_screen(fill: str, field_type: str) -> bool:
+    """Does the computer-use model set this field on screen (visual mode), rather than Lantern through the page?"""
+    return fill == "visual" and field_type not in OFF_SCREEN
+
+
 class FormError(Exception):
     """The form can't be filled; the message is safe to show the model."""
 
@@ -126,6 +138,9 @@ class FormSettings:
     confirm_selectors: tuple[str, ...] = CONFIRM_SELECTORS
     confirm_wait_ms: int = 4_000
     screenshots: str = "raw"                  # S0.5: raw | masked (black boxes) | decoy (S7: stand-in values)
+    # "dom": fields are set through the page and computer use only does what that can't (cheap, the default);
+    # "visual": every field but uploads and off-screen popups is done by the computer-use model (LANTERN_FORMS_FILL)
+    fill: str = "dom"
 
     @classmethod
     def from_config(cls, cfg) -> "FormSettings":
@@ -133,7 +148,8 @@ class FormSettings:
                    coords=cfg.forms_coords, headless=cfg.forms_headless, chromium=cfg.chromium_path,
                    domains=tuple(cfg.forms_domains), profile_dir=Path(cfg.browser_profile_dir),
                    media_dir=Path(cfg.media_dir), vault_path=Path(cfg.profile_path),
-                   screenshots=cfg.forms_screenshots)
+                   screenshots=cfg.forms_screenshots,
+                   fill="visual" if os.environ.get("LANTERN_FORMS_FILL", "").strip().lower() == "visual" else "dom")
 
 
 def sha(text: str) -> str:
@@ -456,7 +472,7 @@ class FormService:
                 if not ok:
                     run.problems.append({"field": label, "problem": why})
                     continue
-            elif f["type"] == "custom" or not d.set_value(f, value):
+            elif f["type"] == "custom" or on_screen(self.settings.fill, f["type"]) or not d.set_value(f, value):
                 run.visual.append((f, value))
                 continue
             run.filled.append({"field": label, "value": short(value, 60)})

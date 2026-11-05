@@ -1,7 +1,8 @@
 """Photo to clean scan (S10): find the page with SAM 3.1, straighten it, and save a clean PNG and PDF.
 
   1. Find. SAM 3.1 (cookbook 07_sam, the same request as the camera check-in in sam.py) with one noun phrase per
-     request: "document", then "paper", then "letter", until one finds something. The largest mask wins.
+     request, in CONCEPTS order, until one finds something. The largest mask wins. (Live, Oct 28: on a flat page
+     on a plain desk SAM 3.1 found nothing for "document", "paper" or "letter" but found it as "sheet of paper".)
   2. Corners. From the mask's own pixels: the extreme points of x+y and x-y are the page's top-left,
      bottom-right, top-right and bottom-left corners.
   3. Straighten and clean, on this computer (Pillow): a perspective transform sized from the page's own edges,
@@ -25,7 +26,7 @@ from typing import Any
 
 from . import models
 
-CONCEPTS = ("document", "paper", "letter")
+CONCEPTS = ("document", "sheet of paper", "paper", "page", "letter")
 MAX_PIXELS = 24_000_000          # a 6000 x 4000 phone photo
 SAM_SIDE = 1600                  # the photo SAM sees is at most this wide or tall (corners scale back)
 MIN_AREA = 0.05                  # a "page" smaller than 5% of the photo is not the page

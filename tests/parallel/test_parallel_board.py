@@ -85,6 +85,7 @@ def test_timeline_js_agrees_under_node():
               "const out = {}; for (const f of process.argv.slice(2)) out[f] = T.validate(JSON.parse(fs.readFileSync(f, 'utf8')));"
               "out.bad = T.validate({version: 1, title: 't', actions: [{do: 'highlight', target: 'ghost'},"
               " {do: 'write_math', latex: 'x', verified: true}]});"
+              "out.frozen = T.validate({version: 1, title: 't', actions: [{do: 'pause', seconds: 1e9}]});"
               "console.log(JSON.stringify(out));")
     files = [str(ps.BOARD / "lessons" / f) for f in LESSONS]
     out = json.loads(subprocess.run([node, "-e", script, str(ps.BOARD / "lib/timeline.js"), *files],
@@ -92,6 +93,7 @@ def test_timeline_js_agrees_under_node():
     assert all(out[f] == [] for f in files)
     assert out["bad"] == ['action 1: target "ghost" isn\'t on the board at this point',
                           "action 2: a verified line must say what was checked (check)"]
+    assert out["frozen"] == ["action 1: seconds must be more than 0 and at most 60"]   # a lesson can't freeze the board
 
 
 # ---- every ✓ is honest: re-verify with SymPy ----------------------------------------------------------------

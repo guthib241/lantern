@@ -57,7 +57,7 @@ def portal_core(tmp_path, chromium, start, pm, repair_works=True):
 
     def repair(kw):   # knows "Full name" and "Applicant's name" are the same thing (or, broken, knows nothing)
         q = json.loads(kw["messages"][1]["content"])
-        listed = json.loads(next(v for k, v in q.items() if k.startswith("page_"))["content"])
+        listed = json.loads(next(v for k, v in q.items() if k.startswith("page_"))["content"])["candidates"]
         want = v1_to_v2.get(q["used_to_be"], "").lower() if repair_works else ""
         return {"target": next((c["label"] for c in listed if c["label"].lower() == want), "none")}
     chat = Chat(routine_contract=contract_answer, routine_code=code_answer, routine_repair=repair)

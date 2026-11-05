@@ -94,6 +94,22 @@ NOT_DONE = ("Not finished as done: your last change wasn't confirmed ({why}). Fi
             "call finish with status failed and say exactly what didn't work.")
 
 
+RECAP_KEYS = ("url", "form_url", "page", "path", "verified", "submitted", "advanced", "done", "sent", "moved",
+              "reason", "error")
+
+
+def _recap_step(call: dict) -> str:
+    """One step for a recap: its name, what it acted on and whether it was confirmed. Raw results cut at 300
+    characters hid `verified: true` and made the model file a form twice (live, Oct 28, claude/real-run)."""
+    r = call.get("result")
+    if not isinstance(r, dict):
+        return str(call.get("name", "?"))
+    facts = {k: (str(r[k])[:120] if isinstance(r[k], str) else r[k]) for k in RECAP_KEYS if k in r}
+    if call.get("name") == "ask_user" and "answer" in r:
+        facts = {"the user answered": str(r["answer"])[:200]}
+    return f"{call.get('name')} {json.dumps(facts, ensure_ascii=False, default=str)}"
+
+
 @dataclass
 class Result:
     task_id: int
@@ -163,6 +179,30 @@ class Agent:
         if isinstance(result, dict) and result.get("model"):
             return str(result["model"])
         return "on this computer"
+
+    def _follow(self, task_id: int, goal: str, instructions: str, previous: str, outputs: list[dict],
+                calls_made: list[dict]):
+        """The next turn on the chain. If the API no longer has the chain ("referenced response not found or
+        expired", seen live mid-task), continue on a fresh one with a recap instead of failing the task."""
+        from .taskrun import chain_lost
+        try:
+            return self._create(task_id, instructions=instructions, previous_response_id=previous, input=outputs,
+                                tools=self.tools)
+        except Exception as e:
+            if not chain_lost(e):
+                raise
+        self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; continued "
+                                              "with a recap")
+        done = "; ".join(_recap_step(c) for c in calls_made[-16:])
+        confirmed = [c["name"] + (f" {c['result'].get('form_url')}" if c["name"] == "fill_form" else "")
+                     for c in calls_made if isinstance(c.get("result"), dict) and c["result"].get("verified")
+                     and (c["name"] != "fill_form" or c["result"].get("submitted"))
+                     and c["name"] in ("fill_form", "send_email", "move_file", "organize_files")]
+        never = f" ALREADY DONE AND CONFIRMED, never do these again: {', '.join(confirmed)}." if confirmed else ""
+        return self._create(task_id, instructions=instructions, tools=self.tools,
+                            input=f"{goal}\n\n[Continuing task #{task_id}: the earlier turns are not available here. "
+                                  f"Steps so far, in order: {done or 'none'}.{never} Check before repeating anything "
+                                  "that changes something.]")
 
     def run(self, goal: str, task_id: int | None = None) -> Result:
         """Run one task to completion. Pass task_id to run a task the server already created."""
@@ -265,19 +305,13 @@ class Agent:
             if finished:
                 status, summary = finished
                 # Let the model say its in-character closing line.
-                response = self._create(
-                    task_id, instructions=instructions, previous_response_id=response.id,
-                    input=outputs, tools=self.tools,
-                )
+                response = self._follow(task_id, goal, instructions, response.id, outputs, calls_made)
                 reply = getattr(response, "output_text", "") or summary
                 self.memory.log_step(task_id, "reply", reply)
                 self.memory.finish_task(task_id, status, summary)
                 return self._result(task_id, status, summary, reply, step, calls_made)
 
-            response = self._create(
-                task_id, instructions=instructions, previous_response_id=response.id,
-                input=outputs, tools=self.tools,
-            )
+            response = self._follow(task_id, goal, instructions, response.id, outputs, calls_made)
 
         return self._stop(task_id, "failed", f"stopped after {self.max_steps} steps without finishing",
                           self.max_steps, calls_made)

@@ -8,13 +8,11 @@ from fastapi.testclient import TestClient
 from fakes import FakeClient, call
 from lantern import cli
 from lantern import config as config_mod
-from lantern.agent import Agent
 from lantern.channels import ChannelHub, FakeChannel
 from lantern.config import Config
 from lantern.core import Core, recover_interrupted, resume_goal
 from lantern.memory import Memory
 from lantern.server import create_app
-from lantern.tools import Toolbox
 
 
 def config(tmp_path):
@@ -115,13 +113,22 @@ def test_cli_resume_without_a_server(tmp_path, monkeypatch, capsys):
     cfg.encrypt = False
     monkeypatch.setattr(config_mod, "load", lambda: cfg)
     fake = FakeClient([([call("finish", "c1", status="done", summary="emailed")], ""), ([], "Emailed the organiser.")])
-    monkeypatch.setattr(cli, "build_agent", lambda cfg_, mem: Agent(fake, mem, Toolbox([tmp_path / "docs"], mem, lambda s: True)))
+    monkeypatch.setattr(cli, "terminal_core", lambda cfg_, recover=False: Core(cfg_, fake, workers=1, recover=recover,
+                                                                                 reminder_tick=0))
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         free = s.getsockname()[1]   # nothing listens here
     cli.main(["--resume", "--port", str(free)])
     out = capsys.readouterr().out
-    assert f"resuming #{tid}" in out and "Emailed the organiser." in out
-    assert "fill_form (verified)" in json.dumps(fake.requests[0]["input"])
+    assert "Emailed the organiser." in out and core_status(cfg, tid) == "resumed"
+    assert "fill_form (verified)" in json.dumps(fake.requests[0]["input"])   # told what the cut-short run did
     cli.main(["--resume", "--port", str(free)])
     assert "Nothing to resume." in capsys.readouterr().out
+
+
+def core_status(cfg, task_id):
+    m = Memory(cfg.db_path)
+    try:
+        return m.get_task(task_id).status
+    finally:
+        m.close()

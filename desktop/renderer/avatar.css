@@ -3,27 +3,6 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
        -webkit-font-smoothing: antialiased; letter-spacing: -.01em; }
 .stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 8px; gap: 10px; }
 
-/* ---- the orb / Muse portrait ---- */
-.sprite { width: 150px; height: 150px; cursor: pointer; animation: bob 3.2s ease-in-out infinite; filter: drop-shadow(0 10px 22px rgba(255, 140, 40, .35)); flex: none; }
-.sprite svg { width: 100%; height: 100%; display: block; }
-.sprite .portrait { width: 140px; height: 140px; margin: 5px auto 0; display: block; border-radius: 50%; object-fit: cover;
-                    box-shadow: 0 0 0 3px rgba(255, 255, 255, .92), 0 0 34px rgba(255, 179, 71, .6); }
-.sprite.sleeping { animation-duration: 6s; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .2)); }
-.sprite.celebrating { animation: hop .6s ease-in-out 3, bob 3.2s ease-in-out 1.8s infinite; }
-.sprite.needs-approval { animation: nudge 1.4s ease-in-out infinite; }
-.sprite.annoyed { animation: shake .35s ease-in-out 2, bob 3.2s ease-in-out .7s infinite; }
-.sprite.juggling { position: relative; }   /* more than one task in flight: three lights orbit the face */
-.sprite.juggling::before, .sprite.juggling::after { content: ''; position: absolute; left: 50%; top: 4px; width: 12px; height: 12px;
-  margin-left: -6px; border-radius: 50%; background: #ffb347; box-shadow: 0 0 10px rgba(255, 170, 60, .8);
-  transform-origin: 6px 75px; animation: orbit 1.6s linear infinite; }
-.sprite.juggling::after { animation-delay: -.8s; background: #ffd27a; }
-@keyframes orbit { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .sprite.juggling::before, .sprite.juggling::after { animation: none; } }
-@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
-@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-20px) rotate(-4deg); } }
-@keyframes nudge { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
-@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
-
 /* ---- the live activity island ---- */
 .island {
   --spring: cubic-bezier(.32, 1.4, .5, 1);

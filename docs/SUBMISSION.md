@@ -13,7 +13,7 @@ python scripts/smoke.py cua           # paste the LANTERN_CUA_… line it prints
 cd desktop && npm run rehearsal       # rehearse the whole story with the desktop app, $0
 ```
 
-Then set these for recording (in `.env`): `LANTERN_FORMS_MODEL=muse-wonder-1.0`, `LANTERN_FORMS_HEADLESS=0` (the browser is visible), `LANTERN_CHANNELS=whatsapp` (plus the WhatsApp variables), and `LANTERN_GLIMMER_URL` (local Glimmer running). Start the tunnel (`cloudflared tunnel --url http://127.0.0.1:8765`) and `cd desktop && npm start`, which starts `lantern --serve` too. Starting the server in its own terminal also works, and keeps its log in view.
+Then set these for recording (in `.env`): `LANTERN_FORMS_MODEL=muse-wonder-1.0`, `LANTERN_FORMS_HEADLESS=0` (the browser is visible), `LANTERN_CHANNELS=whatsapp` (plus the WhatsApp variables), and the private lane: `LANTERN_GLIMMER_URL` for Glimmer on this laptop, or for the self-hosted private Glimmer server `LANTERN_GLIMMER_URL` + `LANTERN_GLIMMER_KEY_FILE` ([MODAL.md](MODAL.md); ask it one private question a minute before recording, so the 22 s cold start is out of the way). Start the tunnel (`cloudflared tunnel --url http://127.0.0.1:8765`) and `cd desktop && npm start`, which starts `lantern --serve` too. Starting the server in its own terminal also works, and keeps its log in view.
 
 On the screen:
 - 1920×1080, light mode, Do Not Disturb on, an empty desktop, and the browser window on the left half.
@@ -34,12 +34,14 @@ On the screen:
 | 0:30–1:05 | Laptop: the browser fills the form live; the island above the orb | (quiet, let it work) "It reads my profile, finds the receipt, and uses Muse Wonder to handle the fiddly dropdown. It never types passwords, codes, card or ID numbers." | Island: *Looking at the screen · Wonder*, *Clicking at…*; panel steps with model badges |
 | 1:05–1:25 | Phone: **Approve / Deny** card; the panel's approval sheet with the field table | "Nothing gets submitted until I say so, and the approval is bound to exactly these values." | Island: *Submit this form?* with **Review…** only (it read a web page) |
 | 1:25–1:40 | Tap **Approve** on the phone | "Approved." | Island: *Done · verified*; the email step shows ✓ (found in Sent) |
-| 1:40–2:05 | ⌘⇧Space → Quick Ask: "What base salary does my offer letter say?" | "My private folder never leaves this laptop." | Badge **Muse Glimmer (local)** |
-| 2:05–2:20 | Privacy tab | "Here's everything that left today: zero bytes of the letter, and the API key in my notes was redacted before the call." | *0 bytes* of the private file; *Redacted: aws access key ×1* |
+| 1:40–2:05 | ⌘⇧Space → Quick Ask: "What base salary does my offer letter say?" | Self-hosted: "My private folder never goes to a cloud AI API. Only Muse Glimmer reads it, on my own private server." (Glimmer on the laptop: "My private folder never leaves this laptop.") | Badge **Muse Glimmer (self-hosted)** (or **(local)** on the laptop) |
+| 2:05–2:20 | Privacy tab | "Here's everything that left today: zero bytes of the letter went to Meta's API, and the API key in my notes was redacted before the call." | *0 bytes* of the private file on the cloud lane (the self-hosted lane is listed on its own); *Redacted: aws access key ×1* |
 | 2:20–2:40 | Quick Ask: "Which projects use torch?", then "Make me a water timer" | "No model call for that one. And it writes little tools for me." | Answer from the local map; island **Allow** for the widget; the timer appears in Widgets |
-| 2:40–3:00 | The slide (architecture + Meta model map) | "Muse Spark plans, Muse Wonder sees, Glimmer keeps private files local, Voice Transcribe hears me, Muse Image drew its face. And it's an MCP server, ready for Meta AI Connectors." | `docs/slide/architecture.png` |
+| 2:40–3:00 | The slide (architecture + Meta model map) | "Muse Spark plans, Muse Wonder sees, Glimmer keeps private files off the cloud APIs, Voice Transcribe hears me, Muse Image drew its face. And it's an MCP server, ready for Meta AI Connectors." | `docs/slide/architecture.png` |
 
 Keep the persona on **Smug** for the replies; it's part of the character.
+
+**Optional swap for 2:20–2:40 (the Phase 2 centrepiece, measured live Oct 30):** run the permit portal task once (Lantern offers to learn it), run it again (*0 model calls, $0.00*), flip the portal to its v2 layout and run it again (*21 steps healed*, $0.025), then once more (*0 calls, $0.00*). Say: "The first time it thinks. After that it remembers, for free, and when the site changes it fixes itself." Pre-record the first run; show the $0 reruns and the heal live. Numbers: `scripts/phase2_live.py --only 6`.
 
 **If something fails live:** record that beat again; don't fake it. Rehearsal mode (`--serve --demo`) is for practice. Its model is scripted, so don't present rehearsal footage as live model output. If a beat can't be made to work in time, cut it (cut order: SAM, then the widget, then the reminders).
 
@@ -59,7 +61,7 @@ Keep the persona on **Smug** for the replies; it's part of the character.
 *How we built it, on Meta's models:*
 - **Muse Spark 1.3** runs the agent (Responses API, tools, `previous_response_id`, tool search for MCP tools).
 - **Muse Wonder 1.0** does computer use for the fiddly parts of forms.
-- **Muse Glimmer** reads private-zone files locally; the cloud only ever sees its short answer.
+- **Muse Glimmer** reads private-zone files on the user's own computer or a self-hosted private Glimmer server (Modal, A10: 22 s cold start, 29.6 tokens/s); the cloud APIs only ever see a placeholder for its answer, filled in on the user's screen.
 - **Muse Voice Transcribe** handles voice notes.
 - **Muse Image** made Lantern's face.
 - **SAM 3.1** powers an objects-only camera check-in.

@@ -3,6 +3,7 @@
 Incoming, from the owner only (everyone else is ignored and counted):
   text          -> a new task (tagged with the channel), or
   "STOP"        -> the kill switch: cancel the running task, deny every pending approval
+  "stop #N"     -> stop only task N (its open question and approval cards too); the others carry on
   "status"      -> what Lantern is doing
   "menu"/"hi"   -> a pick-one menu (status, reminders, undo, summary, stop) as a list message
   "summary"     -> today's short summary, written by Muse Spark from Lantern's own records
@@ -51,6 +52,7 @@ from .base import Channel, Incoming
 from .cards import approval_card
 
 STOP = re.compile(r"^\W*/?stop\b", re.I)
+STOP_ONE = re.compile(r"^\W*/?stop\s+(?:task\s+)?#?(\d+)\W*$", re.I)   # "stop #12": that task only
 STATUS = re.compile(r"^\W*/?status\W*$", re.I)
 MENU = re.compile(r"^\W*/?(menu|hi|help|start)\W*$", re.I)
 SUMMARY = re.compile(r"^\W*/?summary\W*$", re.I)
@@ -463,6 +465,11 @@ class ChannelHub:
         t = (text or "").strip()
         if not t:
             return
+        if (one := STOP_ONE.match(t)) and hasattr(self.core, "stop_task"):
+            n = int(one.group(1))
+            r = self.core.stop_task(n)
+            return self.say(ch.name, f"🛑 Stopping #{n}; the other tasks carry on." if r.get("stopped")
+                            else f"#{n} isn't running. (STOP on its own stops everything.)")
         if STOP.match(t):
             return self._do_stop(ch)
         if STATUS.match(t):

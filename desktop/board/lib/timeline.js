@@ -68,6 +68,9 @@
         else if (seen.has(a.id)) errors.push(`${at}: id "${a.id}" is used twice`);
       }
       const need = (cond, msg) => { if (!cond) errors.push(`${at}: ${msg}`); };
+      // the schema's cap, enforced at load too: a hostile or broken lesson can't freeze the board
+      if (a.seconds !== undefined) need(typeof a.seconds === 'number' && a.seconds > 0 && a.seconds <= 60,
+                                        'seconds must be more than 0 and at most 60');
       const ref = (id, what) => need(live.has(id), `${what} "${id}" isn't on the board at this point`);
       const inBoard = (x, y) => need((x === undefined || (x >= 0 && x <= W)) && (y === undefined || (y >= 0 && y <= H)),
                                      'position is off the 1600 x 900 board');

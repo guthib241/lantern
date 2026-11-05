@@ -63,9 +63,12 @@ def shadow(compiler, routine, *, client=None, ladder=None, task_id: int | None =
     if sandbox:
         params["base_url"] = sandbox.rstrip("/")
 
-    def heal(step_id, kind, old, candidates):
-        step = next((s for s in c["steps"] if s["id"] == step_id), {"say": ""})
-        return compiler.repair(step, kind, old, candidates, client=client, ladder=ladder, task_id=task_id)
+    def heal(step_id, kind, old, candidates, page=None):
+        at = next((i for i, s in enumerate(c["steps"]) if s["id"] == step_id), None)
+        step = c["steps"][at] if at is not None else {"say": ""}
+        after = [s.get("say", "") for s in c["steps"][at + 1:at + 4]] if at is not None else []
+        return compiler.repair(step, kind, old, candidates, client=client, ladder=ladder, task_id=task_id,
+                               page=page, next_steps=after)
     ctx = RoutineContext(mode="sandbox" if sandbox else "dry", policy=compiler.core.policy, vault=compiler.vault(),
                          driver_factory=compiler._driver_factory(), url_ok=compiler._url_ok, heal=heal)
     with compiler._browser():

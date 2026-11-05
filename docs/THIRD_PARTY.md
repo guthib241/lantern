@@ -25,3 +25,8 @@
 | pyflakes (dev only) | MIT | lint in CI: unused imports, undefined names |
 | GitHub Actions: actions/checkout, actions/setup-python, actions/setup-node (CI only) | MIT | runs the tests, the rehearsal and the doctor on each pull request |
 | axe-core 4.13.0 (desktop, dev dependency) | MPL-2.0 | accessibility checks (WCAG 2.1 AA) in the end-to-end test; never shipped in the app |
+| llama.cpp `server-cuda-b11913` / `server-b11913` (official image `ghcr.io/ggml-org/llama.cpp`, deploy only) | MIT | serves Muse Glimmer on the self-hosted private Glimmer server (`deploy/modal/`) |
+| modal (client, deploy only) | Apache-2.0 | deploys the self-hosted private Glimmer server and its token gate |
+| huggingface_hub (in the Modal image build, deploy only) | Apache-2.0 | downloads the pinned Muse Glimmer GGUF weights into a Modal Volume once |
+| Muse Glimmer 30B GGUF weights (`meta-models/Muse-Glimmer-30B-GGUF`) | Apache-2.0 | the private lane's model on the self-hosted server |
+| FreeCAD (user-installed, run as a separate process) | LGPL-2.1-or-later | CAD kernel for S17 (not bundled) |
