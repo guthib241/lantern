@@ -1,42 +1,65 @@
-# 🏮 Lantern
+<div align="center">
 
-![Lantern: the approval sheet, the Today view in dark mode, Quick Ask and the live activity island](docs/screenshots/hero.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/banner-dark.svg">
+  <img alt="Lantern: the AI that lives on your laptop, does the boring computer work, and asks before anything leaves it." src="docs/media/banner-light.svg" width="100%">
+</picture>
 
-**I hate forms. Lantern is an AI that lives on my laptop, does the boring computer work for me (forms, email, files), asks before anything leaves the machine, and never sends my private folder to a cloud AI API.**
+[![tests](https://github.com/guthib241/lantern/actions/workflows/ci.yml/badge.svg)](https://github.com/guthib241/lantern/actions/workflows/ci.yml)
+![1,150+ tests](https://img.shields.io/badge/tests-1%2C150%2B%20passing-2ea043)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)
+![Desktop: Electron](https://img.shields.io/badge/desktop-Electron-47848F)
+![Accessibility: WCAG 2.1 AA](https://img.shields.io/badge/a11y-WCAG%202.1%20AA-6f42c1)
+![Models: Muse Spark, Wonder, Glimmer](https://img.shields.io/badge/models-Muse%20Spark%20%C2%B7%20Wonder%20%C2%B7%20Glimmer-E8890C)
 
-Built on Meta's Muse models for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026).
+**[Try it in your browser](https://guthib241.github.io/lantern/)** ·
+**[Watch it work](#watch-it-work)** ·
+**[Everything it does](#everything-it-does)** ·
+**[How it works](#how-it-works)** ·
+**[Safety](#safety-enforced-in-code-not-in-prompts)** ·
+**[Run it](#run-it)**
 
-## Try it in 5 commands
+</div>
 
-```bash
-git clone https://github.com/guthib241/lantern && cd lantern
-pip install -e . && python -m playwright install chromium   # gives you the `lantern` command
-lantern --demo-run                                 # the whole 3-minute story, offline, no key, $0
-echo "MODEL_API_KEY=your-key-from-dev.meta.ai" > .env && python scripts/smoke.py
-cd desktop && npm install && npm start             # the desktop app; it starts the Lantern server too
-```
+<p align="center">
+  <img src="docs/media/demo.gif" width="880" alt="The real app: a reimbursement form request, the Submit approval with every field, the email approval, and the task verified.">
+  <br><sub>The real app, recorded in rehearsal mode: ask, approve, verified. <a href="docs/media/lantern-30s.mp4">Watch the 34-second clip</a>.</sub>
+</p>
 
-On Windows (PowerShell 5.1 has no `&&`; `py -m lantern` works even when pip's Scripts folder isn't on PATH):
+> [!TIP]
+> **Try the whole story in one command, offline, for $0, with no API key:** `pip install -e . && lantern --demo-run`.
+> A scripted stand-in plays the models; everything else is real: privacy zones, approvals, a real browser filling forms, the audit log.
 
-```powershell
-git clone https://github.com/guthib241/lantern; cd lantern
-py -m pip install -e .; py -m playwright install chromium
-py -m lantern --demo-run
-Set-Content .env "MODEL_API_KEY=your-key-from-dev.meta.ai"; py scripts\smoke.py
-cd desktop; npm install; npm start                 # the desktop app; it starts the Lantern server too
-```
+## Why Lantern
 
-A `.env` saved by `echo … > .env` (UTF-16 in PowerShell 5.1) or by Notepad with a BOM loads fine too.
+<table>
+<tr>
+<td width="33%" valign="top">
 
-`--demo-run` is a rehearsal. A scripted stand-in plays Muse Spark and Muse Wonder (zero tokens). Everything else runs for real on a fresh copy of [`demo/home/`](demo/home):
-- the privacy zones, scrubber and audit log
-- approvals tapped on a simulated phone
-- a real Chromium filling [`demo/forms/`](demo/forms)
-- the email outbox, the project map, the widget checker and every verification
+### It does the work
+Forms (with computer use), email, files, reminders, small tools. You ask in plain words, from the desktop, your phone or your glasses.
 
-Use `npm run rehearsal` (in `desktop/`) to click through the same story in the desktop app; it starts `lantern --serve --demo` for you and stops it when you quit. If a server is already running (`lantern --serve` in a terminal), the app uses that one instead. `python -m lantern --doctor` tells you what this laptop still needs for the real thing, with the exact fix for each item.
+</td>
+<td width="33%" valign="top">
 
-## The demo (3 minutes)
+### It asks first
+Nothing is submitted, sent or moved without your OK, and each approval is bound to a hash of the exact values. Every change is checked afterwards.
+
+</td>
+<td width="33%" valign="top">
+
+### Private stays private
+Files in your private zone are read by **Muse Glimmer** on your own hardware. A cloud AI API never sees them, and you can see every byte that left.
+
+</td>
+</tr>
+</table>
+
+## Watch it work
+
+<p align="center"><img src="docs/media/demo-run.svg" width="900" alt="The output of lantern --demo-run."></p>
+
+The 3-minute story, and what is underneath each part:
 
 | Time | What you see | What's underneath |
 |---|---|---|
@@ -47,46 +70,1803 @@ Use `npm run rehearsal` (in `desktop/`) to click through the same story in the d
 | 2:20 | "Which projects use torch?" (no model call) · "make me a water timer". The widget appears and the avatar teases. | Environment map; widget written by **Muse Spark**, checked, sandboxed |
 | 2:45 | Architecture + Meta model map. "Ready for Meta AI Connectors": Lantern is also an MCP server. | |
 
-## How it fits together
+**Try it without installing anything:** the [playground](https://guthib241.github.io/lantern/) runs Lantern's real privacy scrubber (`lantern/scrubber.py`, compiled to WebAssembly) and its teaching board in your browser.
 
-```mermaid
-flowchart LR
-  subgraph phone["Phone / Ray-Ban Meta glasses"]
-    wa["WhatsApp or Telegram"]
-  end
-  subgraph laptop["Your laptop"]
-    ui["Desktop avatar + panel (Electron)"]
-    api["Local API on 127.0.0.1 (FastAPI + websocket)"]
-    agent["Agent loop: memory, approvals, STOP"]
-    tools["Tools: files, forms, email, projects, widgets, MCP"]
-    policy["policy.py: privacy zones"]
-    glimmer["Muse Glimmer (private lane: this laptop,\nor a self-hosted private Glimmer server)"]
-    scrub["Scrubber + audit log"]
-  end
-  subgraph baseten["Baseten (optional, off by default)"]
-    sparkopen["Muse Spark Open"]
-  end
-  subgraph meta["Meta Model API"]
-    spark["Muse Spark 1.3"]
-    wonder["Muse Wonder 1.0"]
-    voice["Muse Voice Transcribe"]
-    image["Muse Image"]
-    sam["SAM 3.1"]
-  end
-  wa -- "webhook, signed" --> api
-  ui <--> api
-  api --> agent --> tools --> policy
-  policy -- "private files only" --> glimmer
-  agent -- "every cloud payload" --> scrub
-  scrub --> spark
-  scrub --> wonder
-  scrub --> voice
-  scrub --> sam
-  scrub -. "public content only" .-> sparkopen
-  image -. "avatar art, made once" .-> ui
+## Everything it does
+
+<details open>
+<summary><b>Everyday work</b>: forms, email, files, reminders, widgets, meetings</summary>
+
+- **Forms with computer use.** Lantern fills real web forms with **Muse Wonder** (or Spark), never types passwords, OTPs, card or ID numbers, stops at CAPTCHAs, and asks before Submit. It checks the confirmation page afterwards.
+- **Email** with approval bound to the body and attachments, then checked in the Sent folder.
+- **Files:** find, move and tidy a folder with one approval for the whole plan; **Undo** puts everything back from Lantern's own log.
+- **Reminders, widgets** (tiny sandboxed tools written by Muse Spark), **meetings** (a recording becomes tasks you tick), **your projects** ("which projects use torch?", no model call), and a **resume → form profile** you approve value by value.
+- **Receipts:** every task can show what changed, what you approved, every byte that left and the cost. **Time saved:** an honest weekly estimate from a fixed table ([docs/TIME_SAVED.md](docs/TIME_SAVED.md)).
+
+</details>
+
+<details open>
+<summary><b>Phone, glasses and voice</b></summary>
+
+- **WhatsApp or Telegram:** tasks, voice notes (Muse Voice Transcribe), photos of paper (SAM 3.1 finds the page) and approval cards with Approve / Deny / Show.
+- **The paired phone app** (a chat-only web app): approvals as a bottom sheet, photos and voice notes.
+- **From phone to laptop:** open a shared link on the laptop, send a file to your phone after a red approval, or receive files from phones on the same Wi-Fi with Lantern's own **LocalSend** receiver.
+- **Push to talk** on the desktop, and **Teaching Mode** interrupted by voice.
+
+</details>
+
+<details open>
+<summary><b>It learns</b>: routines, demonstrations, agents</summary>
+
+- **Learned routines:** a task that finished and checked out becomes a small checked program. Next time it runs with **zero model calls**; when the site changes, it heals itself. Each night it re-checks them (**Sleep**).
+- **Show it once:** do a web task yourself in Lantern's browser; it learns it like any other routine.
+- **"Do this Reel":** share a how-to video; Lantern turns it into steps you approve.
+- **Agent packs:** shareable agents as small JSON files: a goal with blanks, a tool allowlist, signed with Ed25519, every install asks first. Run them on the laptop, the phone or both, on a schedule with a per-run budget, import an Agent Skill, export an A2A card, or let Lantern draft one from a finished task ([docs/AGENT_PACKS.md](docs/AGENT_PACKS.md)).
+- **Learn a GitHub repo:** read it, explain it, and install its MCP server pinned to a commit after your OK.
+
+</details>
+
+<details open>
+<summary><b>Safety</b>: the model that acts never reads the content</summary>
+
+A planner/reader split, labels on every value, risk tiers on every tool, decoy screens, a scrubber on everything that leaves, approvals bound to payload hashes, encrypted memory, spending limits. All enforced in code: see [Safety](#safety-enforced-in-code-not-in-prompts).
+
+</details>
+
+<details open>
+<summary><b>Teaching Mode, CAD, and two Lanterns</b></summary>
+
+- **Teaching Mode:** Muse Spark plans a lesson for the board; **SymPy checks every math step** before it may show a ✓. Send a photo of your working and **Check my work** circles the first line that doesn't follow.
+- **FreeCAD:** Lantern designs parts from plain English through a typed MCP connector with risk tiers, then **checks its own work by looking at renders**:
+
+  <img src="docs/media/freecad-1.png" width="32%" alt="Render: the 40 x 20 x 15 mm box"> <img src="docs/media/freecad-2.png" width="32%" alt="Render: hollowed, 2 mm walls"> <img src="docs/media/freecad-3.png" width="32%" alt="Render: 25 mm tall with two M3 holes">
+
+- **Lantern Network** and **Lend your Lantern:** two Lanterns can ask each other for things, under rules you write in plain words (checked as a Cedar policy), and each owner decides.
+
+</details>
+
+<details>
+<summary>🧊 <b>Spin it in 3D</b>: the enclosure from the FreeCAD demo (drag to rotate)</summary>
+
+The part from `demo/freecad/tasks.json` ("an enclosure 40 × 20 × 15 mm with 2 mm walls and two M3 mounting holes", then "make it 10 mm taller"), meshed for GitHub's 3D viewer. Also as a file: [docs/media/enclosure.stl](docs/media/enclosure.stl).
+
+```stl
+solid lantern_enclosure
+facet normal 0 -1 0
+outer loop
+vertex 0 0 0
+vertex 40 0 0
+vertex 40 0 25
+endloop
+endfacet
+facet normal 0 -1 0
+outer loop
+vertex 0 0 0
+vertex 40 0 25
+vertex 0 0 25
+endloop
+endfacet
+facet normal 1 0 0
+outer loop
+vertex 40 0 0
+vertex 40 20 0
+vertex 40 20 25
+endloop
+endfacet
+facet normal 1 0 0
+outer loop
+vertex 40 0 0
+vertex 40 20 25
+vertex 40 0 25
+endloop
+endfacet
+facet normal 0 1 0
+outer loop
+vertex 40 20 0
+vertex 0 20 0
+vertex 0 20 25
+endloop
+endfacet
+facet normal 0 1 0
+outer loop
+vertex 40 20 0
+vertex 0 20 25
+vertex 40 20 25
+endloop
+endfacet
+facet normal -1 0 0
+outer loop
+vertex 0 20 0
+vertex 0 0 0
+vertex 0 0 25
+endloop
+endfacet
+facet normal -1 0 0
+outer loop
+vertex 0 20 0
+vertex 0 0 25
+vertex 0 20 25
+endloop
+endfacet
+facet normal 0 1 0
+outer loop
+vertex 2 2 2
+vertex 2 2 25
+vertex 38 2 25
+endloop
+endfacet
+facet normal 0 1 0
+outer loop
+vertex 2 2 2
+vertex 38 2 25
+vertex 38 2 2
+endloop
+endfacet
+facet normal -1 0 0
+outer loop
+vertex 38 2 2
+vertex 38 2 25
+vertex 38 18 25
+endloop
+endfacet
+facet normal -1 0 0
+outer loop
+vertex 38 2 2
+vertex 38 18 25
+vertex 38 18 2
+endloop
+endfacet
+facet normal 0 -1 0
+outer loop
+vertex 38 18 2
+vertex 38 18 25
+vertex 2 18 25
+endloop
+endfacet
+facet normal 0 -1 0
+outer loop
+vertex 38 18 2
+vertex 2 18 25
+vertex 2 18 2
+endloop
+endfacet
+facet normal 1 0 0
+outer loop
+vertex 2 18 2
+vertex 2 18 25
+vertex 2 2 25
+endloop
+endfacet
+facet normal 1 0 0
+outer loop
+vertex 2 18 2
+vertex 2 2 25
+vertex 2 2 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 0 0 25
+vertex 40 0 25
+vertex 38 2 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 0 0 25
+vertex 38 2 25
+vertex 2 2 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 40 0 25
+vertex 40 20 25
+vertex 38 18 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 40 0 25
+vertex 38 18 25
+vertex 38 2 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 40 20 25
+vertex 0 20 25
+vertex 2 18 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 40 20 25
+vertex 2 18 25
+vertex 38 18 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 0 20 25
+vertex 0 0 25
+vertex 2 2 25
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 0 20 25
+vertex 2 2 25
+vertex 2 18 25
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 0 0 0
+vertex 0 6.5 0
+vertex 40 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 0 0 0
+vertex 40 6.5 0
+vertex 40 0 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 0 13.5 0
+vertex 0 20 0
+vertex 40 20 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 0 13.5 0
+vertex 40 20 0
+vertex 40 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 0 6.5 0
+vertex 0 13.5 0
+vertex 2.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 0 6.5 0
+vertex 2.5 13.5 0
+vertex 2.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 9.5 6.5 0
+vertex 9.5 13.5 0
+vertex 30.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 9.5 6.5 0
+vertex 30.5 13.5 0
+vertex 30.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 37.5 6.5 0
+vertex 37.5 13.5 0
+vertex 40 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 37.5 6.5 0
+vertex 40 13.5 0
+vertex 40 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.7 10 0
+vertex 7.571 10.651 0
+vertex 9.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.7 10 0
+vertex 9.5 11.45 0
+vertex 9.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.571 10.651 0
+vertex 7.202 11.202 0
+vertex 9.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.571 10.651 0
+vertex 9.5 13.5 0
+vertex 9.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.202 11.202 0
+vertex 6.651 11.571 0
+vertex 7.45 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.202 11.202 0
+vertex 7.45 13.5 0
+vertex 9.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6.651 11.571 0
+vertex 6 11.7 0
+vertex 6 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6.651 11.571 0
+vertex 6 13.5 0
+vertex 7.45 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6 11.7 0
+vertex 5.349 11.571 0
+vertex 4.55 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6 11.7 0
+vertex 4.55 13.5 0
+vertex 6 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 5.349 11.571 0
+vertex 4.798 11.202 0
+vertex 2.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 5.349 11.571 0
+vertex 2.5 13.5 0
+vertex 4.55 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.798 11.202 0
+vertex 4.429 10.651 0
+vertex 2.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.798 11.202 0
+vertex 2.5 11.45 0
+vertex 2.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.429 10.651 0
+vertex 4.3 10 0
+vertex 2.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.429 10.651 0
+vertex 2.5 10 0
+vertex 2.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.3 10 0
+vertex 4.429 9.349 0
+vertex 2.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.3 10 0
+vertex 2.5 8.55 0
+vertex 2.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.429 9.349 0
+vertex 4.798 8.798 0
+vertex 2.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.429 9.349 0
+vertex 2.5 6.5 0
+vertex 2.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.798 8.798 0
+vertex 5.349 8.429 0
+vertex 4.55 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 4.798 8.798 0
+vertex 4.55 6.5 0
+vertex 2.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 5.349 8.429 0
+vertex 6 8.3 0
+vertex 6 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 5.349 8.429 0
+vertex 6 6.5 0
+vertex 4.55 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6 8.3 0
+vertex 6.651 8.429 0
+vertex 7.45 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6 8.3 0
+vertex 7.45 6.5 0
+vertex 6 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6.651 8.429 0
+vertex 7.202 8.798 0
+vertex 9.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 6.651 8.429 0
+vertex 9.5 6.5 0
+vertex 7.45 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.202 8.798 0
+vertex 7.571 9.349 0
+vertex 9.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.202 8.798 0
+vertex 9.5 8.55 0
+vertex 9.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.571 9.349 0
+vertex 7.7 10 0
+vertex 9.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 7.571 9.349 0
+vertex 9.5 10 0
+vertex 9.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.7 10 0
+vertex 35.571 10.651 0
+vertex 37.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.7 10 0
+vertex 37.5 11.45 0
+vertex 37.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.571 10.651 0
+vertex 35.202 11.202 0
+vertex 37.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.571 10.651 0
+vertex 37.5 13.5 0
+vertex 37.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.202 11.202 0
+vertex 34.651 11.571 0
+vertex 35.45 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.202 11.202 0
+vertex 35.45 13.5 0
+vertex 37.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34.651 11.571 0
+vertex 34 11.7 0
+vertex 34 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34.651 11.571 0
+vertex 34 13.5 0
+vertex 35.45 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34 11.7 0
+vertex 33.349 11.571 0
+vertex 32.55 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34 11.7 0
+vertex 32.55 13.5 0
+vertex 34 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 33.349 11.571 0
+vertex 32.798 11.202 0
+vertex 30.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 33.349 11.571 0
+vertex 30.5 13.5 0
+vertex 32.55 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.798 11.202 0
+vertex 32.429 10.651 0
+vertex 30.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.798 11.202 0
+vertex 30.5 11.45 0
+vertex 30.5 13.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.429 10.651 0
+vertex 32.3 10 0
+vertex 30.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.429 10.651 0
+vertex 30.5 10 0
+vertex 30.5 11.45 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.3 10 0
+vertex 32.429 9.349 0
+vertex 30.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.3 10 0
+vertex 30.5 8.55 0
+vertex 30.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.429 9.349 0
+vertex 32.798 8.798 0
+vertex 30.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.429 9.349 0
+vertex 30.5 6.5 0
+vertex 30.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.798 8.798 0
+vertex 33.349 8.429 0
+vertex 32.55 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 32.798 8.798 0
+vertex 32.55 6.5 0
+vertex 30.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 33.349 8.429 0
+vertex 34 8.3 0
+vertex 34 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 33.349 8.429 0
+vertex 34 6.5 0
+vertex 32.55 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34 8.3 0
+vertex 34.651 8.429 0
+vertex 35.45 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34 8.3 0
+vertex 35.45 6.5 0
+vertex 34 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34.651 8.429 0
+vertex 35.202 8.798 0
+vertex 37.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 34.651 8.429 0
+vertex 37.5 6.5 0
+vertex 35.45 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.202 8.798 0
+vertex 35.571 9.349 0
+vertex 37.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.202 8.798 0
+vertex 37.5 8.55 0
+vertex 37.5 6.5 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.571 9.349 0
+vertex 35.7 10 0
+vertex 37.5 10 0
+endloop
+endfacet
+facet normal 0 0 -1
+outer loop
+vertex 35.571 9.349 0
+vertex 37.5 10 0
+vertex 37.5 8.55 0
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 2 2 2
+vertex 38 2 2
+vertex 38 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 2 2 2
+vertex 38 6.5 2
+vertex 2 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 2 13.5 2
+vertex 38 13.5 2
+vertex 38 18 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 2 13.5 2
+vertex 38 18 2
+vertex 2 18 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 2 6.5 2
+vertex 2.5 6.5 2
+vertex 2.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 2 6.5 2
+vertex 2.5 13.5 2
+vertex 2 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 9.5 6.5 2
+vertex 30.5 6.5 2
+vertex 30.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 9.5 6.5 2
+vertex 30.5 13.5 2
+vertex 9.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 37.5 6.5 2
+vertex 38 6.5 2
+vertex 38 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 37.5 6.5 2
+vertex 38 13.5 2
+vertex 37.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.7 10 2
+vertex 9.5 10 2
+vertex 9.5 11.45 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.7 10 2
+vertex 9.5 11.45 2
+vertex 7.571 10.651 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.571 10.651 2
+vertex 9.5 11.45 2
+vertex 9.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.571 10.651 2
+vertex 9.5 13.5 2
+vertex 7.202 11.202 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.202 11.202 2
+vertex 9.5 13.5 2
+vertex 7.45 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.202 11.202 2
+vertex 7.45 13.5 2
+vertex 6.651 11.571 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6.651 11.571 2
+vertex 7.45 13.5 2
+vertex 6 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6.651 11.571 2
+vertex 6 13.5 2
+vertex 6 11.7 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6 11.7 2
+vertex 6 13.5 2
+vertex 4.55 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6 11.7 2
+vertex 4.55 13.5 2
+vertex 5.349 11.571 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 5.349 11.571 2
+vertex 4.55 13.5 2
+vertex 2.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 5.349 11.571 2
+vertex 2.5 13.5 2
+vertex 4.798 11.202 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.798 11.202 2
+vertex 2.5 13.5 2
+vertex 2.5 11.45 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.798 11.202 2
+vertex 2.5 11.45 2
+vertex 4.429 10.651 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.429 10.651 2
+vertex 2.5 11.45 2
+vertex 2.5 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.429 10.651 2
+vertex 2.5 10 2
+vertex 4.3 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.3 10 2
+vertex 2.5 10 2
+vertex 2.5 8.55 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.3 10 2
+vertex 2.5 8.55 2
+vertex 4.429 9.349 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.429 9.349 2
+vertex 2.5 8.55 2
+vertex 2.5 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.429 9.349 2
+vertex 2.5 6.5 2
+vertex 4.798 8.798 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.798 8.798 2
+vertex 2.5 6.5 2
+vertex 4.55 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 4.798 8.798 2
+vertex 4.55 6.5 2
+vertex 5.349 8.429 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 5.349 8.429 2
+vertex 4.55 6.5 2
+vertex 6 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 5.349 8.429 2
+vertex 6 6.5 2
+vertex 6 8.3 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6 8.3 2
+vertex 6 6.5 2
+vertex 7.45 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6 8.3 2
+vertex 7.45 6.5 2
+vertex 6.651 8.429 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6.651 8.429 2
+vertex 7.45 6.5 2
+vertex 9.5 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 6.651 8.429 2
+vertex 9.5 6.5 2
+vertex 7.202 8.798 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.202 8.798 2
+vertex 9.5 6.5 2
+vertex 9.5 8.55 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.202 8.798 2
+vertex 9.5 8.55 2
+vertex 7.571 9.349 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.571 9.349 2
+vertex 9.5 8.55 2
+vertex 9.5 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 7.571 9.349 2
+vertex 9.5 10 2
+vertex 7.7 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.7 10 2
+vertex 37.5 10 2
+vertex 37.5 11.45 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.7 10 2
+vertex 37.5 11.45 2
+vertex 35.571 10.651 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.571 10.651 2
+vertex 37.5 11.45 2
+vertex 37.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.571 10.651 2
+vertex 37.5 13.5 2
+vertex 35.202 11.202 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.202 11.202 2
+vertex 37.5 13.5 2
+vertex 35.45 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.202 11.202 2
+vertex 35.45 13.5 2
+vertex 34.651 11.571 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34.651 11.571 2
+vertex 35.45 13.5 2
+vertex 34 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34.651 11.571 2
+vertex 34 13.5 2
+vertex 34 11.7 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34 11.7 2
+vertex 34 13.5 2
+vertex 32.55 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34 11.7 2
+vertex 32.55 13.5 2
+vertex 33.349 11.571 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 33.349 11.571 2
+vertex 32.55 13.5 2
+vertex 30.5 13.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 33.349 11.571 2
+vertex 30.5 13.5 2
+vertex 32.798 11.202 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.798 11.202 2
+vertex 30.5 13.5 2
+vertex 30.5 11.45 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.798 11.202 2
+vertex 30.5 11.45 2
+vertex 32.429 10.651 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.429 10.651 2
+vertex 30.5 11.45 2
+vertex 30.5 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.429 10.651 2
+vertex 30.5 10 2
+vertex 32.3 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.3 10 2
+vertex 30.5 10 2
+vertex 30.5 8.55 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.3 10 2
+vertex 30.5 8.55 2
+vertex 32.429 9.349 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.429 9.349 2
+vertex 30.5 8.55 2
+vertex 30.5 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.429 9.349 2
+vertex 30.5 6.5 2
+vertex 32.798 8.798 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.798 8.798 2
+vertex 30.5 6.5 2
+vertex 32.55 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 32.798 8.798 2
+vertex 32.55 6.5 2
+vertex 33.349 8.429 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 33.349 8.429 2
+vertex 32.55 6.5 2
+vertex 34 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 33.349 8.429 2
+vertex 34 6.5 2
+vertex 34 8.3 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34 8.3 2
+vertex 34 6.5 2
+vertex 35.45 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34 8.3 2
+vertex 35.45 6.5 2
+vertex 34.651 8.429 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34.651 8.429 2
+vertex 35.45 6.5 2
+vertex 37.5 6.5 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 34.651 8.429 2
+vertex 37.5 6.5 2
+vertex 35.202 8.798 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.202 8.798 2
+vertex 37.5 6.5 2
+vertex 37.5 8.55 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.202 8.798 2
+vertex 37.5 8.55 2
+vertex 35.571 9.349 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.571 9.349 2
+vertex 37.5 8.55 2
+vertex 37.5 10 2
+endloop
+endfacet
+facet normal 0 0 1
+outer loop
+vertex 35.571 9.349 2
+vertex 37.5 10 2
+vertex 35.7 10 2
+endloop
+endfacet
+facet normal -0.981 -0.195 0
+outer loop
+vertex 7.7 10 0
+vertex 7.7 10 2
+vertex 7.571 10.651 2
+endloop
+endfacet
+facet normal -0.981 -0.195 0
+outer loop
+vertex 7.7 10 0
+vertex 7.571 10.651 2
+vertex 7.571 10.651 0
+endloop
+endfacet
+facet normal -0.831 -0.556 0
+outer loop
+vertex 7.571 10.651 0
+vertex 7.571 10.651 2
+vertex 7.202 11.202 2
+endloop
+endfacet
+facet normal -0.831 -0.556 0
+outer loop
+vertex 7.571 10.651 0
+vertex 7.202 11.202 2
+vertex 7.202 11.202 0
+endloop
+endfacet
+facet normal -0.556 -0.831 0
+outer loop
+vertex 7.202 11.202 0
+vertex 7.202 11.202 2
+vertex 6.651 11.571 2
+endloop
+endfacet
+facet normal -0.556 -0.831 0
+outer loop
+vertex 7.202 11.202 0
+vertex 6.651 11.571 2
+vertex 6.651 11.571 0
+endloop
+endfacet
+facet normal -0.195 -0.981 0
+outer loop
+vertex 6.651 11.571 0
+vertex 6.651 11.571 2
+vertex 6 11.7 2
+endloop
+endfacet
+facet normal -0.195 -0.981 0
+outer loop
+vertex 6.651 11.571 0
+vertex 6 11.7 2
+vertex 6 11.7 0
+endloop
+endfacet
+facet normal 0.195 -0.981 0
+outer loop
+vertex 6 11.7 0
+vertex 6 11.7 2
+vertex 5.349 11.571 2
+endloop
+endfacet
+facet normal 0.195 -0.981 0
+outer loop
+vertex 6 11.7 0
+vertex 5.349 11.571 2
+vertex 5.349 11.571 0
+endloop
+endfacet
+facet normal 0.556 -0.831 0
+outer loop
+vertex 5.349 11.571 0
+vertex 5.349 11.571 2
+vertex 4.798 11.202 2
+endloop
+endfacet
+facet normal 0.556 -0.831 0
+outer loop
+vertex 5.349 11.571 0
+vertex 4.798 11.202 2
+vertex 4.798 11.202 0
+endloop
+endfacet
+facet normal 0.831 -0.556 0
+outer loop
+vertex 4.798 11.202 0
+vertex 4.798 11.202 2
+vertex 4.429 10.651 2
+endloop
+endfacet
+facet normal 0.831 -0.556 0
+outer loop
+vertex 4.798 11.202 0
+vertex 4.429 10.651 2
+vertex 4.429 10.651 0
+endloop
+endfacet
+facet normal 0.981 -0.195 0
+outer loop
+vertex 4.429 10.651 0
+vertex 4.429 10.651 2
+vertex 4.3 10 2
+endloop
+endfacet
+facet normal 0.981 -0.195 0
+outer loop
+vertex 4.429 10.651 0
+vertex 4.3 10 2
+vertex 4.3 10 0
+endloop
+endfacet
+facet normal 0.981 0.195 0
+outer loop
+vertex 4.3 10 0
+vertex 4.3 10 2
+vertex 4.429 9.349 2
+endloop
+endfacet
+facet normal 0.981 0.195 0
+outer loop
+vertex 4.3 10 0
+vertex 4.429 9.349 2
+vertex 4.429 9.349 0
+endloop
+endfacet
+facet normal 0.831 0.556 0
+outer loop
+vertex 4.429 9.349 0
+vertex 4.429 9.349 2
+vertex 4.798 8.798 2
+endloop
+endfacet
+facet normal 0.831 0.556 0
+outer loop
+vertex 4.429 9.349 0
+vertex 4.798 8.798 2
+vertex 4.798 8.798 0
+endloop
+endfacet
+facet normal 0.556 0.831 0
+outer loop
+vertex 4.798 8.798 0
+vertex 4.798 8.798 2
+vertex 5.349 8.429 2
+endloop
+endfacet
+facet normal 0.556 0.831 0
+outer loop
+vertex 4.798 8.798 0
+vertex 5.349 8.429 2
+vertex 5.349 8.429 0
+endloop
+endfacet
+facet normal 0.195 0.981 0
+outer loop
+vertex 5.349 8.429 0
+vertex 5.349 8.429 2
+vertex 6 8.3 2
+endloop
+endfacet
+facet normal 0.195 0.981 0
+outer loop
+vertex 5.349 8.429 0
+vertex 6 8.3 2
+vertex 6 8.3 0
+endloop
+endfacet
+facet normal -0.195 0.981 0
+outer loop
+vertex 6 8.3 0
+vertex 6 8.3 2
+vertex 6.651 8.429 2
+endloop
+endfacet
+facet normal -0.195 0.981 0
+outer loop
+vertex 6 8.3 0
+vertex 6.651 8.429 2
+vertex 6.651 8.429 0
+endloop
+endfacet
+facet normal -0.556 0.831 0
+outer loop
+vertex 6.651 8.429 0
+vertex 6.651 8.429 2
+vertex 7.202 8.798 2
+endloop
+endfacet
+facet normal -0.556 0.831 0
+outer loop
+vertex 6.651 8.429 0
+vertex 7.202 8.798 2
+vertex 7.202 8.798 0
+endloop
+endfacet
+facet normal -0.831 0.556 0
+outer loop
+vertex 7.202 8.798 0
+vertex 7.202 8.798 2
+vertex 7.571 9.349 2
+endloop
+endfacet
+facet normal -0.831 0.556 0
+outer loop
+vertex 7.202 8.798 0
+vertex 7.571 9.349 2
+vertex 7.571 9.349 0
+endloop
+endfacet
+facet normal -0.981 0.195 0
+outer loop
+vertex 7.571 9.349 0
+vertex 7.571 9.349 2
+vertex 7.7 10 2
+endloop
+endfacet
+facet normal -0.981 0.195 0
+outer loop
+vertex 7.571 9.349 0
+vertex 7.7 10 2
+vertex 7.7 10 0
+endloop
+endfacet
+facet normal -0.981 -0.195 0
+outer loop
+vertex 35.7 10 0
+vertex 35.7 10 2
+vertex 35.571 10.651 2
+endloop
+endfacet
+facet normal -0.981 -0.195 0
+outer loop
+vertex 35.7 10 0
+vertex 35.571 10.651 2
+vertex 35.571 10.651 0
+endloop
+endfacet
+facet normal -0.831 -0.556 0
+outer loop
+vertex 35.571 10.651 0
+vertex 35.571 10.651 2
+vertex 35.202 11.202 2
+endloop
+endfacet
+facet normal -0.831 -0.556 0
+outer loop
+vertex 35.571 10.651 0
+vertex 35.202 11.202 2
+vertex 35.202 11.202 0
+endloop
+endfacet
+facet normal -0.556 -0.831 0
+outer loop
+vertex 35.202 11.202 0
+vertex 35.202 11.202 2
+vertex 34.651 11.571 2
+endloop
+endfacet
+facet normal -0.556 -0.831 0
+outer loop
+vertex 35.202 11.202 0
+vertex 34.651 11.571 2
+vertex 34.651 11.571 0
+endloop
+endfacet
+facet normal -0.195 -0.981 0
+outer loop
+vertex 34.651 11.571 0
+vertex 34.651 11.571 2
+vertex 34 11.7 2
+endloop
+endfacet
+facet normal -0.195 -0.981 0
+outer loop
+vertex 34.651 11.571 0
+vertex 34 11.7 2
+vertex 34 11.7 0
+endloop
+endfacet
+facet normal 0.195 -0.981 0
+outer loop
+vertex 34 11.7 0
+vertex 34 11.7 2
+vertex 33.349 11.571 2
+endloop
+endfacet
+facet normal 0.195 -0.981 0
+outer loop
+vertex 34 11.7 0
+vertex 33.349 11.571 2
+vertex 33.349 11.571 0
+endloop
+endfacet
+facet normal 0.556 -0.831 0
+outer loop
+vertex 33.349 11.571 0
+vertex 33.349 11.571 2
+vertex 32.798 11.202 2
+endloop
+endfacet
+facet normal 0.556 -0.831 0
+outer loop
+vertex 33.349 11.571 0
+vertex 32.798 11.202 2
+vertex 32.798 11.202 0
+endloop
+endfacet
+facet normal 0.831 -0.556 0
+outer loop
+vertex 32.798 11.202 0
+vertex 32.798 11.202 2
+vertex 32.429 10.651 2
+endloop
+endfacet
+facet normal 0.831 -0.556 0
+outer loop
+vertex 32.798 11.202 0
+vertex 32.429 10.651 2
+vertex 32.429 10.651 0
+endloop
+endfacet
+facet normal 0.981 -0.195 0
+outer loop
+vertex 32.429 10.651 0
+vertex 32.429 10.651 2
+vertex 32.3 10 2
+endloop
+endfacet
+facet normal 0.981 -0.195 0
+outer loop
+vertex 32.429 10.651 0
+vertex 32.3 10 2
+vertex 32.3 10 0
+endloop
+endfacet
+facet normal 0.981 0.195 0
+outer loop
+vertex 32.3 10 0
+vertex 32.3 10 2
+vertex 32.429 9.349 2
+endloop
+endfacet
+facet normal 0.981 0.195 0
+outer loop
+vertex 32.3 10 0
+vertex 32.429 9.349 2
+vertex 32.429 9.349 0
+endloop
+endfacet
+facet normal 0.831 0.556 0
+outer loop
+vertex 32.429 9.349 0
+vertex 32.429 9.349 2
+vertex 32.798 8.798 2
+endloop
+endfacet
+facet normal 0.831 0.556 0
+outer loop
+vertex 32.429 9.349 0
+vertex 32.798 8.798 2
+vertex 32.798 8.798 0
+endloop
+endfacet
+facet normal 0.556 0.831 0
+outer loop
+vertex 32.798 8.798 0
+vertex 32.798 8.798 2
+vertex 33.349 8.429 2
+endloop
+endfacet
+facet normal 0.556 0.831 0
+outer loop
+vertex 32.798 8.798 0
+vertex 33.349 8.429 2
+vertex 33.349 8.429 0
+endloop
+endfacet
+facet normal 0.195 0.981 0
+outer loop
+vertex 33.349 8.429 0
+vertex 33.349 8.429 2
+vertex 34 8.3 2
+endloop
+endfacet
+facet normal 0.195 0.981 0
+outer loop
+vertex 33.349 8.429 0
+vertex 34 8.3 2
+vertex 34 8.3 0
+endloop
+endfacet
+facet normal -0.195 0.981 0
+outer loop
+vertex 34 8.3 0
+vertex 34 8.3 2
+vertex 34.651 8.429 2
+endloop
+endfacet
+facet normal -0.195 0.981 0
+outer loop
+vertex 34 8.3 0
+vertex 34.651 8.429 2
+vertex 34.651 8.429 0
+endloop
+endfacet
+facet normal -0.556 0.831 0
+outer loop
+vertex 34.651 8.429 0
+vertex 34.651 8.429 2
+vertex 35.202 8.798 2
+endloop
+endfacet
+facet normal -0.556 0.831 0
+outer loop
+vertex 34.651 8.429 0
+vertex 35.202 8.798 2
+vertex 35.202 8.798 0
+endloop
+endfacet
+facet normal -0.831 0.556 0
+outer loop
+vertex 35.202 8.798 0
+vertex 35.202 8.798 2
+vertex 35.571 9.349 2
+endloop
+endfacet
+facet normal -0.831 0.556 0
+outer loop
+vertex 35.202 8.798 0
+vertex 35.571 9.349 2
+vertex 35.571 9.349 0
+endloop
+endfacet
+facet normal -0.981 0.195 0
+outer loop
+vertex 35.571 9.349 0
+vertex 35.571 9.349 2
+vertex 35.7 10 2
+endloop
+endfacet
+facet normal -0.981 0.195 0
+outer loop
+vertex 35.571 9.349 0
+vertex 35.7 10 2
+vertex 35.7 10 0
+endloop
+endfacet
+endsolid lantern_enclosure
 ```
 
-## Meta model map
+</details>
+
+<details>
+<summary><b>Make it yours</b>: a Muse-made face, an orb, a glow or a live clock</summary>
+
+Lantern's face is drawn by **Muse Image** (describe it, pick a style: 3d, flat, pixel or neon), and every reaction is an edit of one portrait. Prefer something quieter? Settings → Avatar → Look switches to a **glowing orb**, a **glow** or a **live clock**, instantly. Three personalities (helpful, sarcastic, smug) change how it talks, never what it may do.
+
+<img src="docs/screenshots/orb-states.png" width="100%" alt="The orb in each state: ready, working, several tasks, needs your OK, done, failed, resting">
+
+</details>
+
+## How it works
+
+```mermaid
+flowchart TB
+  subgraph phone["Phone and glasses"]
+    direction LR
+    wa["WhatsApp, Telegram or the paired phone app"]
+    ls["LocalSend (same Wi-Fi)"]
+  end
+  subgraph laptop["Your laptop"]
+    ui["Desktop app: avatar, panel, Quick Ask"]
+    api["Local API on 127.0.0.1 (FastAPI + websocket)"]
+    sched["Scheduler: several tasks at once,<br/>parked while they wait for you"]
+    planner["Planner: sees handles,<br/>never the content"]
+    reader["Reader: typed answers<br/>about content"]
+    tools["Tools: files, forms, email, projects,<br/>widgets, MCP, FreeCAD, agent packs"]
+    policy["policy.py: privacy zones"]
+    glimmer["Muse Glimmer: the private lane<br/>(this laptop, or your own Glimmer server)"]
+    scrub["Scrubber + audit log + spending limits"]
+  end
+  cloud["Meta Model API<br/>Muse Spark 1.3 · Muse Wonder 1.0 · Muse Image<br/>Muse Voice Transcribe · SAM 3.1"]
+  baseten["Muse Spark Open on Baseten<br/>(optional, off by default)"]
+  wa -- "signed webhook" --> api
+  ls --> api
+  ui <--> api
+  api --> sched --> planner
+  planner --> tools --> policy
+  policy -- "private files only" --> glimmer
+  planner -. "asks about $doc handles" .-> reader
+  planner -- "every cloud payload" --> scrub
+  reader --> scrub
+  scrub --> cloud
+  scrub -. "public content only" .-> baseten
+  classDef meta fill:#FFF4E5,stroke:#E8890C,color:#3B2A12
+  classDef private fill:#E9F7EF,stroke:#2EA043,color:#123B20
+  class cloud,baseten meta
+  class glimmer,policy private
+```
+
+<details>
+<summary><b>One task, step by step</b></summary>
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor You
+  participant L as Lantern (on your laptop)
+  participant P as Planner (Muse Spark)
+  participant R as Reader
+  participant W as The web form
+  You->>L: "Fill the reimbursement form and email it to the organiser"
+  L->>P: your words + tool list (content arrives only as handles)
+  P->>L: search_files("taxi receipt")
+  L-->>P: $doc1 (the receipt, as a handle)
+  P->>R: ask_reader($doc1, "amount?", number)
+  R-->>P: 2400
+  P->>L: fill_form(url, values)
+  L->>W: fills every field (never passwords, OTPs or card numbers)
+  L->>You: "Submit this form?" (every value, bound to its hash)
+  You->>L: Allow
+  L->>W: Submit, then reads the confirmation page
+  L->>You: "Send this email?"
+  You->>L: Allow
+  L->>You: Done, verified: confirmation REF and the email found in Sent
+```
+
+</details>
+
+## Built on Meta's Muse models
 
 | Model | ID | What Lantern uses it for |
 |---|---|---|
@@ -100,22 +1880,86 @@ flowchart LR
 
 All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-contributor` models on your data. No other AI provider is used anywhere in the product.
 
+## Safety, enforced in code, not in prompts
+
+- **Privacy zones** (`~/.lantern/zones.json`):
+  - `hidden`: never even listed.
+  - `private`: read only by the local model; the cloud gets its scrubbed answer, never the file.
+  - `open`: readable, scrubbed on the way out.
+  - `writable`: Lantern may create or move files here, after your approval.
+- **Everything that leaves is scrubbed and logged.** Keys, tokens, card, Aadhaar and PAN numbers are scrubbed out of every cloud payload, tool results included. Each payload is logged with its SHA-256. The panel's "What left my laptop today" reads that log.
+- **Approvals** are single-use, expire in 10 minutes and are bound to a hash of the exact payload. If anything changes after you say yes (a field, an attachment), Lantern refuses and asks again.
+- **Hard stops:** Lantern never types into password, OTP, card, CVV, PIN or government-ID fields, and stops at CAPTCHAs ("you do this part").
+- **Untrusted content:** anything read from files, web pages, emails or MCP is wrapped as untrusted data. Once it's in context, every risky tool needs approval, and instructions inside it are ignored.
+- **The model that acts never reads the content** (with `lantern --serve`; after the published CaMeL and FIDES designs, arxiv.org/abs/2503.18813 and arxiv.org/abs/2505.23643):
+  - **Handles, not text.** A file's text, a page, an email or another program's result reaches the planner as a handle like `$doc1`. To learn something from it, the planner asks the **Reader**: a separate call with no tools whose answer must fit a type (yes/no, one of given options, a number, a date). A text answer becomes another handle the planner can pass on but can't read. The Reader also says whether the content tried to give instructions, and Lantern checks for that in code too.
+  - **Labels on values.** Every handle carries where it came from (trusted or untrusted) and how private it is (public, private or secret). A recipient, web address, command or tool input that came from content shows on a red card as "came from a file, not from you: approve only if you meant it"; a form at such an address needs its own yes before the browser even opens it.
+  - **Private stays here.** An answer from your Private folder is a private handle: it's filled in on your own screen only, your phone gets "‹private: shown on your computer›" instead, it can't go into memory, and the audited client refuses any cloud request that would carry it ("Nothing was sent").
+  - **Risk tiers on every tool:** green (reads, no card), yellow (reversible local changes, one tap), red (send, submit, run, share: the full card bound to the payload hash, never one tap).
+  - **Learned routines are fixed plans** with every target cross-checked in the page: injection-resistant by construction, with branch-steering checks. Not injection-proof: a typed answer (a number, a choice) read from content can still be wrong on purpose, which is why it shows on the card before anything uses it.
+  - **Tested** on the attack pack in [`demo/attacks/`](demo/attacks) (hidden text, fake SYSTEM banners, zero-width tricks, planted secrets, a spoofed email, a poisoned search result, the portal in attack mode), with honest, compromised-planner and compromised-reader scripts: `tests/test_injection.py`.
+  - **Measured, not claimed:** see *Privacy, measured* below.
+- **Verified, or it says so:** every action checks its result on disk or via the API and reports `verified: true/false`.
+- **A receipt for every task:** tap **Receipt** on a task (or send "receipt" from your phone, or `lantern --receipt 12`). It shows what changed and whether each change was checked, what you approved (and the payload hash it was bound to), every byte that left and where it went, what was redacted, what stayed on the local lane, and the cost. It's built from Lantern's own logs, never written by a model.
+- **Other rules:** Lantern never deletes. The server listens on 127.0.0.1 only, with a token. **STOP** (button, Ctrl/Cmd+Shift+X, or the word STOP on WhatsApp) cancels everything.
+- **Encrypted memory, real forgetting:** memory and the audit log are encrypted on disk with a key in your OS keychain. "Forget" overwrites the rows and rebuilds the database file.
+
+<details>
+<summary><b>Privacy, measured</b> (screenshot masking and decoys, live runs)</summary>
+
+- **Measured, not claimed:** `python scripts/eval_privacy.py --runs 5` runs the portal tasks with raw, masked and decoy screenshots (`LANTERN_SCREENSHOTS=masked` puts black boxes over your own values before a screenshot leaves; `LANTERN_SCREENSHOTS=decoy` shows stand-in values instead, in the page's own font and place, and Lantern types the real ones only on this computer; the panel's Privacy tab shows what you saw next to what the cloud saw) and reports success, steps, cost, what showed in screenshots, any private value found in any request that left, and whether every payload is in the audit log. Measured on Oct 28 (Muse Spark, 5 runs per row, clean and attack-mode portal):
+
+  | Portal | Screenshots | Success | Avg steps | Avg cost | Runs with a leak | Trap links followed | Payloads in the audit log |
+  |---|---|---|---|---|---|---|---|
+  | clean | raw / masked / decoy | 5/5 · 4/5 · 5/5 | 8.2 · 8.2 · 7.8 | $0.052 · $0.055 · $0.054 | 0 | 0 | 232/232 |
+  | attack (A7) | raw / masked / decoy | 5/5 · 5/5 · 3/5 | 8.0 · 9.0 · 7.6 | $0.057 · $0.063 · $0.059 | 0 | 0 | 232/232 |
+  | after the fixes below: clean · attack | raw | 5/5 · 5/5 | 8.2 · 7.8 | $0.061 · $0.055 | 0 | 0 | 153/153 |
+
+  **What the portal doesn't show:** no portal run sent a screenshot. The portal has only standard fields, so computer use never ran there. So the screenshot modes are compared on a page that needs the screen: the demo reimbursement form, whose expense category is a custom dropdown (`--tasks reimbursement`). Measured on Oct 30 (Muse Spark for the agent and computer use, 5 runs per row, $0.64 in total):
+
+  | Reimbursement form | Success | Avg steps | Avg cost | Screenshots sent | Your values on them: shown / covered | Runs with a leak | Payloads in the audit log |
+  |---|---|---|---|---|---|---|---|
+  | raw | 5/5 | 2.8 | $0.039 | 16 | 38 / 0 | 0 | 46/46 |
+  | masked (black boxes) | 5/5 | 3.0 | $0.043 | 15 | 0 / 36 | 0 | 45/45 |
+  | decoy (stand-in values) | 5/5 | 3.0 | $0.046 | 16 | 0 / 32 | 0 | 50/50 |
+
+  Masking and decoys cost nothing in success here: the model only had to find the dropdown and pick Travel, which it can do without seeing your name. "Shown" counts each of your saved values (name, email, phone, team) visible in a screenshot that left. The covered counts differ from raw because the screen differs from run to run.
+
+  **What it found:** the 3 failures were the declaration box left unticked: the agent's goal for the payment page dropped "accept the declaration". In one of them the agent still said "done". Now the form planner also sees your own request, a "done" after a change that didn't verify is refused in code, and a planted "SYSTEM:" alert banner can no longer make an accepted page look rejected.
+
+</details>
+
+<details>
+<summary><b>Reliability</b>: retries, circuit breaker, spending limits</summary>
+
+Lantern retries only what's temporary:
+- **Retried:** 429, 5xx, timeouts and dropped connections, with exponential backoff, jitter and `Retry-After`. The avatar says "the network's wobbly".
+- **Not retried:** 400, 401 and 404, which fail fast with a sentence you can act on ("check MODEL_API_KEY", "you're offline").
+- **Circuit breaker:** after repeated failures, Lantern pauses calls for 30 seconds.
+- **Spending limits, in code:** before every model call Lantern checks what it has spent. The defaults are **$150 total** (`LANTERN_BUDGET_USD`) and **$3 per task** (`LANTERN_TASK_BUDGET_USD`); a daily limit (`LANTERN_DAILY_BUDGET_USD`) is optional. A call over a limit never leaves the laptop and isn't retried, and the task stops with the reason and the variable to raise. Past 80% of the total, Lantern warns you once. The Costs tab shows the limits; forgetting tasks doesn't reset the count.
+
+Failed tasks have a **Try again** button. Timeouts are set by `LANTERN_TIMEOUT` (seconds, default 120).
+
+</details>
+
 ## On your desktop
 
-| Approve with the full picture | Live activity island | Quick Ask (Ctrl/Cmd+Shift+Space) |
+| Ask in plain words | Approve with the full picture | A private file, answered here |
 |---|---|---|
-| ![Approval sheet](docs/screenshots/approval-sheet.png) | ![Island asking for approval](docs/screenshots/island-approval-cut.png) | ![Quick Ask](docs/screenshots/quick-ask.png) |
-| **What left my laptop** | **First launch** | **Setup check and preferences** |
-| ![Privacy](docs/screenshots/privacy.png) | ![Welcome](docs/screenshots/welcome.png) | ![Setup](docs/screenshots/setup.png) |
-| **Today: just the conversation** | **Meetings: a recording becomes tasks** | **Reminders** |
-| ![Today in dark mode](docs/screenshots/today-dark.png) | ![Meetings](docs/screenshots/meetings.png) | ![Reminders](docs/screenshots/reminders.png) |
+| ![Today, in the conversation view](docs/screenshots/today.png) | ![The Submit approval sheet with every field](docs/screenshots/form-approval.png) | ![A private-folder question answered on the private lane](docs/screenshots/private-answer.png) |
+| **Live activity island** | **Quick Ask (Ctrl/Cmd+Shift+Space)** | **What left my laptop** |
+| ![Island asking for approval](docs/screenshots/island-approval-cut.png) | ![Quick Ask](docs/screenshots/quick-ask.png) | ![Privacy](docs/screenshots/privacy.png) |
+| **Agents you can share** | **Make it yours: face, orb, glow or clock** | **Dark mode** |
+| ![Two installed agent packs](docs/screenshots/agents.png) | ![Settings, Avatar, Look](docs/screenshots/settings-look.png) | ![Today in dark mode](docs/screenshots/today-dark.png) |
+| **Meetings: a recording becomes tasks** | **Reminders** | **Setup check and preferences** |
+| ![Meetings](docs/screenshots/meetings.png) | ![Reminders](docs/screenshots/reminders.png) | ![Setup](docs/screenshots/setup.png) |
 
-*Screenshots of the real app (`lantern --serve --demo`), captured by the end-to-end test.*
+*Screenshots of the real app (`lantern --serve --demo`), captured by the end-to-end test and the demo recorder, `desktop/e2e/record.js`.*
 
 - **Live activity island:** a black capsule above Lantern's face shows each step as it happens, and grows into a small card for approvals, results and reminders. Clean approvals can be answered right there. Anything that followed untrusted content (every form submit) asks you to **Review** the full sheet.
 - **Quick Ask:** press **Ctrl/Cmd+Shift+Space** anywhere, type, press Return. ↑/↓ for suggestions and recent tasks; "stop" stops everything.
 - **Menu bar and notifications:** the lantern icon in the menu bar (system tray on Windows/Linux) shows what Lantern is doing and how many approvals wait. System notifications cover approvals (title only, never the values), reminders and failures.
-- **The panel** is a Mac-style window with a sidebar (Today, Reminders, Learned, Teaching, Meetings, Widgets; then Phone, Privacy, Usage, Settings) and grouped lists. On macOS it uses the system's sidebar material and inset traffic lights.
+- **The panel** is a Mac-style window with a sidebar (Today, Reminders, Learned, Teaching, Meetings, Widgets, Agents; then Phone, Privacy, Usage, Settings) and grouped lists. On macOS it uses the system's sidebar material and inset traffic lights.
   - **Today is only the conversation:**
     - What you asked appears on the right and Lantern's answer on the left, with its steps folded away.
     - The message box stays at the bottom.
@@ -147,59 +1991,38 @@ All IDs live in [`lantern/models.py`](lantern/models.py). Lantern never uses `-c
   - Setup, HTTPS via your own tunnel, and revoking are in [docs/PHONE.md](docs/PHONE.md).
 - Both were built with **Muse Code** (OpenCode on Muse Spark 1.3), then reviewed and tested here.
 
-## Safety model (enforced in code, not in prompts)
+## Run it
 
-- **Privacy zones** (`~/.lantern/zones.json`):
-  - `hidden`: never even listed.
-  - `private`: read only by the local model; the cloud gets its scrubbed answer, never the file.
-  - `open`: readable, scrubbed on the way out.
-  - `writable`: Lantern may create or move files here, after your approval.
-- **Everything that leaves is scrubbed and logged.** Keys, tokens, card, Aadhaar and PAN numbers are scrubbed out of every cloud payload, tool results included. Each payload is logged with its SHA-256. The panel's "What left my laptop today" reads that log.
-- **Approvals** are single-use, expire in 10 minutes and are bound to a hash of the exact payload. If anything changes after you say yes (a field, an attachment), Lantern refuses and asks again.
-- **Hard stops:** Lantern never types into password, OTP, card, CVV, PIN or government-ID fields, and stops at CAPTCHAs ("you do this part").
-- **Untrusted content:** anything read from files, web pages, emails or MCP is wrapped as untrusted data. Once it's in context, every risky tool needs approval, and instructions inside it are ignored.
-- **The model that acts never reads the content** (with `lantern --serve`; after the published CaMeL and FIDES designs, arxiv.org/abs/2503.18813 and arxiv.org/abs/2505.23643):
-  - **Handles, not text.** A file's text, a page, an email or another program's result reaches the planner as a handle like `$doc1`. To learn something from it, the planner asks the **Reader**: a separate call with no tools whose answer must fit a type (yes/no, one of given options, a number, a date). A text answer becomes another handle the planner can pass on but can't read. The Reader also says whether the content tried to give instructions, and Lantern checks for that in code too.
-  - **Labels on values.** Every handle carries where it came from (trusted or untrusted) and how private it is (public, private or secret). A recipient, web address, command or tool input that came from content shows on a red card as "came from a file, not from you: approve only if you meant it"; a form at such an address needs its own yes before the browser even opens it.
-  - **Private stays here.** An answer from your Private folder is a private handle: it's filled in on your own screen only, your phone gets "‹private: shown on your computer›" instead, it can't go into memory, and the audited client refuses any cloud request that would carry it ("Nothing was sent").
-  - **Risk tiers on every tool:** green (reads, no card), yellow (reversible local changes, one tap), red (send, submit, run, share: the full card bound to the payload hash, never one tap).
-  - **Learned routines are fixed plans** with every target cross-checked in the page: injection-resistant by construction, with branch-steering checks. Not injection-proof: a typed answer (a number, a choice) read from content can still be wrong on purpose, which is why it shows on the card before anything uses it.
-  - **Tested** on the attack pack in [`demo/attacks/`](demo/attacks) (hidden text, fake SYSTEM banners, zero-width tricks, planted secrets, a spoofed email, a poisoned search result, the portal in attack mode), with honest, compromised-planner and compromised-reader scripts: `tests/test_injection.py`.
-  - **Measured, not claimed:** `python scripts/eval_privacy.py --runs 5` runs the portal tasks with raw, masked and decoy screenshots (`LANTERN_SCREENSHOTS=masked` puts black boxes over your own values before a screenshot leaves; `LANTERN_SCREENSHOTS=decoy` shows stand-in values instead, in the page's own font and place, and Lantern types the real ones only on this computer; the panel's Privacy tab shows what you saw next to what the cloud saw) and reports success, steps, cost, what showed in screenshots, any private value found in any request that left, and whether every payload is in the audit log. Measured on Oct 28 (Muse Spark, 5 runs per row, clean and attack-mode portal):
+```bash
+git clone https://github.com/guthib241/lantern && cd lantern
+pip install -e . && python -m playwright install chromium   # gives you the `lantern` command
+lantern --demo-run                                 # the whole 3-minute story, offline, no key, $0
+echo "MODEL_API_KEY=your-key-from-dev.meta.ai" > .env && python scripts/smoke.py
+cd desktop && npm install && npm start             # the desktop app; it starts the Lantern server too
+```
 
-    | Portal | Screenshots | Success | Avg steps | Avg cost | Runs with a leak | Trap links followed | Payloads in the audit log |
-    |---|---|---|---|---|---|---|---|
-    | clean | raw / masked / decoy | 5/5 · 4/5 · 5/5 | 8.2 · 8.2 · 7.8 | $0.052 · $0.055 · $0.054 | 0 | 0 | 232/232 |
-    | attack (A7) | raw / masked / decoy | 5/5 · 5/5 · 3/5 | 8.0 · 9.0 · 7.6 | $0.057 · $0.063 · $0.059 | 0 | 0 | 232/232 |
-    | after the fixes below: clean · attack | raw | 5/5 · 5/5 | 8.2 · 7.8 | $0.061 · $0.055 | 0 | 0 | 153/153 |
+On Windows (PowerShell 5.1 has no `&&`; `py -m lantern` works even when pip's Scripts folder isn't on PATH):
 
-    **What the portal doesn't show:** no portal run sent a screenshot. The portal has only standard fields, so computer use never ran there. So the screenshot modes are compared on a page that needs the screen: the demo reimbursement form, whose expense category is a custom dropdown (`--tasks reimbursement`). Measured on Oct 30 (Muse Spark for the agent and computer use, 5 runs per row, $0.64 in total):
+```powershell
+git clone https://github.com/guthib241/lantern; cd lantern
+py -m pip install -e .; py -m playwright install chromium
+py -m lantern --demo-run
+Set-Content .env "MODEL_API_KEY=your-key-from-dev.meta.ai"; py scripts\smoke.py
+cd desktop; npm install; npm start                 # the desktop app; it starts the Lantern server too
+```
 
-    | Reimbursement form | Success | Avg steps | Avg cost | Screenshots sent | Your values on them: shown / covered | Runs with a leak | Payloads in the audit log |
-    |---|---|---|---|---|---|---|---|
-    | raw | 5/5 | 2.8 | $0.039 | 16 | 38 / 0 | 0 | 46/46 |
-    | masked (black boxes) | 5/5 | 3.0 | $0.043 | 15 | 0 / 36 | 0 | 45/45 |
-    | decoy (stand-in values) | 5/5 | 3.0 | $0.046 | 16 | 0 / 32 | 0 | 50/50 |
+A `.env` saved by `echo … > .env` (UTF-16 in PowerShell 5.1) or by Notepad with a BOM loads fine too.
 
-    Masking and decoys cost nothing in success here: the model only had to find the dropdown and pick Travel, which it can do without seeing your name. "Shown" counts each of your saved values (name, email, phone, team) visible in a screenshot that left. The covered counts differ from raw because the screen differs from run to run.
+`--demo-run` is a rehearsal. A scripted stand-in plays Muse Spark and Muse Wonder (zero tokens). Everything else runs for real on a fresh copy of [`demo/home/`](demo/home):
+- the privacy zones, scrubber and audit log
+- approvals tapped on a simulated phone
+- a real Chromium filling [`demo/forms/`](demo/forms)
+- the email outbox, the project map, the widget checker and every verification
 
-    **What it found:** the 3 failures were the declaration box left unticked: the agent's goal for the payment page dropped "accept the declaration". In one of them the agent still said "done". Now the form planner also sees your own request, a "done" after a change that didn't verify is refused in code, and a planted "SYSTEM:" alert banner can no longer make an accepted page look rejected.
-- **Verified, or it says so:** every action checks its result on disk or via the API and reports `verified: true/false`.
-- **A receipt for every task:** tap **Receipt** on a task (or send "receipt" from your phone, or `lantern --receipt 12`). It shows what changed and whether each change was checked, what you approved (and the payload hash it was bound to), every byte that left and where it went, what was redacted, what stayed on the local lane, and the cost. It's built from Lantern's own logs, never written by a model.
-- **Other rules:** Lantern never deletes. The server listens on 127.0.0.1 only, with a token. **STOP** (button, Ctrl/Cmd+Shift+X, or the word STOP on WhatsApp) cancels everything.
-- **Encrypted memory, real forgetting:** memory and the audit log are encrypted on disk with a key in your OS keychain. "Forget" overwrites the rows and rebuilds the database file.
+Use `npm run rehearsal` (in `desktop/`) to click through the same story in the desktop app; it starts `lantern --serve --demo` for you and stops it when you quit. If a server is already running (`lantern --serve` in a terminal), the app uses that one instead. `python -m lantern --doctor` tells you what this laptop still needs for the real thing, with the exact fix for each item.
 
-## Reliability
-
-Lantern retries only what's temporary:
-- **Retried:** 429, 5xx, timeouts and dropped connections, with exponential backoff, jitter and `Retry-After`. The avatar says "the network's wobbly".
-- **Not retried:** 400, 401 and 404, which fail fast with a sentence you can act on ("check MODEL_API_KEY", "you're offline").
-- **Circuit breaker:** after repeated failures, Lantern pauses calls for 30 seconds.
-- **Spending limits, in code:** before every model call Lantern checks what it has spent. The defaults are **$150 total** (`LANTERN_BUDGET_USD`) and **$3 per task** (`LANTERN_TASK_BUDGET_USD`); a daily limit (`LANTERN_DAILY_BUDGET_USD`) is optional. A call over a limit never leaves the laptop and isn't retried, and the task stops with the reason and the variable to raise. Past 80% of the total, Lantern warns you once. The Costs tab shows the limits; forgetting tasks doesn't reset the count.
-
-Failed tasks have a **Try again** button. Timeouts are set by `LANTERN_TIMEOUT` (seconds, default 120).
-
-## Your phone: WhatsApp (and Telegram)
+<details>
+<summary><b>Connect your phone</b>: WhatsApp (and Telegram)</summary>
 
 **Scope:** Lantern's WhatsApp number is a **personal task and approval console for your own computer, not a general chatbot**, following WhatsApp's January 2026 rule on AI providers. It only listens to your number. It takes tasks, voice notes, approvals (Approve / Deny / Show buttons), `status` and **STOP**.
 
@@ -220,7 +2043,10 @@ Setup (once):
 
 Telegram fallback: create a bot with @BotFather, then set `LANTERN_CHANNELS=telegram`, `TELEGRAM_BOT_TOKEN` and `LANTERN_TELEGRAM_OWNER` (your chat id).
 
-## Everyday use
+</details>
+
+<details>
+<summary><b>Everyday use</b>: the command line and every feature in detail</summary>
 
 ```bash
 python -m lantern                                     # chat in the terminal
@@ -253,11 +2079,14 @@ python -m lantern --forget-task 12 | --forget-everything
   - **Then you decide.** Every allowed request still asks you. Private and hidden folders are never shared, and anything that leaves is scrubbed. Messages are signed (Ed25519), accepted only from your contacts, and never twice. Needs `pip install "lantern[network]"` (cedarpy); without it, every request is refused.
 - **Profile from my resume:** Setup → *Profile from my resume* (or `POST /profile/resume {path}`). Muse Spark reads your own resume (PDF or text; never from a private folder) and proposes values for your form profile, shown next to what it already has. You tick what to save. ID and card numbers are never proposed. It fills your own forms; it never rates anyone.
 - **Lend your Lantern:** give a family member an hour on your Lantern (`POST /lend {name, channel, address, text}` previews it, then save with the `cedar` it shows): "Amma may read my bills for 1 hour; never the Bank folder". Muse Spark writes the rules as a Cedar policy, and you see what the engine decides for examples before saving. Their messages and voice notes reach Lantern only while the loan is active. Each step is checked against the rules (private and hidden folders never) and needs your OK on your phone. They get the answer; you get the full receipt. Loans end on time, or right away with `POST /lend/{id}/revoke`. Needs cedarpy (`pip install -e ".[network]"`).
-- **Teaching Mode (a mode, not the pitch):** ask for a lesson (panel → Costs → "Lessons on the board", or `POST /lesson {request}`). Muse Spark plans it as a timeline for the board, and SymPy checks every math step before it may show a ✓; a step that fails goes back to Muse Spark with the reason, and one that never checks out is removed. The board window opens and plays it, with the computer's own voice (not a Meta model). **Check my work:** send a photo of handwritten working (from the panel, or on WhatsApp with "check my work"). Lantern finds the first line that doesn't follow, circles it on the photo and says why; if it can't read a line, it says so. Algebra and calculus get the ✓; other subjects don't, and the lesson says so. Needs `pip install -e ".[teach]"` (SymPy).
+- **Teaching Mode (a mode, not the pitch):** ask for a lesson (the panel's Teaching section, or `POST /lesson {request}`). Muse Spark plans it as a timeline for the board, and SymPy checks every math step before it may show a ✓; a step that fails goes back to Muse Spark with the reason, and one that never checks out is removed. The board window opens and plays it, with the computer's own voice (not a Meta model). **Check my work:** send a photo of handwritten working (from the panel, or on WhatsApp with "check my work"). Lantern finds the first line that doesn't follow, circles it on the photo and says why; if it can't read a line, it says so. Algebra and calculus get the ✓; other subjects don't, and the lesson says so. Needs `pip install -e ".[teach]"` (SymPy).
 - **Sleep:** each night at 03:30 (`LANTERN_SLEEP_AT`, or `python -m lantern --sleep` now), Lantern replays every learned routine where nothing real can happen: a sandbox copy of the site if you set one, otherwise dry, stopping before the first submit or move. It repairs what drifted, re-checks it, and leaves a morning digest on your phone and desktop ("the portal moved its buttons; I re-pointed 3 steps and re-checked it").
-- **Show Lantern once:** Costs → *Show Lantern once* in the panel, or `python -m lantern --teach http://127.0.0.1:8770/apply/personal "apply for a city permit"`. Lantern's browser opens; you fill the form yourself; press Done after its confirmation page. Lantern learns it like any other routine. What you typed stays on this computer (never a password's value), and no screenshot is sent anywhere.
+- **Show Lantern once:** Learned → *Show Lantern once* in the panel, or `python -m lantern --teach http://127.0.0.1:8770/apply/personal "apply for a city permit"`. Lantern's browser opens; you fill the form yourself; press Done after its confirmation page. Lantern learns it like any other routine. What you typed stays on this computer (never a password's value), and no screenshot is sent anywhere.
 
-## Cost so far
+</details>
+
+<details>
+<summary><b>What it costs</b>: measured on the live API</summary>
 
 | | |
 |---|---|
@@ -323,19 +2152,10 @@ A full rehearsal of the story on the live API costs about **$0.25**, so recordin
 So the tuned model answers about 18× shorter, at a cost of 3 answers on unfamiliar wording; the base model's reasoning is what got those right. Muse Spark scored 93/93 on the same set. Data $2.37 (Meta API), GPU about $1 (Modal).
 Lantern logs tokens and cost per task (`python -m lantern --usage`, the panel's Costs tab), and the spending limits keep a runaway loop from eating the credit (checked live: a $0.002 task limit stopped the task after one call).
 
-## Tests
+</details>
 
-```bash
-pip install -e ".[dev]"
-python -m pytest -q          # ~800 tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
-python -m pyflakes lantern scripts tests
-cd desktop && npm test       # the panel's logic and the mock server on their own
-cd desktop && npm install && npm run e2e   # the real Electron app against the real server, whole story (Linux without a screen: xvfb-run -a npm run e2e)
-```
-
-GitHub Actions runs the lint, every test, the full offline rehearsal and the doctor on each pull request (`.github/workflows/ci.yml`). `python -m lantern …` and `lantern …` are the same command.
-
-## What you need to set up on your laptop
+<details>
+<summary><b>What you need to set up on your laptop</b></summary>
 
 `python -m lantern --doctor` (or the panel's **Setup** tab) checks all of this and prints the fix for anything missing.
 
@@ -347,5 +2167,64 @@ GitHub Actions runs the lint, every test, the full offline rehearsal and the doc
 6. `cd desktop && npm install && npm start`.
 7. Lantern's face: `python scripts/make_avatar.py`, or import from MetaMuse.
 8. Allow the OS keychain prompt the first time, which stores the memory key.
+
+</details>
+
+## Quality
+
+```bash
+pip install -e ".[dev]"
+python -m pytest -q          # 1,150+ tests, offline: fake model, real Chromium on demo/forms and demo/portal, real uvicorn
+python -m pyflakes lantern scripts tests
+cd desktop && npm test       # the panel's logic and the mock server on their own
+cd desktop && npm install && npm run e2e   # the real Electron app against the real server, whole story (Linux without a screen: xvfb-run -a npm run e2e)
+```
+
+GitHub Actions runs the lint, every test, the full offline rehearsal and the doctor on each pull request (`.github/workflows/ci.yml`). `python -m lantern …` and `lantern …` are the same command.
+
+The full suite (1,150+ tests, including the real Electron app driven end to end with axe-core accessibility checks on every section, light and dark) passes on the combined line. `scripts/make_readme_media.py` makes this page's banner, terminal and 3D model; `desktop/e2e/record.js` films the app for the demo.
+
+<details>
+<summary><b>How twelve branches became one</b></summary>
+
+Lantern was built in parallel sessions: `main` and eleven feature branches. On Nov 5 they were combined into one line with seven merges (the other four branches were already inside them). Every conflict was resolved so that each branch's features stay, and the seams the combination opened were fixed and tested: a pack's tool allowlist on the protected path, the Muse face and the orb as one system of looks, a flaky websocket teardown, a Telegram bot token kept out of error texts. The details are in [BUILD_LOG.md](BUILD_LOG.md) and [docs/DECISIONS.md](docs/DECISIONS.md).
+
+```mermaid
+gitGraph
+  commit id: "main, as submitted"
+  branch phase2-core
+  commit id: "S0-S16, desktop redesign, phone app"
+  checkout main
+  merge phase2-core
+  branch lantern-handoff
+  commit id: "Baseten, Modal, FreeCAD, the orb"
+  checkout main
+  merge lantern-handoff
+  branch freecad-laptop
+  commit id: "agent packs, loops, LocalSend, avatar studio"
+  checkout main
+  merge freecad-laptop
+  branch live-api-qa
+  commit id: "secrets in plain words, prompt caching"
+  checkout main
+  merge live-api-qa
+  branch real-run
+  commit id: "forms-session tests"
+  checkout main
+  merge real-run
+  branch modal-glimmer
+  commit id: "the self-hosted Glimmer server"
+  checkout main
+  merge modal-glimmer
+  branch parallel-demo-pack
+  commit id: "attack pack, teaching board"
+  checkout main
+  merge parallel-demo-pack
+  commit id: "fixes, tests, this page"
+```
+
+</details>
+
+---
 
 Submitting: [docs/SUBMISSION.md](docs/SUBMISSION.md) (video script, slide, write-up). More: [docs/SPEC.md](docs/SPEC.md) · [docs/DECISIONS.md](docs/DECISIONS.md) · [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) · [BUILD_LOG.md](BUILD_LOG.md) · [desktop/README.md](desktop/README.md)

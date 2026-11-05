@@ -540,3 +540,17 @@ body.chatting .toast { bottom: 84px; }   /* above the message box */
 .hero-status[data-mode="failed"]::before, .hero-status[data-mode="stopped"]::before { background: var(--red); }
 @keyframes blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .hero-status::before { animation: none !important; } }
+
+/* ---- agent cards (the Agents section): a grouped card, not a chat bubble ----
+   They share the task markup (article.task > .head > .goal …), which Today draws as a conversation. */
+#agent-list { display: grid; gap: 12px; margin-top: 14px; }
+.task.agent { display: block; padding: 14px 16px 12px; border-radius: 12px; background: var(--card);
+              box-shadow: 0 0 0 .5px var(--separator), 0 1px 2px rgba(0, 0, 0, .04); }
+.task.agent .head { align-items: center; gap: 10px; }
+.task.agent .goal { display: inline-flex; align-items: center; gap: 8px; margin: 0; padding: 0; border-radius: 0;
+                    background: none; color: var(--label); font-size: 15px; font-weight: 700; max-width: none; }
+.task.agent .status { margin-top: 1px; font-size: 12px; }
+.task.agent .reply { margin: 8px 0 0; color: var(--label); font-size: 13.5px; }
+.task.agent .agent-tools .chip { font-size: 11.5px; }
+.task.agent .actions { flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; }
+.task.agent .forget { font-size: 13px; }

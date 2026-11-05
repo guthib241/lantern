@@ -1,0 +1,43 @@
+name: pages
+
+# The interactive playground (site/): Lantern's real privacy scrubber in the browser (Pyodide), the orb, the teaching
+# board and the 34-second demo clip. Built from the repo's own files by site/build.sh on every push to main.
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: GitHub Actions. Until then this job skips
+# quietly instead of failing.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site from the repo's own files
+        run: sh site/build.sh
+      - id: pages
+        uses: actions/configure-pages@v5
+        continue-on-error: true
+      - if: steps.pages.outcome == 'success'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - if: steps.pages.outcome == 'success'
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - if: steps.pages.outcome != 'success'
+        run: echo "::notice::GitHub Pages is not switched on yet. Settings -> Pages -> Source - GitHub Actions, then re-run this workflow."

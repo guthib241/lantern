@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lantern · try it in your browser</title>
+<meta name="description" content="Lantern is an AI that lives on your laptop, does the boring computer work, and asks before anything leaves. Try its real privacy scrubber, its orb and a lesson, right here.">
+<meta property="og:title" content="Lantern: the AI that asks first">
+<meta property="og:description" content="Forms, email and files, done on your laptop. Private files never go to a cloud AI. Code on GitHub.">
+<meta property="og:image" content="media/social-preview.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app/orb.css">
+<style>
+  :root { --cream: #FAF6EF; --cream-2: #F2EADF; --ink: #1B1712; --muted: #6B6157; --line: rgba(60, 40, 20, .12);
+          --char: #15120F; --paper: #F6EFE5; --mist: #B9AFA3; --amber: #E8890C; --amber-2: #FFB347; --ok: #1F7A37;
+          --card: #FFFFFF; --code: #171411; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font: 400 17px/1.55 Inter, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--cream);
+         -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+  nav { position: sticky; top: 0; z-index: 5; backdrop-filter: saturate(160%) blur(14px); background: rgba(250, 246, 239, .8);
+        border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; gap: 22px; height: 58px; }
+  nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; }
+  nav .links { margin-left: auto; display: flex; gap: 20px; font-size: 15px; }
+  nav .links a { text-decoration: none; color: var(--muted); } nav .links a:hover { color: var(--ink); }
+  .gh { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; background: var(--ink); color: #fff;
+        text-decoration: none; font-weight: 600; font-size: 15px; }
+  .sprite.nav-orb { --size: 22px; width: 30px; height: 30px; cursor: default; }
+  .sprite.nav-orb .ring, .sprite.nav-orb .sat { display: none; }
+  .sprite.nav-orb:hover { transform: none; }
+
+  header.hero { background: radial-gradient(900px 560px at 50% 38%, rgba(255, 159, 10, .18), transparent 62%), var(--char); color: var(--paper);
+                padding: 64px 0 72px; text-align: center; }
+  .hero h1 { margin: 6px 0 10px; font: 700 clamp(48px, 8vw, 92px)/1 Inter, sans-serif; letter-spacing: -.04em; }
+  .hero p.lead { margin: 0 auto; max-width: 720px; font-size: clamp(18px, 2.4vw, 24px); color: var(--mist); }
+  .hero .ctas { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 12px; font-weight: 600; text-decoration: none;
+         border: 0; cursor: pointer; font-size: 16px; }
+  .btn.primary { background: linear-gradient(145deg, #FFB347, #FF8A1F); color: #1B1209; }
+  .btn.ghost { background: rgba(255, 255, 255, .08); color: var(--paper); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16); }
+  .stage { display: grid; place-items: center; height: 300px; }
+  .sprite.hero-orb { --size: 150px; width: 320px; height: 300px; }
+  .moods { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+  .moods button { border: 0; border-radius: 99px; padding: 7px 14px; font: 500 14px Inter, sans-serif; cursor: pointer;
+                  background: rgba(255, 255, 255, .07); color: var(--mist); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+  .moods button[aria-pressed="true"] { background: var(--amber-2); color: #1B1209; box-shadow: none; }
+  .moodline { margin-top: 12px; min-height: 24px; color: var(--mist); font-size: 15px; }
+
+  section { padding: 76px 0; }
+  section.alt { background: var(--cream-2); }
+  .label { font: 600 13px/1 Inter; letter-spacing: .16em; text-transform: uppercase; color: var(--amber); }
+  h2 { margin: 10px 0 12px; font: 700 clamp(32px, 4.6vw, 48px)/1.08 Inter; letter-spacing: -.03em; }
+  .intro { max-width: 760px; color: var(--muted); font-size: 18px; margin: 0 0 28px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } nav .links { display: none; } }
+  .card { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 0 0 1px var(--line), 0 18px 40px -24px rgba(70, 40, 10, .35); }
+  textarea { width: 100%; min-height: 190px; resize: vertical; border: 0; border-radius: 12px; padding: 14px 16px; background: #FBF8F3;
+             box-shadow: inset 0 0 0 1px var(--line); font: 400 15px/1.55 "JetBrains Mono", Menlo, monospace; color: var(--ink); }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .btn.dark { background: var(--ink); color: #fff; }
+  .btn.light { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  .status { font-size: 14px; color: var(--muted); }
+  pre.out { margin: 0; min-height: 190px; white-space: pre-wrap; word-break: break-word; border-radius: 12px; padding: 14px 16px; background: var(--code);
+            color: #E9E2D8; font: 400 15px/1.55 "JetBrains Mono", Menlo, monospace; }
+  pre.out mark { background: rgba(255, 179, 71, .18); color: #FFB347; border-radius: 4px; padding: 0 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { padding: 4px 10px; border-radius: 99px; background: #FFF4E3; color: #8A4B00; font-size: 13px; font-weight: 600; }
+  .note { font-size: 14px; color: var(--muted); margin-top: 14px; }
+  code { font-family: "JetBrains Mono", Menlo, monospace; font-size: .92em; background: rgba(60, 40, 20, .07); padding: 1px 6px; border-radius: 6px; }
+  .frame { border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 30px 70px -30px rgba(70, 40, 10, .45); background: #000; }
+  .frame iframe, .frame video, .frame img { display: block; width: 100%; border: 0; }
+  .frame iframe { aspect-ratio: 16 / 10; }
+  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 900px) { .features { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
+  .feature { background: var(--card); border-radius: 16px; padding: 18px 18px 16px; box-shadow: 0 0 0 1px var(--line); }
+  .feature b { display: block; font-size: 17px; margin-bottom: 4px; }
+  .feature span { color: var(--muted); font-size: 15px; }
+  footer { background: var(--char); color: var(--mist); padding: 40px 0; font-size: 15px; }
+  footer a { color: var(--paper); }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="brand" href="#"><span class="sprite nav-orb idle" id="nav-orb" aria-hidden="true"></span>Lantern</a>
+  <div class="links"><a href="#scrubber">Privacy scrubber</a><a href="#lesson">Teaching Mode</a><a href="#watch">Watch</a><a href="#features">Features</a></div>
+  <a class="gh" href="https://github.com/guthib241/lantern">GitHub</a>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <div class="stage"><div class="sprite hero-orb idle" id="orb" role="img" aria-label="Lantern is ready"></div></div>
+  <div class="moods" role="group" aria-label="Try Lantern's moods" id="moods"></div>
+  <div class="moodline" id="moodline" aria-live="polite">Lantern is ready</div>
+  <h1>The AI that asks first.</h1>
+  <p class="lead">Lantern lives on your laptop and does the boring computer work: forms, email, files. It asks before anything leaves, and your private folder never goes to a cloud AI.</p>
+  <div class="ctas">
+    <a class="btn primary" href="#scrubber">Try the privacy scrubber</a>
+    <a class="btn ghost" href="https://github.com/guthib241/lantern">Get it on GitHub</a>
+  </div>
+</div></header>
+
+<section id="scrubber"><div class="wrap">
+  <div class="label">Runs in your browser</div>
+  <h2>Try Lantern's real privacy scrubber.</h2>
+  <p class="intro">Before any request leaves your laptop, Lantern scrubs secrets out of it. This box runs the exact file Lantern uses,
+     <code>lantern/scrubber.py</code>, compiled to WebAssembly with Pyodide. Nothing you type leaves this page.</p>
+  <div class="grid2">
+    <div class="card">
+      <textarea id="input" spellcheck="false" aria-label="Text to scrub">Hi! Please fill the reimbursement form for me.
+My password is hunter2pass and the OTP is 482913.
+Card 4111 1111 1111 1111, CVV 123, UPI PIN 9090.
+Deploy key in my notes: AKIAIOSFODNN7EXAMPLE
+Email me at asha@example.com. My PIN code is 560034 (that's a postal code).</textarea>
+      <div class="row">
+        <button class="btn dark" id="run">Scrub it</button>
+        <button class="btn light" id="sample">Another example</button>
+        <span class="status" id="status">Loads Python (about 7 MB) on first use.</span>
+      </div>
+    </div>
+    <div class="card">
+      <pre class="out" id="output" aria-live="polite">What the cloud model would receive appears here.</pre>
+      <div class="chips" id="chips"></div>
+    </div>
+  </div>
+  <p class="note">This is only the first line of defence. In the app, private files are answered on your computer (Muse Glimmer), every payload is logged with its hash, and approvals are bound to the exact values.</p>
+</div></section>
+
+<section class="alt" id="lesson"><div class="wrap">
+  <div class="label">Teaching Mode</div>
+  <h2>A lesson where every step is checked.</h2>
+  <p class="intro">Muse Spark plans the lesson; SymPy checks every math line before it gets a ✓. This is Lantern's real board, playing a saved lesson. Press play, step through, or change the speed.</p>
+  <div class="frame"><iframe src="board/index.html?lesson=quadratic&amp;mute=1&amp;autoplay=1&amp;speed=1.25" title="Lantern's teaching board" loading="lazy"></iframe></div>
+</div></section>
+
+<section id="watch"><div class="wrap">
+  <div class="label">See it work</div>
+  <h2>Ask. Approve. Verified.</h2>
+  <p class="intro">The real app, recorded in rehearsal mode (scripted stand-ins for the models, so it costs nothing): a form filled and submitted after your OK, the email sent and checked, a private file answered on the computer.</p>
+  <div class="frame"><video src="media/lantern-30s.mp4" poster="media/social-preview.png" controls playsinline preload="none"></video></div>
+</div></section>
+
+<section class="alt" id="features"><div class="wrap">
+  <div class="label">Everything in one app</div>
+  <h2>Small jobs, done properly.</h2>
+  <div class="features">
+    <div class="feature"><b>Forms with computer use</b><span>Muse Wonder fills real web forms; never passwords, OTPs or card numbers.</span></div>
+    <div class="feature"><b>Approvals bound to values</b><span>Submit, send or move only after your OK, hashed to the exact payload.</span></div>
+    <div class="feature"><b>The private lane</b><span>Private files are read by Muse Glimmer on your computer, never a cloud API.</span></div>
+    <div class="feature"><b>Injection-resistant</b><span>The model that acts never reads the content: a planner/reader split, in code.</span></div>
+    <div class="feature"><b>Learns once, runs for $0</b><span>A finished task becomes a checked routine with zero model calls. It heals itself.</span></div>
+    <div class="feature"><b>Agents you can share</b><span>Signed, allowlisted packs. Run them on your laptop, your phone, or both.</span></div>
+    <div class="feature"><b>Phone and glasses</b><span>WhatsApp, Telegram or the paired app: voice notes in, approvals out.</span></div>
+    <div class="feature"><b>FreeCAD</b><span>Designs parts and checks its own work by looking at renders.</span></div>
+    <div class="feature"><b>Receipts for everything</b><span>What changed, what you approved, every byte that left, and the cost.</span></div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  Lantern's code is on GitHub: <a href="https://github.com/guthib241/lantern">github.com/guthib241/lantern</a>. Built on Meta's Muse models for the Meta Global AI Developer Hackathon (2026).
+</div></footer>
+
+<script src="app/lib/sprite.js"></script>
+<script>
+  // ---- the orb: the app's own sprite.js and orb.css ----------------------------------------------------------------
+  const MOODS = ['idle', 'thinking', 'juggling', 'needs-approval', 'celebrating', 'healed', 'listening', 'annoyed', 'sleeping'];
+  const orb = document.getElementById('orb');
+  const navOrb = document.getElementById('nav-orb');
+  for (const o of [orb, navOrb]) { LanternSprite.build(o); o.setAttribute('style', LanternSprite.style('idle')); }
+  function mood(m) {
+    for (const o of [orb, navOrb]) {
+      o.className = o.className.replace(/\b(idle|thinking|juggling|smug|celebrating|needs-approval|annoyed|sleeping|healed|listening)\b/g, '').trim() + ' ' + m;
+      o.setAttribute('style', LanternSprite.style(m));
+    }
+    orb.setAttribute('aria-label', LanternSprite.LABELS[m] || 'Lantern');
+    document.getElementById('moodline').textContent = LanternSprite.LABELS[m] || 'Lantern';
+    for (const b of document.querySelectorAll('#moods button')) b.setAttribute('aria-pressed', String(b.dataset.mood === m));
+  }
+  const moods = document.getElementById('moods');
+  for (const m of MOODS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.mood = m; b.textContent = m.replace('-', ' ');
+    b.addEventListener('click', () => mood(m));
+    moods.append(b);
+  }
+  mood('idle');
+
+  // ---- the scrubber: lantern/scrubber.py, unchanged, in Pyodide -------------------------------------------------------
+  const params = new URLSearchParams(location.search);
+  const PYODIDE = params.get('pyodide') || 'https://cdn.jsdelivr.net/pyodide/v0.27.2/full/';
+  const SAMPLES = [
+    'Summarise my notes: the AWS key is AKIAIOSFODNN7EXAMPLE and the db is postgres://bob:s3cretpw@db:5432/x',
+    'Telegram bot token 123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, Aadhaar 2345 6789 0123, PAN ABCDE1234F',
+    'The verification code is 731904 and my atm pin is 4321. Meet at 4:30, invoice #42 total 1200.',
+  ];
+  let py = null, sampleAt = 0;
+  async function python() {
+    if (py) return py;
+    const status = document.getElementById('status');
+    status.textContent = 'Loading Python (once)…';
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = PYODIDE + 'pyodide.js'; s.onload = resolve; s.onerror = () => reject(new Error('could not load Pyodide'));
+      document.head.append(s);
+    });
+    py = await loadPyodide({ indexURL: PYODIDE });
+    const source = await (await fetch('py/scrubber.py')).text();
+    py.FS.writeFile('/home/pyodide/scrubber.py', source);
+    py.runPython('import sys; sys.path.insert(0, "/home/pyodide"); import scrubber, json');
+    status.textContent = 'Python is ready: this is lantern/scrubber.py running in your browser.';
+    return py;
+  }
+  function show(text, redactions) {
+    const out = document.getElementById('output');
+    out.replaceChildren();
+    const parts = text.split(/(\[REDACTED:[a-z_0-9]+\])/g);
+    for (const p of parts) {
+      if (/^\[REDACTED:/.test(p)) { const m = document.createElement('mark'); m.textContent = p; out.append(m); }
+      else out.append(document.createTextNode(p));
+    }
+    const chips = document.getElementById('chips');
+    chips.replaceChildren();
+    const entries = Object.entries(redactions);
+    if (!entries.length) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = 'nothing to redact'; chips.append(c); }
+    for (const [kind, n] of entries) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = `${kind} × ${n}`; chips.append(c); }
+  }
+  document.getElementById('run').addEventListener('click', async () => {
+    const btn = document.getElementById('run');
+    btn.disabled = true;
+    try {
+      const p = await python();
+      p.globals.set('lantern_input', document.getElementById('input').value);
+      const r = JSON.parse(p.runPython('r = scrubber.scrub(lantern_input); json.dumps({"text": r.text, "redactions": dict(r.redactions)})'));
+      show(r.text, r.redactions);
+    } catch (e) {
+      document.getElementById('status').textContent = `Couldn't run it here: ${e.message}`;
+    } finally { btn.disabled = false; }
+  });
+  document.getElementById('sample').addEventListener('click', () => {
+    document.getElementById('input').value = SAMPLES[sampleAt++ % SAMPLES.length];
+  });
+</script>
+</body>
+</html>
