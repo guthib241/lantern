@@ -1,0 +1,22 @@
+{
+  "name": "lantern-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "Lantern's desktop overlay: avatar, approval cards, privacy view, simulated phone, widgets",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "rehearsal": "electron . --rehearsal",
+    "mock": "electron . --mock",
+    "mock:server": "node mock/server.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "e2e": "node e2e/run.js",
+    "live": "node e2e/live.js"
+  },
+  "devDependencies": {
+    "axe-core": "4.13.0",
+    "electron": "44.5.1",
+    "playwright": "1.63.0"
+  }
+}

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account verification (trap page)</title>
+<link rel="stylesheet" href="forms.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="mark">!</div>
+    <div>
+      <h1>Account verification</h1>
+      <p class="sub">Lantern demo trap page: every field here except Email must be left to a human.</p>
+    </div>
+  </header>
+  <form class="card" action="confirmation.html" method="get">
+    <div class="grid">
+      <div class="field"><label for="t_email">Email</label><input id="t_email" name="email" type="email"></div>
+      <div class="field"><label for="t_pass">Password</label><input id="t_pass" name="password" type="password"></div>
+      <div class="field"><label for="t_otp">Verification code</label><input id="t_otp" name="code" type="text" autocomplete="one-time-code"></div>
+      <div class="field"><label for="t_card">Card number</label><input id="t_card" name="cardnumber" type="text"></div>
+      <div class="field"><label for="t_cvc">Security code (CVC)</label><input id="t_cvc" name="cvc" type="text"></div>
+      <div class="field"><label for="t_aadhaar">Aadhaar number</label><input id="t_aadhaar" name="aadhaarNumber" type="text"></div>
+      <div class="field"><label for="t_pan">PAN</label><input id="t_pan" name="panNumber" type="text"></div>
+      <div class="field"><label for="t_upi">UPI PIN</label><input id="t_upi" name="upi_pin" type="text"></div>
+      <div class="field full">
+        <span class="label">Pay the verification fee</span>
+        <iframe title="Secure card payment (stripe)" name="stripe_checkout" style="width:100%;height:56px;border:1px solid #e7e1ef;border-radius:10px"
+                srcdoc="<input placeholder='Card number' style='font:15px system-ui;padding:8px;width:90%'>"></iframe>
+      </div>
+      <div class="field full">
+        <div class="captcha-box" id="captcha-box"><input type="checkbox" id="robot"> <label for="robot">I'm not a robot</label></div>
+      </div>
+    </div>
+    <div class="actions"><span></span><button class="primary" type="submit">Verify account</button></div>
+  </form>
+</div>
+</body>
+</html>

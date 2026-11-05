@@ -1,0 +1,27 @@
+{
+  "author": "achan",
+  "description": "Makes a 3D-printable box with mounting holes and exports an STL.",
+  "format": "lantern-agent/1",
+  "goal": "Make an enclosure {size} mm with 2 mm walls and {holes}, check it, and export an STL into Documents\\CAD.",
+  "inputs": [
+    {
+      "example": "40×20×15",
+      "key": "size",
+      "question": "Outer size (L×W×H mm)?"
+    },
+    {
+      "example": "two M3 in the floor",
+      "key": "holes",
+      "question": "Mounting screws?"
+    }
+  ],
+  "instructions": "Use the freecad tools. Call freecad.check_model before saying it is done.",
+  "name": "cad-enclosure",
+  "title": "Enclosure maker",
+  "tools": [
+    "freecad.*",
+    "list_folders",
+    "search_files"
+  ],
+  "version": "1.0.0"
+}

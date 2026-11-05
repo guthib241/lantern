@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*">
+<title>Lantern board</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="board.css">
+</head>
+<body data-state="loading">
+  <header class="bar">
+    <span class="brand">Lantern board</span>
+    <h1 id="lesson-title">Loading…</h1>
+    <label class="picker">Lesson
+      <select id="lesson-pick" aria-label="Choose a lesson"></select>
+    </label>
+    <label class="file-button">Open lesson file…<input type="file" id="lesson-file" accept=".json,application/json"></label>
+  </header>
+
+  <main class="stage-wrap" id="stage-wrap">
+    <div class="stage" id="stage" aria-label="Board">
+      <div class="layer items" id="items"></div>
+      <svg class="layer draw" id="draw" viewBox="0 0 1600 900" aria-hidden="true"></svg>
+    </div>
+    <div class="problems" id="problems" role="alert" hidden></div>
+  </main>
+
+  <section class="caption-bar">
+    <p class="caption" id="caption" aria-live="polite"></p>
+    <p class="voice-note" id="voice-note">Voice: your computer's built-in speech engine (not a Meta model)</p>
+  </section>
+
+  <section class="ask-area">
+    <div id="ask-panel" hidden>
+      <p class="ask-live" id="ask-live" aria-live="polite"></p>
+      <form id="ask-form" hidden>
+        <label>Ask about this step <input type="text" id="ask-q" autocomplete="off" maxlength="500"></label>
+        <button type="submit">Ask</button>
+      </form>
+    </div>
+    <div id="answer" hidden>
+      <p class="answer-text" id="answer-text" aria-live="polite"></p>
+      <button id="resume" class="primary">Resume</button>
+    </div>
+  </section>
+
+  <nav class="controls" aria-label="Playback">
+    <button id="play" class="primary">Play</button>
+    <button id="ask" title="Hold to ask a question about this step (or hold Space)">Hold to ask</button>
+    <button id="step" aria-keyshortcuts="ArrowRight" title="Next step (→)">Step ›</button>
+    <button id="restart" aria-keyshortcuts="R" title="Start again (R)">↺ Restart</button>
+    <button id="mute" aria-pressed="false" aria-keyshortcuts="M" title="Mute the voice (M); captions stay">Voice on</button>
+    <label class="speed">Speed
+      <select id="speed" aria-label="Speed">
+        <option value="0.75">0.75×</option><option value="1" selected>1×</option>
+        <option value="1.25">1.25×</option><option value="1.5">1.5×</option>
+      </select>
+    </label>
+    <div class="progress" aria-label="Progress">
+      <span id="progress-text">0 / 0</span>
+      <div class="track"><div class="fill" id="progress-fill"></div></div>
+    </div>
+  </nav>
+
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="lib/timeline.js"></script>
+  <script src="lib/ask.js"></script>
+  <script src="board.js"></script>
+</body>
+</html>

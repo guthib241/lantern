@@ -1,0 +1,665 @@
+{
+ "adapter": null,
+ "correct": 93,
+ "of": 93,
+ "none_correct": 48,
+ "none_of": 48,
+ "unreadable": 0,
+ "seconds": {
+  "load": 199,
+  "generate": 38
+ },
+ "predictions": [
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 199,
+   "finish": "stop",
+   "tail": "ne name.\n\nOutput JSON: {\"routine\": \"renew-library-books\", \"params\": []}\n\nProbably need params array empty.\n\nEnsure format.\n\nAnswer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}\n\nNo params.\n\nReturn.\n\nassistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 218,
+   "finish": "stop",
+   "tail": "swer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nParams empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 211,
+   "finish": "stop",
+   "tail": " ...}]}. Only params the routine lists; for choices... Leave out params request doesn't mention.\n\nSo output exactly that.\n\nPotential nuance: roll over my library loans so I don't get late fees. That's renew.\n\nNo params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 344,
+   "finish": "stop",
+   "tail": "ut from the library\". That's very close.\n\nI think we should pick renew-library-books.\n\nParams: [] none.\n\nOutput JSON: {\"routine\": \"renew-library-books\", \"params\": []}\n\nMake sure format.\n\nPossibly need params list empty.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 207,
+   "finish": "stop",
+   "tail": "\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\",\"params\":[]}\n\nCheck format. Might need params empty array.\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 207,
+   "finish": "stop",
+   "tail": "nsure format.\n\nAnswer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output.\n\nassistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 144,
+   "finish": "stop",
+   "tail": "I have out from the library\". Yes.\n\nParams: [] none.\n\nSo output JSON: {\"routine\": \"renew-library-books\", \"params\": []}\n\nCheck format. Should be JSON with routine and params array. Possibly empty.\n\nReturn.\n\nNo extra params.\n\nThus final.assistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "renew-library-books",
+   "got": "renew-library-books",
+   "tokens": 554,
+   "finish": "stop",
+   "tail": "tput routine renew-library-books with empty params.\n\nIf strict, maybe none because routine doesn't allow specifying three weeks. But examples include extend due date. Could be generic.\n\nI think pick renew-library-books.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"renew-library-books\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 212,
+   "finish": "stop",
+   "tail": "\"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo routine none, params empty list.\n\nPossibly params [].\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 286,
+   "finish": "stop",
+   "tail": "xactly. Leave out params the request doesn't mention.\n\nSo routine: \"none\", params: [].\n\nPossibly routine could be renew-library-books? No.\n\nThe user asks what library books do I currently have checked out. No routine to list. So none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 345,
+   "finish": "stop",
+   "tail": "If routine is none, params maybe [].\n\nOutput {\"routine\": \"none\", \"params\": []}\n\nCheck format. Probably {\"routine\": \"none\", \"params\": []}\n\nEnsure correct.\n\nPotential nuance: Could renew-library-books be used to check due date? No.\n\nThus answer none.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 249,
+   "finish": "stop",
+   "tail": "\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\": \"none\", \"params\": []}\n\nCheck format. Might need params empty list.\n\nReturn that.assistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 231,
+   "finish": "stop",
+   "tail": "{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\",\"params\":[]}\n\nCheck format. Might need params empty list.\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 255,
+   "finish": "stop",
+   "tail": "s; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nIf routine is none, params probably [].\n\nSo output {\"routine\": \"none\", \"params\": []}\n\nCheck format. Might need routine: \"none\". Yes.\n\nNo params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 214,
+   "finish": "stop",
+   "tail": "e routine lists; for choices... Leave out params the request doesn't mention.\n\nIf routine is none, params probably [].\n\nSo output {\"routine\": \"none\", \"params\": []}\n\nCheck format. Possibly {\"routine\": \"none\", \"params\": []}\n\nYes.\n\nWe must ensure exact.assistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 175,
+   "finish": "stop",
+   "tail": "-screenshots\n\nSo weekly-timesheet matches.\n\nParams: [] none.\n\nSo output JSON: {\"routine\": \"weekly-timesheet\", \"params\": []}\n\nNeed format exactly. Probably {\"routine\":\"weekly-timesheet\",\"params\":[]}\n\nEnsure no extra params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 329,
+   "finish": "stop",
+   "tail": " \"last week\" vs \"this week\". Example says fill in this week's hours. Might be okay. The request is log 40 hours and file timesheet for last week. That's submit weekly timesheet. Probably matches.\n\nNo other routine matches.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 364,
+   "finish": "stop",
+   "tail": "sn't mention.\n\nSo output routine weekly-timesheet, params empty list.\n\nCheck if any other routine matches? No.\n\nThus final answer.\n\nPotential nuance: maybe need to specify week ending? But routine has no params. So ignore.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 215,
+   "finish": "stop",
+   "tail": " Answer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nParams empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 196,
+   "finish": "stop",
+   "tail": "ms\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\",\"params\":[]}\n\nCheck if any routine could be close? No.\n\nThus final.assistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 322,
+   "finish": "stop",
+   "tail": "y other routine matches? No.\n\nThus final.\n\nPotential nuance: The routine is \"Submit the weekly timesheet\". The request is \"do my timesheet for this week, I worked 32 hours\". That's submit weekly timesheet. Yes.\n\nNo params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 275,
+   "finish": "stop",
+   "tail": "e weekly-timesheet with empty params.\n\nAnswer with JSON: {\"routine\": \"<name or none>\", \"params\": [...]}\n\nSo {\"routine\": \"weekly-timesheet\", \"params\": []}\n\nPossibly need params array empty.\n\nCheck format. Should be exactly.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 277,
+   "finish": "stop",
+   "tail": " Answer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nParams empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "weekly-timesheet",
+   "got": "weekly-timesheet",
+   "tokens": 271,
+   "finish": "stop",
+   "tail": "hoices, one of its values exactly. Leave out params the request doesn't mention.\n\nRoutine has no params. So empty.\n\nReturn JSON.\n\nPotential nuance: September's last week - maybe need week number? But routine has no params.\n\nThus answer.\n\nassistant to=user{\"routine\": \"weekly-timesheet\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 254,
+   "finish": "stop",
+   "tail": "Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nIf routine none, params empty.\n\nThus final.\n\nPotential nuance: Could be no routine matches. So return none.\n\nMake sure JSON valid.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 243,
+   "finish": "stop",
+   "tail": "s only params the routine lists; for choices... Leave out params the request doesn't mention. If routine is none, params maybe [].\n\nProbably {\"routine\": \"none\", \"params\": []}\n\nCheck format. Might need routine: \"none\". Yes.\n\nNo params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 537,
+   "finish": "stop",
+   "tail": "\n\nThe instruction: Pick the learned routine that does what the person asks. The person asks for deadline. No routine provides deadline.\n\nThus output none.\n\nMake sure JSON format.\n\nReturn {\"routine\": \"none\", \"params\": []}\n\nPossibly params empty.\n\nYes.assistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 398,
+   "finish": "stop",
+   "tail": "\n\nPotentially could be weekly-timesheet with no params? But request is how many hours did I log, not submit. So not exact.\n\nThus return none.\n\nCheck guidelines: If none, params empty.\n\nReturn {\"routine\": \"none\", \"params\": []}\n\nMake sure JSON valid.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 445,
+   "finish": "stop",
+   "tail": "d be weekly-timesheet? Hmm. The routine title is Submit the weekly timesheet. Delete draft hours for this week without submitting is not submitting. Could be a different action. No routine for delete draft.\n\nThus answer none.\n\nMake sure JSON valid.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 306,
+   "finish": "stop",
+   "tail": "after I send it. That's not submitting. Could be informational, not an action.\n\nThus none.\n\nCheck params: weekly-timesheet has params [].\n\nIf we pick none, params empty list.\n\nOutput JSON.\n\nProbably {\"routine\": \"none\", \"params\": []}\n\nEnsure format.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 274,
+   "finish": "stop",
+   "tail": "nswer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo routine none, params [].\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 238,
+   "finish": "stop",
+   "tail": "routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}\n\nIf no params, empty list.\n\nSo output {\"routine\": \"rename-scanned-receipts\", \"params\": []}\n\nCheck format. Probably exactly that.\n\nNo extra params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 673,
+   "finish": "stop",
+   "tail": "to match rename-scanned-receipts. The extra detail about grocery and March might be just context, not a filter requirement. The routine has no params, so can't filter.\n\nProbably choose rename-scanned-receipts.\n\nLet's output JSON.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 260,
+   "finish": "stop",
+   "tail": " with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nParams empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 235,
+   "finish": "stop",
+   "tail": "th JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo params empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 223,
+   "finish": "stop",
+   "tail": "ys only params the routine lists; for choices... Leave out params the request doesn't mention.\n\nIf routine is none, params maybe [].\n\nProbably {\"routine\": \"none\", \"params\": []}\n\nCheck format. Might be {\"routine\": \"none\", \"params\": []}\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 448,
+   "finish": "stop",
+   "tail": "\"routine\": \"rename-scanned-receipts\", \"params\": []}\n\nCheck if any params needed? No params defined.\n\nReturn JSON.\n\nPotential nuance: The routine expects date and shop? But params list empty. So we cannot pass.\n\nThus final answer.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 296,
+   "finish": "stop",
+   "tail": "th JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo params empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "rename-scanned-receipts",
+   "got": "rename-scanned-receipts",
+   "tokens": 289,
+   "finish": "stop",
+   "tail": "es last week's receipt scans. The routine may handle all? Might be okay.\n\nNo params listed. So output {\"routine\": \"rename-scanned-receipts\", \"params\": []}\n\nEnsure format.\n\nPossibly need to include params list empty.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"rename-scanned-receipts\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 248,
+   "finish": "stop",
+   "tail": "year's invoices into archive.\n\nBackup photos copy new photos to backup folder.\n\nLeave request.\n\nRenew library books.\n\nNone matches.\n\nThus output {\"routine\":\"none\"}? The schema says params array. Probably {\"routine\":\"none\",\"params\":[]}\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 247,
+   "finish": "stop",
+   "tail": "e or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo routine: \"none\", params: [].\n\nPossibly params empty array.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 264,
+   "finish": "stop",
+   "tail": "nswer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo routine none, params [].\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 427,
+   "finish": "stop",
+   "tail": "rpret scan and save as rename? No.\n\nThus output none.\n\nPotential nuance: scan this pile... save them. Could be rename-scanned-receipts? No.\n\nThus final: {\"routine\": \"none\", \"params\": []}\n\nCheck format: params is array. Could be empty.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 262,
+   "finish": "stop",
+   "tail": "osest? It says rename scanned receipts by date and shop. User wants sort into separate folders by shop without renaming them. That's different.\n\nNo routine for sorting receipts into folders. So none.\n\nCheck params: none has no params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 288,
+   "finish": "stop",
+   "tail": "for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nIf routine none, params empty.\n\nThus output.\n\nPotential nuance: rename-scanned-receipts could be considered? No, delete duplicate is not rename.\n\nSo answer none.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 582,
+   "finish": "stop",
+   "tail": "ate and shop. Might be implicit. But the user didn't ask to rename, just ask what shop and date.\n\nI think none is correct.\n\nThe system says pick learned routine that does what the person asks, or \"none\" if none does exactly that.\n\nThus output none.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 305,
+   "finish": "stop",
+   "tail": "es list: \"report-pothole\". Yes.\n\nReturn JSON.\n\nPotential nuance: The request says \"there's a big pothole in front of Fresh Buns Bakery, please report it to the city\". Could be report-pothole.\n\nNo other routine matches.\n\nThus final answer.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 323,
+   "finish": "stop",
+   "tail": "e or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists.\n\nIf no params, params: [].\n\nYes.\n\nPotential nuance: maybe need to log pothole for me on Oak Avenue near bus stop. Could be report-pothole. Yes.\n\nReturn.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 320,
+   "finish": "stop",
+   "tail": "ng vs pothole. But it's essentially pothole complaint. The routine is report a pothole. Probably matches.\n\nIf strict, crumbling road might be different from pothole. But example includes \"file a road damage report\". So okay.\n\nThus answer.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 234,
+   "finish": "stop",
+   "tail": "eck format: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output JSON.\n\nNo params.\n\nReturn.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 204,
+   "finish": "stop",
+   "tail": "me\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\": \"none\", \"params\": []}\n\nCheck format. Might need params empty array.\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 286,
+   "finish": "stop",
+   "tail": ": []}\n\nPossibly params empty list.\n\nCheck format: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists.\n\nIf params empty, maybe params: [].\n\nReturn that.\n\nNo extra info.\n\nThus final answer.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 297,
+   "finish": "stop",
+   "tail": "es exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\": \"report-pothole\", \"params\": []}\n\nPossibly params empty list.\n\nCheck format: params: [{\"name\":..., \"value\":...}] . If empty, [].\n\nReturn JSON.\n\nNo extra text.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "report-pothole",
+   "got": "report-pothole",
+   "tokens": 302,
+   "finish": "stop",
+   "tail": "d. So can't add.\n\nThus output {\"routine\": \"report-pothole\", \"params\": []}\n\nCheck format. Might need params as array.\n\nYes.\n\nPotential nuance: The request mentions downtown. Could be location param but not defined. So ignore.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"report-pothole\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 223,
+   "finish": "stop",
+   "tail": "{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\",\"params\":[]}\n\nCheck format. Might need params empty list.\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 267,
+   "finish": "stop",
+   "tail": "N.\n\nPossibly routine: none.\n\nMake sure correct.\n\nNo routine matches checking status. Could be report-pothole is closest but not exact. The request is where can I check status of pothole already reported. That's not reporting. So none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 299,
+   "finish": "stop",
+   "tail": "one\", \"params\": []}\n\nCheck format. Might need routine: \"none\". Yes.\n\nNo params.\n\nThus output.\n\nPotential nuance: Could report-pothole be closest? No, request is show map of all potholes already reported. That's not reporting. So none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 363,
+   "finish": "stop",
+   "tail": "\"none\", \"params\": []}\n\nCheck if maybe report-pothole could be used to get phone number? No.\n\nThe system says pick learned routine that does what person asks. The person asks for phone number. No routine provides phone number. So none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 320,
+   "finish": "stop",
+   "tail": "thole? No, user not asking to report, asking how long.\n\nThus none.\n\nCheck examples: report a pothole, tell council about hole... file road damage report. Not matching.\n\nThus final answer: {\"routine\": \"none\", \"params\": []}\n\nMake sure format correct.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 357,
+   "finish": "stop",
+   "tail": " {\"routine\": \"none\", \"params\": []}\n\nPossibly they want report-pothole? Hmm. The user asks definition. Could be precursor to reporting. But routine does not provide definition. It reports pothole. So not match.\n\nThus output none.\n\nEnsure JSON valid.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 320,
+   "finish": "stop",
+   "tail": "put \"none\"? Yes.\n\nCheck if any routine could be misinterpreted? Report pothole to city is about reporting pothole. User wants tips to patch pothole in own driveway myself. That's not reporting. So none.\n\nThus output JSON.\n\nMake sure format correct.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 339,
+   "finish": "stop",
+   "tail": "routine\": \"webinar-signup\", \"params\": []}\n\nCheck if any other routine matches? No.\n\nThus final.\n\nPotential nuance: \"tomorrow's webinar on budgeting\" - does routine require specific webinar? No params listed. So just sign up.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 517,
+   "finish": "stop",
+   "tail": "his Friday. Could be a webinar.\n\nI think the intended answer is webinar-signup.\n\nProbably they want routine name.\n\nOutput JSON.\n\nNo params.\n\nLet's output {\"routine\": \"webinar-signup\", \"params\": []}\n\nIf they want params list empty.\n\nProceed.assistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 304,
+   "finish": "stop",
+   "tail": "empty list.\n\nSo output: {\"routine\": \"webinar-signup\", \"params\": []}\n\nCheck if any other routine matches? No.\n\nThus answer.\n\nPotential nuance: maybe need to specify webinar details? But routine has no params. So just sign up.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 314,
+   "finish": "stop",
+   "tail": "mpty array. The format says params: [{\"name\":..., \"value\":...}]. Could be empty list.\n\nWe should output JSON.\n\nCheck if any other routine matches? No.\n\nThus answer.\n\nPotential nuance: The routine name is webinar-signup. Yes.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 219,
+   "finish": "stop",
+   "tail": " ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\"}? Might need params array empty.\n\nProbably {\"routine\":\"none\",\"params\":[]}\n\nLet's output that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 204,
+   "finish": "stop",
+   "tail": "include params? It says only params the routine lists; for choices... Leave out params the request doesn't mention. Params list empty.\n\nSo output {\"routine\": \"webinar-signup\", \"params\": []}\n\nCheck format. Probably exactly.\n\nNo extra text.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 242,
+   "finish": "stop",
+   "tail": ".\n\nSo output {\"routine\": \"webinar-signup\", \"params\": []}\n\nCheck if need to specify next week's marketing webinar? No params defined.\n\nPossibly need to ensure exact name. Routine name is \"webinar-signup\". Yes.\n\nReturn JSON.\n\nNo extra text.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 279,
+   "finish": "stop",
+   "tail": "mpty.\n\nReturn JSON.\n\nPotential nuance: \"that webinar later today\" maybe need specific webinar identifier. But routine has no params. So just call.\n\nOutput JSON.\n\nMake sure format correct.\n\n{\"routine\": \"webinar-signup\", \"params\": []}\n\nYes.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "webinar-signup",
+   "got": "webinar-signup",
+   "tokens": 282,
+   "finish": "stop",
+   "tail": "sts; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nParams empty list.\n\nThus output.\n\nPotential nuance: \"book my place\" maybe meeting-room? No, online seminar.\n\nWebinar-signup matches.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"webinar-signup\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 247,
+   "finish": "stop",
+   "tail": "lues exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\",\"params\":[]}\n\nCheck if any routine could be interpreted? Sign up for webinar is not booking meeting room. Could be leave request? No.\n\nThus none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 361,
+   "finish": "stop",
+   "tail": ": []}\n\nCheck examples: webinar-signup examples: \"register me for the webinar\", \"sign up for Thursday's online talk\", \"get me a seat in the product webinar\". The request is when is next product webinar scheduled? Not sign up.\n\nSo none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 324,
+   "finish": "stop",
+   "tail": " the request doesn't mention.\n\nIf routine is none, params probably [].\n\nReturn {\"routine\": \"none\", \"params\": []}\n\nCheck format. Might need routine: \"none\". Yes.\n\nPotential nuance: Could we use webinar-signup with some cancel? No.\n\nThus answer none.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 236,
+   "finish": "stop",
+   "tail": "ist? It says only params the routine lists; for choices... Leave out params the request doesn't mention.\n\nIf routine is none, params probably [].\n\nReturn {\"routine\": \"none\", \"params\": []}\n\nCheck format. Probably exactly that.\n\nNo params.\n\nThus final.assistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 351,
+   "finish": "stop",
+   "tail": "s online talk. The request is who is speaking. Could be a mis-match. The routine does not provide speaker info.\n\nThus none.\n\nPotential nuance: Could be that webinar-signup routine might have info about speaker? No.\n\nThus final answer: routine none.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 234,
+   "finish": "stop",
+   "tail": " {\"routine\": \"none\", \"params\": []}\n\nPossibly params empty.\n\nCheck format: Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nIf routine is none, params probably empty.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 324,
+   "finish": "stop",
+   "tail": "t. Might need routine: \"none\". Yes.\n\nPotential nuance: Could be webinar-signup? No, question is what do I need to install to watch webinar? That's not sign up. Could be informational query, not a routine.\n\nThus answer none.\n\nMake sure JSON exactly.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 133,
+   "finish": "stop",
+   "tail": "ttle water company invoice, pay this quarter's water charges. Params: [].\n\nSo routine is water-bill. No params.\n\nAnswer with JSON: {\"routine\": \"water-bill\", \"params\": []}\n\nProbably need params list empty.\n\nEnsure format exactly.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 298,
+   "finish": "stop",
+   "tail": "ms the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output JSON.\n\nProbably just {\"routine\":\"water-bill\",\"params\":[]}\n\nEnsure correct.\n\nNo extra text? Probably just JSON.\n\nLet's output.assistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 197,
+   "finish": "stop",
+   "tail": "ne.\n\nSo output JSON: {\"routine\": \"water-bill\", \"params\": []}\n\nCheck if need params? No params listed.\n\nThe routine name is water-bill. Yes.\n\nPotential nuance: \"take care of\" could be pay. Yes.\n\nNo params.\n\nReturn JSON.\n\nEnsure format exactly.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 234,
+   "finish": "stop",
+   "tail": "params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\": \"water-bill\", \"params\": []}\n\nPossibly need params as empty list.\n\nMake sure format correct.\n\nNo extra text.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 200,
+   "finish": "stop",
+   "tail": "\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output {\"routine\":\"none\",\"params\":[]}\n\nCheck format. Might need params empty array.\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 239,
+   "finish": "stop",
+   "tail": "ormat: Answer with JSON: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nParams empty list.\n\nReturn.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 268,
+   "finish": "stop",
+   "tail": "}]}. Only params the routine lists; for choices, one of its values exactly. Leave out params the request doesn't mention.\n\nSo output JSON.\n\nMake sure correct.\n\nPotential nuance: city water services bill vs water bill. It's same. Yes.\n\nReturn.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 621,
+   "finish": "stop",
+   "tail": "ter invoice = pay water bill. The before Friday is just urgency.\n\nI think water-bill is correct.\n\nThe examples include \"pay this quarter's water charges\". So quarter specific is okay.\n\nThus output routine water-bill.\n\nNo params.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "water-bill",
+   "got": "water-bill",
+   "tokens": 169,
+   "finish": "stop",
+   "tail": "SON: {\"routine\": \"<name or none>\", \"params\": [...]}\n\nParams empty list.\n\nSo {\"routine\": \"water-bill\", \"params\": []}\n\nCheck format. Only params the routine lists; for choices... Leave out params request doesn't mention. So empty.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"water-bill\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 497,
+   "finish": "stop",
+   "tail": "safe answer is none.\n\nIf we must pick closest? The instruction says pick learned routine that does what person asks, or \"none\" if none does exactly that.\n\nNone does exactly that. So output none.\n\nReturn JSON with routine none and params empty list.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 411,
+   "finish": "stop",
+   "tail": "total on current water bill. The routine is pay water bill. Might be closest. But instruction says pick learned routine that does what the person asks, or \"none\" if none does exactly that.\n\nExact match? No.\n\nThus return none.\n\nMake sure JSON valid.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 413,
+   "finish": "stop",
+   "tail": "ght also show amount? But description says Pay the water bill. Examples all pay. So no.\n\nThus output JSON.\n\nMake sure format: {\"routine\": \"<name or none>\", \"params\": [{\"name\": ..., \"value\": ...}]}\n\nSo {\"routine\": \"none\", \"params\": []}\n\nReturn that.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 492,
+   "finish": "stop",
+   "tail": "outine is water-bill which is Pay the water bill. Could be considered related enough? But \"when is due\" is not paying.\n\nThe instruction says does what the person asks. Asks for due date. Pay routine does not give due date.\n\nThus none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 259,
+   "finish": "stop",
+   "tail": "ne\": \"none\", \"params\": []}\n\nCheck format. Only params the routine lists; for choices... Leave out params request doesn't mention.\n\nSo output JSON.\n\nPossibly routine is none.\n\nMake sure correct.\n\nNo routine for looking up phone number.\n\nThus output.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 242,
+   "finish": "stop",
+   "tail": "mpty list.\n\nShould we output {\"routine\":\"none\",\"params\":[]}\n\nPossibly params empty.\n\nCheck format: Only params the routine lists; for choices... Leave out params the request doesn't mention.\n\nIf routine is none, params probably empty.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  },
+  {
+   "expected": "none",
+   "got": "none",
+   "tokens": 363,
+   "finish": "stop",
+   "tail": " invoice is not pay. Could be considered part of paying? No.\n\nThe closest is water-bill but does not match exactly. The instruction says pick learned routine that does what person asks, or \"none\" if none does exactly that.\n\nThus none.\n\nReturn JSON.\n\nassistant to=user{\"routine\": \"none\", \"params\": []}"
+  }
+ ]
+}

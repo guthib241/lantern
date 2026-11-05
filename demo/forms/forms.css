@@ -1,0 +1,77 @@
+/* Lantern demo forms: our own look (warm lantern glow, rounded cards). No third-party branding. */
+:root {
+  --ink: #2b2236;
+  --muted: #6f6680;
+  --line: #e7e1ef;
+  --card: #ffffff;
+  --glow: #ffb347;
+  --glow-deep: #f0782f;
+  --accent: #6d4aff;
+  --danger: #c2410c;
+  --ok: #15803d;
+  --radius: 16px;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+  background: radial-gradient(1200px 500px at 15% -10%, #ffe2b8 0%, transparent 60%),
+              radial-gradient(900px 500px at 110% 10%, #e6dcff 0%, transparent 55%), #faf7fc;
+  min-height: 100vh;
+}
+.wrap { max-width: 920px; margin: 0 auto; padding: 22px 24px 48px; }
+header.top { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+.mark {
+  width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center;
+  background: linear-gradient(145deg, var(--glow), var(--glow-deep)); color: #fff; font-weight: 800; font-size: 20px;
+  box-shadow: 0 6px 18px rgba(240, 120, 47, .35);
+}
+h1 { font-size: 22px; margin: 0; }
+.sub { color: var(--muted); margin: 2px 0 0; font-size: 14px; }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 20px 22px; box-shadow: 0 10px 30px rgba(43, 34, 54, .06);
+}
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
+.full { grid-column: 1 / -1; }
+.field { display: flex; flex-direction: column; gap: 5px; position: relative; }
+.field > label, .label { font-weight: 600; font-size: 13.5px; }
+.req::after { content: " *"; color: var(--glow-deep); }
+input[type=text], input[type=email], input[type=tel], input[type=number], input[type=date],
+input[type=password], select, textarea, .combo {
+  font: inherit; color: inherit; width: 100%; padding: 9px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: #fcfbfe; outline: none;
+}
+input:focus, select:focus, textarea:focus, .combo:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109, 74, 255, .15); }
+textarea { min-height: 64px; resize: vertical; }
+.row2 { display: grid; grid-template-columns: 1fr 120px; gap: 10px; }
+.combo { cursor: pointer; display: flex; justify-content: space-between; align-items: center; min-height: 40px; }
+.combo .ph { color: var(--muted); }
+.combo::after { content: "▾"; color: var(--muted); }
+.combo-list {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 10; margin: 4px 0 0; padding: 6px; list-style: none;
+  background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 28px rgba(43, 34, 54, .14);
+}
+.combo-list li { padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.combo-list li:hover, .combo-list li[aria-selected=true] { background: #f1ecff; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 500; }
+.section-title { margin: 18px 0 4px; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.pill { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: #fff1e3; color: var(--glow-deep); }
+.hint { color: var(--muted); font-size: 12.5px; }
+.error { color: var(--danger); font-size: 13px; min-height: 18px; }
+.actions { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
+button.primary {
+  font: inherit; font-weight: 700; color: #fff; border: 0; border-radius: 12px; padding: 11px 22px; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), #9b5cff); box-shadow: 0 8px 20px rgba(109, 74, 255, .3);
+}
+.done { text-align: center; padding: 34px 22px; }
+.done .big { font-size: 46px; }
+.ref { display: inline-block; margin: 8px 0 16px; padding: 6px 14px; border-radius: 10px; background: #effaf2; color: var(--ok); font-weight: 700; letter-spacing: .5px; }
+table.summary { margin: 0 auto; border-collapse: collapse; text-align: left; }
+table.summary td { padding: 4px 12px; border-bottom: 1px solid var(--line); }
+table.summary td:first-child { color: var(--muted); }
+.captcha-box {
+  display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: #f7f7f9; width: 300px;
+}

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lantern architecture</title>
+<style>
+  :root { --ink: #111; --ink-2: #6b6b73; --line: #e3e3e8; --card: #fff; --bg: #f2f2f7; --blue: #007aff; --green: #34c759;
+          --orange: #ff9500; --purple: #af52de; --amber: #ff9f0a;
+          --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1920px; height: 1080px; background: var(--bg); font-family: var(--font); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  .wrap { padding: 56px 80px 48px; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 28px; }
+  header { display: flex; align-items: center; gap: 22px; }
+  .icon { width: 76px; height: 76px; border-radius: 18px; display: grid; place-items: center; background: linear-gradient(160deg, #ffc65c, #ff8a1f);
+          box-shadow: 0 6px 18px rgba(255, 138, 31, .35); }
+  .icon svg { width: 46px; height: 46px; fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  h1 { margin: 0; font-size: 56px; letter-spacing: -.03em; }
+  .sub { color: var(--ink-2); font-size: 26px; margin-top: 4px; }
+  .main { display: grid; grid-template-columns: 1.35fr 1fr; gap: 40px; min-height: 0; }
+  .card { background: var(--card); border-radius: 24px; padding: 26px 32px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.06); }
+  .card h2 { margin: 0 0 18px; font-size: 18px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); font-weight: 600; }
+  .flow { display: grid; grid-template-columns: 1fr 64px 1.3fr 64px 1fr; align-items: center; height: calc(100% - 36px); }
+  .col { display: flex; flex-direction: column; gap: 16px; }
+  .box { border-radius: 14px; padding: 11px 16px; border: 1.5px solid var(--line); background: #fafafc; }
+  .box b { display: block; font-size: 19px; }
+  .box small { display: block; color: var(--ink-2); font-size: 15px; margin-top: 2px; line-height: 1.28; }
+  .box.you { border-color: #cfe3ff; background: #f3f8ff; }
+  .box.laptop { border-color: #ffe0b8; background: #fff8ee; }
+  .box.guard { border-color: #c9f0d3; background: #f1fbf4; }
+  .box.meta { border-color: #e7d4f5; background: #faf4fe; }
+  .zone { border-radius: 20px; border: 2px dashed #ffd29a; padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+  .zone > .label { font-size: 15px; font-weight: 700; color: #b86a00; text-transform: uppercase; letter-spacing: .06em; }
+  .arrow { height: 3px; background: #c7c7cc; position: relative; margin: 0 6px; }
+  .arrow::after { content: ""; position: absolute; right: -2px; top: -6px; border: 7.5px solid transparent; border-left: 11px solid #c7c7cc; }
+  table { width: 100%; border-collapse: collapse; font-size: 19px; }
+  td { padding: 13px 4px; border-top: 1px solid var(--line); vertical-align: top; }
+  tr:first-child td { border-top: 0; }
+  td:first-child { font-weight: 700; white-space: nowrap; padding-right: 18px; }
+  .chip { display: inline-block; font-size: 14px; font-weight: 700; padding: 3px 10px; border-radius: 99px; margin-bottom: 4px; }
+  .spark { background: #ece9ff; color: #4b3fd1; } .wonder { background: #fff0dc; color: #a85b00; } .glimmer { background: #dcf7e4; color: #17803d; }
+  .voice { background: #dff3f8; color: #0f6e85; } .image { background: #f8e3f6; color: #9c2a8c; } .sam { background: #e3eeff; color: #1f5fbf; }
+  .note { margin: 26px 0 0; padding: 18px 20px; border-radius: 16px; background: #f1fbf4; color: #17633a; font-size: 18px; line-height: 1.4; }
+  footer { display: flex; gap: 14px; flex-wrap: wrap; }
+  .pill { background: var(--card); border-radius: 99px; padding: 12px 20px; font-size: 19px; font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .pill span { color: var(--green); margin-right: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="icon"><svg viewBox="0 0 24 24"><path d="M9.8 4.7a2.2 2.2 0 0 1 4.4 0"/><path d="M8.2 6.6h7.6M9.2 20.4h5.6"/><rect x="6.8" y="6.6" width="10.4" height="13.8" rx="4.4"/><path d="M12 10.2c1.4 1.4 1.9 2.5 1.9 3.5a1.9 1.9 0 0 1-3.8 0c0-1 .5-2.1 1.9-3.5z"/></svg></div>
+    <div><h1>Lantern</h1><div class="sub">A private AI companion that lives on your laptop: it does the boring work and asks before anything changes.</div></div>
+  </header>
+
+  <div class="main">
+    <section class="card">
+      <h2>How it fits together</h2>
+      <div class="flow">
+        <div class="col">
+          <div class="box you"><b>Phone · Glasses</b><small>WhatsApp voice note, Approve / Deny buttons, STOP</small></div>
+          <div class="box you"><b>Desktop</b><small>Island, panel, Quick Ask, menu bar</small></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="zone">
+          <div class="label">Your laptop</div>
+          <div class="box laptop"><b>Agent + memory</b><small>Plans, calls tools, remembers what it did (encrypted)</small></div>
+          <div class="box guard"><b>Approvals</b><small>Bound to a hash of exactly what you saw</small></div>
+          <div class="box guard"><b>Privacy zones + scrubber</b><small>Private files never reach a cloud API; keys and IDs redacted; every byte audited</small></div>
+          <div class="box laptop"><b>Tools</b><small>Forms (own browser), email, files, projects, reminders, widgets, MCP</small></div>
+          <div class="box glimmer" style="border-color:#c9f0d3;background:#f1fbf4"><b>Muse Glimmer</b><small>Reads private files: on this computer or your own private server</small></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="col">
+          <div class="box meta"><b>Meta Model API</b><small>Only scrubbed payloads, logged with SHA-256</small></div>
+          <div class="box meta"><b>MCP</b><small>Ready for Meta AI Connectors</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Meta model map</h2>
+      <table>
+        <tr><td><span class="chip spark">Muse Spark 1.3</span></td><td>The agent: plans, tool calls, form plans, widgets, tool search</td></tr>
+        <tr><td><span class="chip wonder">Muse Wonder 1.0</span></td><td>Computer use: sees the browser, clicks custom widgets</td></tr>
+        <tr><td><span class="chip glimmer">Muse Glimmer</span></td><td>Private lane: answers about private files, on this computer or a self-hosted server</td></tr>
+        <tr><td><span class="chip voice">Voice Transcribe</span></td><td>WhatsApp voice notes from phone and glasses</td></tr>
+        <tr><td><span class="chip image">Muse Image 1.0</span></td><td>Lantern's face: portrait + anchored expressions</td></tr>
+        <tr><td><span class="chip sam">SAM 3.1</span></td><td>Camera check-in and photo to scan: objects and pages only</td></tr>
+        <tr><td><span class="chip spark">Muse Spark Open</span></td><td>Optional, off by default: second cloud lane (Baseten), public content only</td></tr>
+      </table>
+      <p class="note">Every AI feature runs on Meta models; no other provider is used. Contributor-mode models are refused in code,
+        so your data never trains a model.</p>
+    </section>
+  </div>
+
+  <footer>
+    <div class="pill"><span>●</span>Never types passwords, OTPs, card or ID numbers</div>
+    <div class="pill"><span>●</span>Every change approved, then verified</div>
+    <div class="pill"><span>●</span>Untrusted content can't give orders</div>
+    <div class="pill"><span>●</span>No deletes · STOP anywhere</div>
+  </footer>
+</div>
+</body>
+</html>

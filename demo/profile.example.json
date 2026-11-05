@@ -1,0 +1,14 @@
+{
+  "profile": {
+    "full name": "Asha Rao",
+    "email": "asha.rao@example.com",
+    "phone": "+91 90000 00000",
+    "team name": "Night Owls",
+    "city": "Bengaluru",
+    "github": "https://github.com/asha-example"
+  },
+  "answers": {
+    "what are you building?": "Lantern, a private AI companion that lives on your laptop."
+  },
+  "forms": {}
+}

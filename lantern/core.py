@@ -1,0 +1,1853 @@
+"""Lantern core: wires memory, policy, scrubber/audit, router, approvals and the
+agent together, and runs tasks one at a time on a worker thread.
+
+The server (server.py), the channels (WhatsApp/Telegram) and the CLI all talk to
+one `Core`. Events from the agent and the approval bus are fanned out to
+subscribers (the server's websocket, channels).
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import queue
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable
+
+from . import avatar as avatar_mod
+from . import config as config_mod
+from . import models, packsign
+from . import studio as studio_mod
+from .agent import Agent
+from .agentpacks import MAX_LOOP_FAILURES, Pack, PackError, PackStore, Schedule, draft_pack, pack_suffix, schedule_description, schedule_next
+from .approvals import ApprovalBus, ApprovalError, BusGate
+from .audit import AuditLog, GuardedClient
+from .budget import BudgetGuard, Limits, scheduled_task_budget, usd
+from .crypto import cipher_for
+from .email_tool import EmailService, EmailSettings
+from .envmap import EnvMap
+from .forms import FormService, FormSettings
+from .mcp_client import MCPHub
+from .memory import Memory
+from .policy import Policy, PolicyError
+from .reliability import RetryingClient
+from .router import Router, RouterConfig, make_backend
+from .sam import CheckIn
+from .studio import StudioStore
+from .tools import Toolbox, ToolError
+from .undo import UNDONE, UndoError, undo_plan, undoable
+from .widgets import Widgets
+
+EventSink = Callable[[dict], None]
+
+
+class NoModelClient:
+    """Stands in when MODEL_API_KEY is missing, so the server and UI still start."""
+
+    class _R:
+        def create(self, **kw):
+            raise RuntimeError(f"set {models.API_KEY_ENV} to run tasks (or start with --demo)")
+
+    def __init__(self):
+        self.responses = self._R()
+
+
+INTERRUPTED = "cut short when Lantern stopped; say 'resume' to continue"
+RESUME_NOTE = "\n\n[Resuming task #"
+
+
+LENT_PREFIX = "[lent] "   # S13: a borrowed task's goal starts with this
+
+
+def recover_interrupted(memory: Memory, keep: set[int] | frozenset = frozenset()) -> list:
+    """Tasks still 'active' from a previous run were cut short (crash, restart, power): mark them.
+    `keep`: tasks the scheduler picks up again from their checkpoint (scheduler.py)."""
+    out = []
+    for t in memory.active_tasks():
+        if t.id in keep:
+            continue
+        memory.log_step(t.id, "note", "interrupted: Lantern stopped before this task finished")
+        memory.finish_task(t.id, "interrupted", INTERRUPTED)
+        out.append(memory.get_task(t.id))
+    return out
+
+
+def resume_goal(memory: Memory, task) -> str:
+    """The goal again, plus what the cut-short run already did, so nothing gets done twice."""
+    goal = task.goal.split(RESUME_NOTE)[0]
+    done = []
+    for step in memory.steps(task.id):
+        if step["kind"] != "tool_result":
+            continue
+        try:
+            data = json.loads(step["content"])
+        except (TypeError, ValueError):
+            continue
+        name, result = data.get("name"), data.get("result") or {}
+        if name in (None, "finish") or not isinstance(result, dict):
+            continue
+        state = ("verified" if result.get("verified") else "error: " + str(result["error"])[:60] if result.get("error")
+                 else "not verified")
+        done.append(f"{name} ({state})")
+    already = "; ".join(done[-12:]) if done else "nothing yet"
+    return (f"{goal}{RESUME_NOTE}{task.id}, which was cut short when Lantern stopped. Already done then: {already}. "
+            "Check before repeating anything that changes something.]")
+
+
+class Core:
+    def __init__(self, cfg: config_mod.Config, client: Any = None, *, memory: Memory | None = None,
+                 audit: AuditLog | None = None, policy: Policy | None = None, router: Router | None = None,
+                 bus: ApprovalBus | None = None, approval_timeout: float | None = None,
+                 forms: FormService | None = None, email: EmailService | None = None,
+                 mcp: MCPHub | None = None, reminder_tick: float = 1.0, workers: int = 0, recover: bool = True):
+        self.cfg = cfg
+        cipher = None if (memory and audit) else cipher_for(cfg)
+        self.memory = memory or Memory(cfg.db_path, cipher)
+        self.audit = audit or AuditLog(cfg.audit_path, cipher)
+        self.policy = policy or Policy.load(cfg.zones_file, cfg.roots)
+        self.router = router or Router(self.policy, make_backend(RouterConfig.from_env(dict(os.environ)), self.audit))
+        self.bus = bus or ApprovalBus()
+        if client is None:
+            client = self._default_client()
+        guarded = client if isinstance(client, GuardedClient) else GuardedClient(client, self.audit,
+                                                                                 destination=cfg.base_url)
+        # Retries wrap the audited client, so every attempt that leaves the laptop is audited. The spending
+        # limits are checked before each call, in code: a refused call never leaves and is never retried.
+        self.current_task: int | None = None
+        self.budget = BudgetGuard(self.memory, Limits.from_env(dict(os.environ)), lambda: self.current_task, self.emit)
+        self.client = RetryingClient(guarded, on_retry=lambda info: self.emit({"type": "retry", **info}),
+                                     before_call=self.budget.check)
+        self.forms = forms or FormService(FormSettings.from_config(cfg), self.client, self.policy, self.memory)
+        self.email = email or EmailService(EmailSettings.from_env(dict(os.environ)), self.policy, self.audit,
+                                           outbox_dir=Path(cfg.media_dir) / "outbox")
+        self.localsend = None  # the LocalSend Server when Wi-Fi receiving is on (off by default)
+        self.envmap = EnvMap(self.policy, cfg.envmap_path)
+        self.widgets = Widgets(Path(cfg.widgets_dir))
+        self.studio = StudioStore(Path(cfg.db_path).expanduser().parent / "avatar")
+        self.packs = PackStore(Path(getattr(cfg, "agents_dir", Path(cfg.db_path).expanduser().parent / "agents")))
+        self.mcp = mcp if mcp is not None else MCPHub.from_file(cfg.mcp_config).start()
+        self.toolbox = Toolbox(self.policy, self.memory, BusGate(self.bus, approval_timeout), router=self.router,
+                               forms=self.forms, email=self.email, envmap=self.envmap, widgets=self.widgets,
+                               mcp=self.mcp, audit=self.audit)
+        self.toolbox.client = self.client
+        self.toolbox.mcp_config = cfg.mcp_config   # learn_repo writes learned servers to Lantern's mcp.json
+        if "freecad" in getattr(self.mcp, "servers", {}):   # S17: CAD tools go through the connector
+            from .integrations.freecad.connector import FreeCADConnector
+            self.toolbox.freecad = FreeCADConnector(self.policy, self.client, self.memory,
+                                                    on_event=lambda k, d: self.emit({"type": k, **d}))
+        self.checkin = CheckIn(self.client, self.memory, self.emit)
+        self.toolbox.on_event = self._agent_event
+        self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
+                           reasoning=getattr(cfg, "reasoning", ""),
+                           on_event=self._agent_event)
+        self._sinks: list[EventSink] = []
+        self._queue: queue.Queue = queue.Queue()
+        self._loops_lock = threading.Lock()   # loop state lives in the pack files; the reminder thread and routes share it
+        self._undoing: set[int] = set()   # tasks with an undo queued (a double tap queues one)
+        self._undo_lock = threading.Lock()
+        self._teaching: dict[int, dict] = {}   # S8: teaching task -> {"stop": Event, "cancelled": bool}
+        self._net = None                         # S6: (Identity, Contacts, Inbox), made on first use
+        self._net_pending: dict[str, dict] = {}   # S6: request id -> {"task_id", "contact", "kind"}
+        self._meetings: dict[str, list[dict]] = {}   # S15: proposal id -> the items the user was shown
+        self.network_send: Callable[[dict, str], None] | None = None   # set by the channel hub
+        self.scheduler = None   # S1: with workers > 0, up to that many tasks run at once (scheduler.py)
+        self.compiler = None    # S4: learned routines (compiler.py), with the scheduler
+        if workers > 0:
+            from .compiler import Compiler
+            from .scheduler import Scheduler
+            self.scheduler = Scheduler(self, workers, approval_timeout=approval_timeout)
+            self.compiler = Compiler(self)
+        # recover=False (the terminal): leave tasks another Lantern left unfinished alone; `lantern --resume` does them
+        keep = self.scheduler.recover() if self.scheduler is not None and recover else set()
+        self.interrupted = recover_interrupted(self.memory, keep) if recover else []   # before the worker starts
+        self.bus.subscribe(self._approval_event)
+        self._worker = threading.Thread(target=self._work, name="lantern-agent", daemon=True)
+        self._worker.start()
+        self._closing = threading.Event()
+        self.reminder_tick = reminder_tick
+        if reminder_tick > 0:
+            threading.Thread(target=self._remind_loop, name="lantern-reminders", daemon=True).start()
+        if self.scheduler is not None:
+            self.scheduler.start()   # tasks saved before a restart continue
+
+    def _default_client(self):
+        key = os.environ.get(models.API_KEY_ENV)
+        if not key:
+            return NoModelClient()
+        from openai import OpenAI
+        # The SDK's silent retries are off: RetryingClient retries visibly (events) with a circuit breaker.
+        return OpenAI(base_url=self.cfg.base_url, api_key=key, timeout=self.cfg.timeout, max_retries=0)
+
+    # ---- events ----------------------------------------------------------------
+    def subscribe(self, sink: EventSink) -> Callable[[], None]:
+        self._sinks.append(sink)
+        return lambda: self._sinks.remove(sink) if sink in self._sinks else None
+
+    def emit(self, event: dict) -> None:
+        event.setdefault("ts", time.time())
+        for sink in list(self._sinks):
+            try:
+                sink(event)
+            except Exception:
+                pass
+
+    def _agent_event(self, kind: str, data: dict) -> None:
+        event = {"type": kind, **data}
+        if self.current_task is not None:
+            event.setdefault("task_id", self.current_task)
+        if kind == "tool":
+            event["result"] = _short(data.get("result"))
+        self.emit(event)
+
+    def _approval_event(self, kind: str, approval) -> None:
+        task_id = self.current_task
+        if self.scheduler is not None and (owner := self.scheduler.task_for_approval(approval.id)) is not None:
+            task_id = owner
+        if kind in ("decided", "expired", "used") and task_id is not None:   # for the task's receipt
+            self.memory.log_step(task_id, "approval", {
+                "id": approval.id, "event": kind, "action": approval.action, "summary": approval.summary,
+                "payload_hash": approval.payload_hash, "status": approval.status, "by": approval.decided_by,
+                "tainted": approval.tainted})
+        self.emit({"type": "approval", "event": kind, "approval": approval.public(include_nonce=(kind == "requested")),
+                   "task_id": task_id})
+
+    # ---- tasks -----------------------------------------------------------------
+    def submit(self, goal: str, pack: str | None = None, inputs: dict | None = None) -> int:
+        if pack is not None:   # the pack renders the goal from its blanks; `goal` is unused
+            return self.submit_pack(pack, inputs or {})
+        goal = goal.strip()
+        if not goal:
+            raise ValueError("goal is empty")
+        task = self.memory.start_task(goal)
+        if self.scheduler is not None:
+            self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+            self.scheduler.submit(task.id, goal)
+            return task.id
+        self._queue.put((task.id, goal, None))
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": None})
+        return task.id
+
+    def submit_pack(self, name: str, inputs: dict, task_budget: float | None = None) -> int:
+        """Run an installed agent pack: the goal is rendered from its blanks,
+        its instructions run last, its tools are allowlisted and the task starts
+        tainted. The pack is re-validated on every run, so a file edited on disk
+        afterwards is refused. Stopping uses the kill switch; watching uses the
+        task timeline. `task_budget` caps one run's spending (scheduled loops)."""
+        try:
+            found = self.packs.get(name)   # re-verifies the signature, not only at install
+        except KeyError:
+            raise KeyError(name) from None
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        if found.disabled:
+            raise ValueError(f"agent {name!r} is disabled")
+        if found.needs:
+            outcome = self.ensure_pack_servers(found)
+            missing = list(outcome["declined"]) + sorted(outcome["failed"])
+            if missing:
+                raise ValueError(f"agent {name!r} needs {', '.join(missing)} "
+                                 f"({'; '.join(outcome['failed'].values()) or 'user declined'}); "
+                                 "nothing was started")
+        try:
+            rendered = found.render_goal(inputs)
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        return self._queue_pack_task(found, rendered, task_budget=task_budget)
+
+    def _queue_pack_task(self, pack: Pack, rendered: str, task_budget: float | None = None) -> int:
+        """Queue a validated pack's run as an ordinary task (timeline, receipt, Stop)."""
+        goal = f"[agent:{pack.name}] {rendered}"
+        suffix, allowed = pack_suffix(pack), set(pack.tools)
+        task = self.memory.start_task(goal)
+        if task_budget is not None:
+            self.budget.set_task_budget(task.id, task_budget)
+
+        def run(agent):
+            return agent.run(goal, task_id=task.id, instructions_suffix=suffix, allowed_tools=allowed, taint=True)
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal, "pack": pack.name})
+        if self.scheduler is not None:   # the protected path: S0 planner/reader split, ladder, parking
+            self.scheduler.submit_job(task.id, goal, run)
+        else:
+            self._queue.put((task.id, goal, lambda: run(self.agent)))
+        return task.id
+
+    def answer(self, task_id: int, text: str, by: str = "user") -> None:
+        """The user's answer to a task's question (ask_user); the task continues where it stopped."""
+        if self.scheduler is None:
+            raise ValueError("no task is waiting for an answer")
+        self.scheduler.answer(task_id, text, by)
+
+    def questions(self) -> list[dict]:
+        return self.scheduler.questions() if self.scheduler is not None else []
+
+    # ---- learned routines (S4, compiler.py) ------------------------------------------------
+    def learn(self, task_id: int, auto: bool = False, replace: str | None = None) -> int:
+        """Compile a finished, verified task into a routine, as a task of its own (its model calls are counted).
+        `replace`: the routine this task's run supersedes (S5: the site's flow changed)."""
+        if self.compiler is None:
+            raise ValueError("learning routines needs Lantern's scheduler (lantern --serve)")
+        source = self.memory.get_task(task_id)   # KeyError if unknown
+        if not self.compiler.learnable(task_id):
+            try:
+                self.compiler.skeleton(task_id)
+            except Exception as e:
+                raise ValueError(f"task #{task_id} can't be learned: {e}") from e
+        goal = (f"Re-learn {replace} from task #{task_id}" if replace else
+                f"Learn task #{task_id} as a routine: {source.goal.splitlines()[0][:80]}")
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "learn_from": task_id, "auto": auto, "replace": replace})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._learn_job(agent, job.id, goal, task_id, replace))
+        return job.id
+
+    def _learn_job(self, agent, job_id: int, goal: str, task_id: int, replace: str | None = None) -> None:
+        from .compiler import CompileError
+        agent.cancel.clear()
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            info = self.compiler.learn(task_id, client=agent.client, ladder=agent.ladder, job_id=job_id, replace=replace)
+        except (CompileError, KeyError, ValueError) as e:
+            status, summary = "failed", f"Couldn't learn task #{task_id}: {e}"
+        except Exception as e:   # never leave the learning task hanging as "active"
+            from .reliability import explain
+            self.memory.log_step(job_id, "note", f"error: {type(e).__name__}: {e}")
+            status, summary = "failed", f"Couldn't learn task #{task_id}: {explain(e)}"
+        else:
+            status = "done"
+            summary = (f"{'Re-learned' if replace else 'Learned'} '{info['name']}' v{info['version']}: {info['steps']} steps"
+                       + (f", with {', '.join(info['params'])} to choose" if info["params"] else "")
+                       + (f". Verified: {info['verify']}. Next time it runs with no model calls."
+                          if info["trusted"] else f". Not verified yet ({info['verify']}), so it won't run by itself."))
+        self.memory.log_step(job_id, "reply", summary)
+        self.memory.finish_task(job_id, status, summary)
+        agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
+
+    # ---- teach once by demonstration (S8, recorder.py) ------------------------------------------------
+    def teach(self, url: str, goal: str, *, act: Callable | None = None, driver_factory: Callable | None = None) -> int:
+        """Open Lantern's browser on `url` and record the user doing `goal` once; then learn it (S4).
+        Returns the teaching task. `teach_stop` ends the recording (the Done button)."""
+        from .forms.filler import url_problem
+        if self.compiler is None:
+            raise ValueError("teaching needs Lantern's scheduler (lantern --serve)")
+        url, goal = str(url).strip(), " ".join(str(goal).split())[:200]
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValueError("give the web address where the task starts (http or https)")
+        if not goal:
+            raise ValueError("say what the task is, for example 'apply for a city permit'")
+        if problem := url_problem(url, self.forms.settings):
+            raise ValueError(problem)
+        if self._teaching:
+            raise ValueError("Lantern is already watching you do a task; press Done (or STOP) first")
+        job = self.memory.start_task(goal)
+        session = {"stop": threading.Event(), "cancelled": False}
+        self._teaching[job.id] = session
+        self.memory.log_step(job.id, "plan", {"goal": goal, "teach": url})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._teach_job(agent, job.id, goal, url, session, act,
+                                                                              driver_factory))
+        return job.id
+
+    def teach_stop(self, task_id: int | None = None) -> bool:
+        """Done: stop recording (one teaching task, or whichever is running)."""
+        hits = [s for t, s in self._teaching.items() if task_id is None or t == task_id]
+        for s in hits:
+            s["stop"].set()
+        return bool(hits)
+
+    def teach_note(self, task_id: int | None, text: str) -> bool:
+        """Narration while teaching ("this is my passport number"): it helps name and describe the routine."""
+        text = " ".join(str(text).split())[:300]
+        ids = [t for t in self._teaching if task_id is None or t == task_id]
+        if not text or not ids:
+            return False
+        self.memory.log_step(ids[0], "narration", text)
+        self.emit({"type": "teach", "task_id": ids[0], "phase": "note"})
+        return True
+
+    def _teach_driver(self):
+        from .forms.driver import BrowserDriver, chromium_executable
+        st = self.forms.settings
+        headless = os.environ.get("LANTERN_TEACH_HEADLESS", "").strip().lower() in ("1", "true", "yes")
+        return BrowserDriver(st.profile_dir, headless=headless, executable_path=chromium_executable(st.chromium),
+                             guard_submits=False)   # the user drives: their own clicks submit
+
+    def _teach_job(self, agent, job_id: int, goal: str, url: str, session: dict, act, factory) -> None:
+        from .recorder import TeachError, record, traces_from
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, goal)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        seen = {"n": 0}
+
+        def on_event(ev: dict) -> None:   # the panel shows that it's watching; values never go in events
+            if ev.get("kind") in ("field", "click"):
+                seen["n"] += 1
+                self.emit({"type": "teach", "task_id": job_id, "phase": "event", "kind": ev["kind"],
+                           "count": seen["n"]})
+        self.emit({"type": "teach", "task_id": job_id, "phase": "recording", "url": url})
+        traces: list = []
+        try:
+            with self.scheduler.browser():
+                rec = record(factory or self._teach_driver, url, stop=session["stop"], act=act, on_event=on_event,
+                             confirm_selectors=self.forms.settings.confirm_selectors)
+            if session["cancelled"]:
+                raise TeachError("stopped; nothing was kept")
+            traces = traces_from(rec, self.policy)
+            left = sorted({x for t in traces for x in t.get("left_for_you") or []})
+            if left:
+                raise TeachError("the form has fields only you may fill (" + ", ".join(left[:3]) + "), so a "
+                                 "routine can't do it for you; nothing was kept")
+        except TeachError as e:
+            status, summary, traces = ("cancelled" if session["cancelled"] else "failed"), f"Not learned: {e}.", []
+        except Exception as e:   # the browser closed, or wouldn't start
+            status, summary, traces = "failed", f"The recording stopped: {explain(e)}", []
+        else:
+            fields = sum(len(t["fields"]) for t in traces)
+            status = "done"
+            summary = (f"You showed me how to {goal}: {len(traces)} page{'s' if len(traces) != 1 else ''}, "
+                       f"{fields} field{'s' if fields != 1 else ''}, {rec.seconds:.0f} s. Learning it now.")
+        finally:
+            self._teaching.pop(job_id, None)
+        for t in traces:
+            self.memory.log_step(job_id, "trace", t)
+        self.emit({"type": "teach", "task_id": job_id, "phase": "stopped", "status": status})
+        self.memory.log_step(job_id, "reply", summary)
+        self.memory.finish_task(job_id, status, summary)
+        agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": len(traces)})
+        if status == "done":
+            try:
+                self.learn(job_id, auto=True)
+            except ValueError as e:
+                self.memory.log_step(job_id, "note", f"couldn't learn it: {e}")
+                self.emit({"type": "teach", "task_id": job_id, "phase": "not_learned", "reason": str(e)[:200]})
+
+    # ---- glasses -> laptop handoff (S9, handoff.py) and photo to scan (S10, scan.py) ----------------------
+    def photo(self, image: bytes, instruction: str = "") -> int:
+        """A photo from the phone (or the glasses): scan it, read it, and run the learned routine it's for with the
+        scan attached (after the user approves). `instruction`: the user's own words, if any. Returns the task."""
+        if self.compiler is None:
+            raise ValueError("photos need Lantern's scheduler (lantern --serve)")
+        instruction = " ".join(str(instruction or "").split())[:200]
+        goal = f"Scan this photo{': ' + instruction if instruction else ''}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "photo_bytes": len(image)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._photo_job(agent, job.id, goal, image, instruction))
+        return job.id
+
+    def scans_folder(self) -> Path:
+        """Where scans go: a Scans folder in the first writable zone."""
+        z = next((z for z in self.policy.describe() if z["zone"] == "writable"), None)
+        if z is None:
+            raise ValueError("there's no writable folder to save scans in (lantern --set-zone FOLDER writable)")
+        return Path(z["path"]) / "Scans"
+
+    def _photo_job(self, agent, job_id: int, goal: str, image: bytes, instruction: str) -> None:
+        from . import handoff
+        from .reliability import explain
+        from .scan import ScanError, file_name, scan
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            sc = scan(image, client=agent.client, policy=self.policy, folder=self.scans_folder(), memory=self.memory,
+                      task_id=job_id)
+            paper = handoff.read(agent.client, self.policy.read_bytes(sc["png"]), memory=self.memory, task_id=job_id)
+            if paper["kind"]:   # a name that says what it is: "2026-10-28 permit renewal notice.pdf"
+                for ext in ("png", "pdf"):
+                    target = Path(sc[ext]).with_name(f"{file_name(paper['kind'])}.{ext}")
+                    if not self.policy.exists(target):
+                        self.policy.move(sc[ext], target)
+                        sc[ext] = str(target)
+            self.memory.log_step(job_id, "tool_call", {"name": "scan", "args": {"bytes": len(image)}})
+            self.memory.log_step(job_id, "tool_result", {"name": "scan", "result": {**sc, "paper": paper}})
+            self.memory.mark_quoted(job_id)   # what the paper says stays out of later briefings
+            agent.on_event("tool", {"name": "scan", "args": {}, "result": {"pdf": sc["pdf"], "found": sc["found"],
+                                                                         "kind": paper["kind"]},
+                                    "badge": models.badge(models.SAM)})
+            words = instruction or paper["kind"]
+            match = self.compiler.match(words, client=agent.client, ladder=agent.ladder, task_id=job_id) if words else None
+            upload = handoff.upload_param(match.routine) if match is not None else None
+        except (ScanError, handoff.ReadError, ValueError) as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't scan that photo: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't scan that photo: {explain(e)}")
+        line = handoff.reply(paper, sc) + f", saved as {Path(sc['pdf']).name}"
+        if paper["instructions"]:
+            line += ". It contained instructions for an AI; I ignored them"
+        if match is None or upload is None:
+            what = (f"no learned routine for '{words}'" if words else "say what it's for")
+            return self._photo_done(agent, job_id, "done", f"{line}. {what[0].upper() + what[1:]}; tell me what to "
+                                                           "do with it.")
+        if not instruction:   # the paper chose the routine: it may pick nothing else (choices, never free text)
+            enums = {p["name"] for p in match.routine.contract.get("params") or [] if p.get("type") == "enum"}
+            match.params = {k: v for k, v in match.params.items() if k in enums}
+        match.params[upload] = sc["pdf"]
+        self.memory.log_step(job_id, "note", line)
+        flags = [] if instruction else ["⚠ Chosen from what the paper says, not from your words: approve only if you "
+                                        "meant it."]
+        try:
+            self.compiler.run_task(job_id, words, match, agent=agent, sched=self.scheduler, tainted=True, flags=flags)
+        finally:
+            if hasattr(agent.toolbox, "_flags"):
+                agent.toolbox._flags = []
+
+    def _photo_done(self, agent, job_id: int, status: str, summary: str) -> None:
+        self.memory.log_step(job_id, "reply", summary)
+        self.memory.finish_task(job_id, status, summary)
+        agent.on_event("done", {"id": job_id, "status": status, "summary": summary, "reply": summary,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": 1})
+
+    # ---- do this Reel (S12, reel.py) ------------------------------------------------------------------------
+    def reel(self, video: bytes | None = None, *, path: str = "", words: str = "", transcriber=None) -> int:
+        """A how-to video the user shared (bytes from the phone, or a file in a visible zone): steps they review on
+        one card, then the normal agent does them. Returns the task."""
+        import datetime as _dt
+        if self.compiler is None:
+            raise ValueError("videos need Lantern's scheduler (lantern --serve)")
+        if path:
+            p, zone = self.policy.check_visible(path)
+            if zone == "private":
+                raise ValueError("that video is in a private folder; private files never leave this computer")
+            video = self.policy.read_bytes(p)
+        if not video:
+            raise ValueError("send the video file itself")
+        if len(video) > 200 * 1024 * 1024:
+            raise ValueError("that video is over 200 MB")
+        media = Path(self.cfg.media_dir).expanduser()   # Lantern's own folder: a working copy for ffmpeg
+        media.mkdir(parents=True, exist_ok=True)
+        saved = media / f"reel-{_dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.mp4"
+        saved.write_bytes(video)
+        words = " ".join(str(words or "").split())[:200]
+        goal = f"Do this video{': ' + words if words else ''}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "video_bytes": len(video)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._reel_job(agent, job.id, goal, saved, transcriber))
+        return job.id
+
+    def _reel_job(self, agent, job_id: int, goal: str, video: Path, transcriber) -> None:
+        from . import reel as reel_mod
+        from .reliability import explain
+        from .voice import to_wav16k
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            transcript, ms = reel_mod.transcript_of(video, transcriber or self._transcriber(), to_wav16k)
+            if ms:
+                self.memory.log_usage(job_id, models.VOICE, cost_usd=models.audio_cost(ms))
+            plan = reel_mod.review(reel_mod.steps(agent.client, video, transcript, memory=self.memory,
+                                                  task_id=job_id), self.policy)
+        except (reel_mod.ReelError, ValueError) as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't follow that video: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't follow that video: {explain(e)}")
+        self.memory.mark_quoted(job_id)   # what the video says stays out of later briefings
+        self.memory.log_step(job_id, "tool_result", {"name": "reel", "result": plan})
+        if plan["refused"]:
+            s = next(x for x in plan["steps"] if x["n"] == plan["refused"][0])
+            return self._photo_done(agent, job_id, "done", f"I won't do this one: step {s['n']} ({s['do']}) "
+                                                           f"{s['why']}. Nothing was done.")
+        if plan["unclear"]:   # never guess: ask, and do nothing until the user says
+            s = next(x for x in plan["steps"] if x["n"] == plan["unclear"][0])
+            return self._photo_done(agent, job_id, "done", f"I couldn't follow step {s['n']} of “{plan['title']}” "
+                                                           f"({s['do']}). What exactly does it do? Nothing was done.")
+        toolbox = agent.toolbox
+        toolbox.tainted = True
+        payload = {"title": plan["title"], "steps": [s["do"] for s in plan["steps"]]}
+        commit = toolbox._approve("reel_steps", reel_mod.card(plan), payload)
+        if commit is None:
+            return self._photo_done(agent, job_id, "cancelled", "You said no; nothing from the video was done.")
+        if refused := toolbox._commit(commit, payload):
+            return self._photo_done(agent, job_id, "failed", f"Not done: {refused.get('reason')}.")
+        result = agent.run(reel_mod.goal(plan), task_id=job_id)   # the user's request now: the normal agent
+        if getattr(result, "status", None) == "done":
+            try:
+                offer = self.compiler.offer(job_id)
+            except Exception:   # an offer is a nicety; it must never fail a finished task
+                offer = None
+            if offer is not None:
+                self.emit({"type": "learn_offer", "task_id": job_id, "goal": plan["title"], "auto": False})
+
+    def _transcriber(self):
+        from .voice import transcribe
+        return lambda wav: transcribe(wav)
+
+    # ---- meeting recording → tasks and reminders (S15, meeting.py) ------------------------------------------
+    def meeting(self, path: str, transcriber=None, now=None) -> dict:
+        """A recording in a visible zone → speaker-labelled turns and proposed items. Nothing is done until the user
+        confirms items (confirm_meeting). Returns {"id", "task_id", "file", "seconds", "turns", "items", ...}."""
+        from . import meeting as meeting_mod
+        from .voice import to_wav16k, transcribe
+        task = self.memory.start_task(f"Meeting notes: {Path(path).name}")
+        try:
+            heard = meeting_mod.listen(self.policy, path, Path(self.cfg.media_dir).expanduser(),
+                                       transcriber or (lambda wav: transcribe(wav, mode="DIARIZATION")), to_wav16k)
+            self.memory.log_usage(task.id, models.VOICE, cost_usd=models.audio_cost(heard["audio_ms"]))
+            proposal = meeting_mod.propose(self.client, heard, now=now, memory=self.memory, task_id=task.id)
+        except Exception as e:
+            self.memory.finish_task(task.id, "failed", f"Couldn't read that meeting: {e}")
+            raise
+        self.memory.mark_quoted(task.id)   # the recording's words stay out of later briefings
+        self.memory.log_step(task.id, "tool_result", {"name": "meeting", "result": {
+            "turns": len(heard["turns"]), "items": proposal["items"], "dropped": proposal["dropped"]}})
+        self.memory.finish_task(task.id, "done", f"{len(proposal['items'])} item(s) proposed from the meeting")
+        mid = f"m{task.id}"
+        self._meetings[mid] = proposal["items"]
+        return {"id": mid, "task_id": task.id, **heard, **proposal,
+                "cost_usd": self.memory.task_usage(task.id)["cost_usd"]}
+
+    def confirm_meeting(self, meeting_id: str, picks: list[int]) -> dict:
+        """The items the user ticked, by number: reminders are saved, tasks start as the user's own requests."""
+        items = self._meetings.get(meeting_id)
+        if items is None:
+            raise ValueError("that meeting's list has expired; send the recording again")
+        chosen = [i for i in items if i["n"] in set(picks)]
+        reminders, tasks = [], []
+        for item in chosen:
+            if item["kind"] == "reminder":
+                reminders.append(self.memory.add_reminder(item["text"], item["due_at"]).id)
+            else:
+                tasks.append(self.submit(item["text"]))
+        self._meetings.pop(meeting_id, None)
+        saved = {r.id for r in self.memory.reminders()}
+        if reminders:
+            self.emit({"type": "reminders"})
+        return {"reminders": reminders, "tasks": tasks, "skipped": len(items) - len(chosen),
+                "verified": all(r in saved for r in reminders)}
+
+    # ---- Teaching Mode (S16, lesson.py and checkwork.py) -----------------------------------------------------
+    def lessons_folder(self) -> Path:
+        return Path(self.cfg.db_path).expanduser().parent / "lessons"   # Lantern's own folder
+
+    def lesson(self, request: str, notes: str = "") -> int:
+        """A lesson for the board from the user's words (and, optionally, a notes file in a visible zone). Every math
+        step is checked by SymPy before it may carry a ✓; the desktop opens the board on the "lesson" event."""
+        from . import untrusted
+        from .lesson import MAX_NOTES, LessonError
+        if self.compiler is None:
+            raise ValueError("lessons need Lantern's scheduler (lantern --serve)")
+        request = " ".join(str(request or "").split())[:500]
+        if not request:
+            raise LessonError("say what the lesson should teach")
+        wrapped = None
+        if notes:
+            p, zone = self.policy.check_visible(notes)
+            if zone == "private":   # the planner is Muse Spark, in the cloud: private files never go there
+                raise PolicyError("those notes are in a private folder, and lessons are planned by Muse Spark in the "
+                                  "cloud; pick notes outside the private zone")
+            wrapped = untrusted.wrap(self.policy.read_text(p, limit=MAX_NOTES), str(p), "file")
+        goal = f"Teach: {request}"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "notes": bool(wrapped)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._lesson_job(agent, job.id, goal, request, wrapped))
+        return job.id
+
+    def _lesson_job(self, agent, job_id: int, goal: str, request: str, notes: dict | None) -> None:
+        from . import lesson as lesson_mod
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        if notes is not None:
+            agent.toolbox.tainted = True   # the notes are untrusted content
+        try:
+            result = lesson_mod.plan(agent.client, request, notes=notes, memory=self.memory, task_id=job_id,
+                                     emit=self.emit)
+            name = lesson_mod.save(self.lessons_folder(), result)
+        except lesson_mod.LessonError as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't make that lesson: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't make that lesson: {explain(e)}")
+        if notes is not None:
+            self.memory.mark_quoted(job_id)   # words from the notes stay out of later briefings
+        self.memory.log_step(job_id, "tool_result", {"name": "lesson", "result": {
+            "name": name, "verified": result["verified"], "removed": result["removed"], "rounds": result["rounds"]}})
+        self.emit({"type": "lesson", "task_id": job_id, "name": name, "title": result["lesson"]["title"],
+                   "note": result["note"]})
+        self._photo_done(agent, job_id, "done", f"Lesson ready: “{result['lesson']['title']}” ({result['note']}).")
+
+    def lesson_ask(self, lesson: dict, step: int, question: str) -> dict:
+        """A question asked from the board mid-lesson (S16): answered by Muse Spark from the verified
+        lines up to `step` only, every new math line re-checked by SymPy (lesson_ask.py). Synchronous:
+        the board is paused waiting, and the audited client logs the cost like other calls."""
+        from .lesson_ask import ask
+        return ask(self.client, lesson, step, question, memory=self.memory, emit=self.emit)
+
+    def check_work(self, image: bytes) -> int:
+        """A photo of handwritten working: find the first line that doesn't follow, circle it, say why."""
+        if self.compiler is None:
+            raise ValueError("checking work needs Lantern's scheduler (lantern --serve)")
+        if not image:
+            raise ValueError("send a photo of the working")
+        goal = "Check my work"
+        job = self.memory.start_task(goal)
+        self.memory.log_step(job.id, "plan", {"goal": goal, "photo_bytes": len(image)})
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._check_work_job(agent, job.id, goal, image))
+        return job.id
+
+    def _check_work_job(self, agent, job_id: int, goal: str, image: bytes) -> None:
+        from . import checkwork
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, goal)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        try:
+            out = checkwork.run(agent.client, image, folder=Path(self.cfg.media_dir).expanduser(), memory=self.memory,
+                                task_id=job_id, use_sam=os.environ.get("LANTERN_CHECKWORK_SAM", "on") != "off")
+        except checkwork.CheckError as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't check that: {e}.")
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't check that: {explain(e)}")
+        self.memory.log_step(job_id, "tool_result", {"name": "check_work", "result": out})
+        self.memory.mark_quoted(job_id)   # what the photo says stays out of later briefings
+        self.emit({"type": "checkwork", "task_id": job_id, "wrong": out["wrong"], "unreadable": out["unreadable"],
+                   "image": out["image"], "reply": out["reply"]})
+        self._photo_done(agent, job_id, "done", out["reply"])
+
+    # ---- Lantern Network (S6, network.py) --------------------------------------------------------------------
+    def net(self):
+        if self._net is None:
+            from .network import Contacts, Identity, Inbox
+            folder = Path(self.cfg.db_path).expanduser().parent / "network"   # Lantern's own folder
+            me = Identity.load_or_create(folder, os.environ.get("LANTERN_NETWORK_NAME", "Lantern"))
+            contacts = Contacts(folder)
+            self._net = (me, contacts, Inbox(me, contacts))
+        return self._net
+
+    def network_card(self) -> dict:
+        return self.net()[0].card()
+
+    def network_add(self, card: dict, channel: str, address: str) -> dict:
+        return self.net()[1].add(card, channel, address)
+
+    def network_rules(self, contact: str, text: str, *, save: bool = False, cedar: str = "") -> dict:
+        """Preview what the owner's words become (Cedar policy + examples the engine decides), or save a policy the
+        owner has seen."""
+        from .network import NetError, compile_rules
+        c = self.net()[1].find(contact)
+        if c is None:
+            raise NetError(f"{contact} isn't one of your contacts")
+        if save:
+            if not cedar.strip():
+                raise NetError("save the policy you previewed")
+            self.net()[1].set_rules(c["fp"], {"text": " ".join(text.split())[:1000], "cedar": cedar})
+            return {"saved": True, "contact": c["name"]}
+        return compile_rules(self.client, c, text, memory=self.memory)
+
+    def _net_send(self, contact: dict, text: str, task_id: int | None) -> None:
+        if self.network_send is None:
+            from .network import NetError
+            raise NetError("no channel can reach other Lanterns (connect WhatsApp or Telegram)")
+        self.network_send(contact, text)
+        self.audit.record(lane="cloud", destination=f"{contact['channel']}:{contact['address']}",
+                          endpoint="network.send", model="lantern-network", payload=text.encode(), task_id=task_id,
+                          preview=f"to {contact['name']}'s Lantern")
+
+    def network_ask(self, contact: str, query: str) -> int:
+        """Ask a contact's Lantern for a file; the reply finishes the task (their owner decides)."""
+        from .network import NetError, seal
+        me, contacts, _ = self.net()
+        c = contacts.find(contact)
+        if c is None:
+            raise NetError(f"{contact} isn't one of your contacts")
+        query = " ".join(str(query).split())[:200]
+        task = self.memory.start_task(f"Ask {c['name']}'s Lantern for “{query}”")
+        text, env = seal(me, c["fp"], "ask_file", {"query": query})
+        self._net_pending[env["id"]] = {"task_id": task.id, "contact": c["fp"], "kind": "ask_file"}
+        self.memory.log_step(task.id, "plan", {"to": c["name"], "request": env["id"], "query": query})
+        self.emit({"type": "queued", "task_id": task.id, "goal": task.goal})
+        try:
+            self._net_send(c, text, task.id)
+        except Exception as e:
+            self.memory.finish_task(task.id, "failed", f"Couldn't reach {c['name']}'s Lantern: {e}")
+            raise
+        self.emit({"type": "task", "id": task.id, "task_id": task.id, "goal": task.goal})
+        return task.id
+
+    def network_share(self, contact: str, routine: str) -> int:
+        """Share a learned routine with a contact's Lantern, after your own approval (it leaves this computer)."""
+        from .network import NetError
+        c = self.net()[1].find(contact)
+        if c is None or self.compiler is None:
+            raise NetError(f"{contact} isn't one of your contacts" if c is None else "sharing needs the scheduler")
+        r = self.compiler.store.load(routine)   # KeyError for an unknown routine
+        goal = f"Share the routine '{r.name}' with {c['name']}'s Lantern"
+        job = self.memory.start_task(goal)
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._net_share_job(agent, job.id, goal, c, r))
+        return job.id
+
+    def _net_share_job(self, agent, job_id: int, goal: str, c: dict, r) -> None:
+        from .network import seal, shareable_contract
+        agent.toolbox.begin_task(job_id, goal)
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        contract = shareable_contract(r.contract)
+        payload = {"to": c["fp"], "routine": r.name, "sha256": hashlib.sha256(json.dumps(contract, sort_keys=True)
+                                                                                .encode()).hexdigest()}
+        commit = agent.toolbox._approve("network_send", f"Send the routine '{r.meta.get('title') or r.name}' "
+                                                        f"({len(contract['steps'])} steps, no values from your "
+                                                        f"profile) to {c['name']}'s Lantern?", payload)
+        if commit is None or agent.toolbox._commit(commit, payload):
+            return self._photo_done(agent, job_id, "cancelled", "Not shared.")
+        me = self.net()[0]
+        text, env = seal(me, c["fp"], "share_routine", {"contract": contract})
+        self._net_pending[env["id"]] = {"task_id": job_id, "contact": c["fp"], "kind": "share_routine"}
+        try:
+            self._net_send(c, text, job_id)
+        except Exception as e:
+            return self._photo_done(agent, job_id, "failed", f"Couldn't reach {c['name']}'s Lantern: {e}")
+        self._photo_done(agent, job_id, "done", f"Sent '{r.name}' to {c['name']}'s Lantern; it runs there only after "
+                                                "their owner imports it and it checks out.")
+
+    def network_receive(self, text: str) -> None:
+        """A message from another Lantern (the hub passes on anything that starts with the network prefix)."""
+        from .network import NetError
+        _me, _contacts, inbox = self.net()
+        try:
+            contact, env = inbox.open(text)
+        except NetError as e:
+            self.emit({"type": "network", "refused": str(e)})
+            return
+        if env["kind"] == "reply":
+            return self._net_reply(contact, env)
+        if self.compiler is None:
+            return
+        goal = (f"{contact['name']}'s Lantern asks for “{str(env['body'].get('query', ''))[:80]}”"
+                if env["kind"] == "ask_file" else f"{contact['name']}'s Lantern shares a routine")
+        job = self.memory.start_task(goal)
+        self.memory.mark_quoted(job.id)   # what another Lantern sent stays out of briefings
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        self.scheduler.submit_job(job.id, goal, lambda agent: self._net_request_job(agent, job.id, goal, contact, env))
+
+    def _net_reply_to(self, contact: dict, env: dict, body: dict, task_id: int) -> None:
+        from .network import seal
+        text, _ = seal(self.net()[0], contact["fp"], "reply", {"re": env["id"], **body})
+        self._net_send(contact, text, task_id)
+
+    def _net_request_job(self, agent, job_id: int, goal: str, contact: dict, env: dict) -> None:
+        from . import network as net
+        from .routines.contract import validate
+        from .routines.runner import render
+        from .routines.store import Routine
+        agent.toolbox.begin_task(job_id, goal)
+        agent.toolbox.tainted = True   # another program's request: untrusted
+        agent.on_event("task", {"id": job_id, "goal": goal})
+        name = contact["name"]
+        try:
+            if env["kind"] == "ask_file":
+                query = str(env["body"].get("query", ""))[:200]
+                path = net.find_file(self.policy, query)
+                if path is None:
+                    self._net_reply_to(contact, env, {"ok": False, "reason": "nothing to share"}, job_id)
+                    return self._photo_done(agent, job_id, "done", f"{name}'s Lantern asked for “{query}”: nothing "
+                                                                   "shareable matches, so I said so.")
+                ok, why = net.check(contact, "ask_file", net.file_resource(self.policy, path))
+                if not ok:
+                    self._net_reply_to(contact, env, {"ok": False, "reason": "not shared"}, job_id)
+                    return self._photo_done(agent, job_id, "done", f"Refused {name}'s request for “{query}”: {why}.")
+                text, redacted = net.shareable_text(self.policy, path)
+                digest = hashlib.sha256(text.encode()).hexdigest()
+                payload = {"to": contact["fp"], "file": str(path), "sha256": digest}
+                summary = (f"{name}'s Lantern asks for “{query}”. Send {path.name} ({len(text.encode()):,} bytes"
+                           + (f", {sum(redacted.values())} secret{'s' if sum(redacted.values()) != 1 else ''} "
+                              "scrubbed" if redacted else "") + ")?")
+                commit = agent.toolbox._approve("network_send", summary, payload)
+                if commit is None or agent.toolbox._commit(commit, payload):
+                    self._net_reply_to(contact, env, {"ok": False, "reason": "not shared"}, job_id)
+                    return self._photo_done(agent, job_id, "done", f"You said no; nothing went to {name}'s Lantern.")
+                self._net_reply_to(contact, env, {"ok": True, "name": path.name, "text": text, "sha256": digest},
+                                   job_id)
+                self.memory.log_step(job_id, "tool_result", {"name": "network_send", "result": {
+                    "to": name, "file": str(path), "bytes": len(text.encode()), "sha256": digest,
+                    "redacted": redacted}})
+                return self._photo_done(agent, job_id, "done", f"Sent {path.name} to {name}'s Lantern "
+                                                               f"({len(text.encode()):,} bytes, sha256 {digest[:12]}…).")
+            contract = env["body"].get("contract") or {}
+            problems = validate(contract) if isinstance(contract, dict) else ["not a contract"]
+            if problems:
+                self._net_reply_to(contact, env, {"ok": False, "reason": "not a valid routine"}, job_id)
+                return self._photo_done(agent, job_id, "done", f"{name}'s Lantern sent a routine that breaks a rule "
+                                                               f"({problems[0]}); not imported.")
+            ok, why = net.check(contact, "share_routine", {"name": contract["name"], "zone": "open"})
+            if not ok:
+                self._net_reply_to(contact, env, {"ok": False, "reason": "not accepted"}, job_id)
+                return self._photo_done(agent, job_id, "done", f"Refused the routine from {name}: {why}.")
+            payload = {"from": contact["fp"], "routine": contract["name"],
+                       "sha256": hashlib.sha256(json.dumps(contract, sort_keys=True).encode()).hexdigest()}
+            commit = agent.toolbox._approve("network_import", f"{name}'s Lantern shares the routine "
+                                                              f"'{contract.get('title') or contract['name']}' "
+                                                              f"({len(contract['steps'])} steps). Import it? It runs "
+                                                              "only after it checks out here.", payload)
+            if commit is None or agent.toolbox._commit(commit, payload):
+                self._net_reply_to(contact, env, {"ok": False, "reason": "not accepted"}, job_id)
+                return self._photo_done(agent, job_id, "done", f"You said no; the routine from {name} wasn't imported.")
+            contract = {**contract, "source": {"shared_by": name}}
+            code = render(contract)
+            verify = self.compiler.verify(Routine(contract["name"], 0, contract, code, {}))
+            r = self.compiler.store.save(contract, code, verify, how=f"shared by {name}", trusted=bool(verify["ok"]))
+            self._net_reply_to(contact, env, {"ok": True, "imported": r.name, "trusted": r.trusted}, job_id)
+            return self._photo_done(agent, job_id, "done", f"Imported '{r.name}' from {name}'s Lantern: "
+                                                           + ("it checked out, so it can run." if r.trusted else
+                                                              f"not trusted yet ({verify.get('note')})."))
+        except net.NetError as e:
+            return self._photo_done(agent, job_id, "failed", f"{name}'s request: {e}.")
+
+    def _net_reply(self, contact: dict, env: dict) -> None:
+        body = env["body"]
+        pending = self._net_pending.pop(str(body.get("re", "")), None)
+        if pending is None or pending["contact"] != contact["fp"]:
+            return   # not something this Lantern asked for
+        tid, name = pending["task_id"], contact["name"]
+        if pending["kind"] == "share_routine":
+            self.memory.log_step(tid, "note", f"{name}: " + ("imported" if body.get("ok") else "declined"))
+            return
+        if not body.get("ok"):
+            summary, status = f"{name}'s Lantern didn't share it ({body.get('reason', 'no reason given')}).", "done"
+        else:
+            text = str(body.get("text", ""))
+            if hashlib.sha256(text.encode()).hexdigest() != body.get("sha256"):
+                summary, status = f"The file from {name} arrived damaged; I didn't keep it.", "failed"
+            else:
+                target = self.scans_folder().parent / f"From {name}" / Path(str(body.get("name", "file.txt"))).name
+                self.policy.write_text(target, text)
+                summary, status = f"{name}'s Lantern sent {target.name}; saved in {target.parent}.", "done"
+                self.memory.log_step(tid, "tool_result", {"name": "network_receive", "result": {
+                    "from": name, "file": str(target), "bytes": len(text.encode()), "sha256": body.get("sha256")}})
+        self.memory.mark_quoted(tid)
+        self.memory.log_step(tid, "reply", summary)
+        self.memory.finish_task(tid, status, summary)
+        self.emit({"type": "done", "id": tid, "task_id": tid, "status": status, "summary": summary, "reply": summary,
+                   "cost_usd": 0.0, "steps": 1})
+
+    # ---- sleep: nightly check and repair (S11, sleep.py) ---------------------------------------------------
+    def sleep(self) -> int:
+        """Check every learned routine where nothing real can happen, repair what drifted, and send the digest."""
+        from . import sleep as sleep_mod
+        if self.compiler is None:
+            raise ValueError("Sleep needs Lantern's scheduler (lantern --serve)")
+        job = self.memory.start_task(sleep_mod.GOAL)
+        self.emit({"type": "queued", "task_id": job.id, "goal": sleep_mod.GOAL})
+        self.scheduler.submit_job(job.id, sleep_mod.GOAL, lambda agent: self._sleep_job(agent, job.id))
+        return job.id
+
+    def _sleep_job(self, agent, job_id: int) -> None:
+        from . import sleep as sleep_mod
+        from .reliability import explain
+        agent.toolbox.begin_task(job_id, sleep_mod.GOAL)
+        if hasattr(agent.client, "set_task"):
+            agent.client.set_task(job_id)
+        agent.on_event("task", {"id": job_id, "goal": sleep_mod.GOAL})
+        try:
+            report = sleep_mod.run(self.compiler, self.memory, client=agent.client, ladder=agent.ladder,
+                                   task_id=job_id)
+            status = "done"
+        except Exception as e:   # the digest still goes out, saying what stopped it
+            report, status = {"checked": [], "digest": f"🌙 Last night's check stopped: {explain(e)}"}, "failed"
+        text = report["digest"]
+        self.memory.log_step(job_id, "sleep", {k: v for k, v in report.items() if k != "digest"})
+        self.memory.log_step(job_id, "reply", text)
+        self.memory.finish_task(job_id, status, text)
+        self.emit({"type": "digest", "task_id": job_id, "text": text,
+                   "healed": sum(1 for x in report["checked"] if x.get("healed")),
+                   "broken": sum(1 for x in report["checked"] if x.get("ok") is False)})
+        agent.on_event("done", {"id": job_id, "status": status, "summary": text, "reply": text,
+                                "cost_usd": self.memory.task_usage(job_id)["cost_usd"], "steps": len(report["checked"])})
+
+    # ---- Lend your Lantern (S13, lend.py) ----------------------------------------------------------------
+    def lending(self):
+        from .lend import Grants
+        return Grants(Path(self.cfg.db_path).expanduser().parent / "network")   # Lantern's own folder
+
+    def lend(self, name: str, channel: str, address: str, text: str, *, save: bool = False, cedar: str = "",
+             hours: float = 0) -> dict:
+        """Preview what the owner's words become (a Cedar policy, a time limit, examples the engine decides), or
+        save the grant the owner has seen. Saving tells the borrower (event "grant")."""
+        from .lend import LendError, compile_grant, hours_of
+        name, address = " ".join(str(name).split())[:40], str(address).strip()
+        if not name or not address or not channel:
+            raise LendError("say who it's for, and their WhatsApp or Telegram")
+        if not save:
+            return compile_grant(self.client, name, text, memory=self.memory)
+        if not cedar.strip():
+            raise LendError("save the grant you previewed")
+        g = self.lending().add(name, channel, address, " ".join(str(text).split())[:1000], cedar, hours_of(hours))
+        self.emit({"type": "grant", "event": "lent", "id": g["id"], "name": g["name"], "channel": g["channel"],
+                   "address": g["address"], "expires_at": g["expires_at"], "text": g["text"]})
+        return g
+
+    def revoke(self, grant_id: str) -> dict:
+        """End a loan now: its running tasks stop and the borrower is told."""
+        g = self.lending().update(grant_id, status="revoked")
+        self._end_grant(g, "revoked")
+        return g
+
+    def expire_grants(self, now: float | None = None) -> list[str]:
+        ended = []
+        for g in self.lending().due(now):
+            g = self.lending().update(g["id"], status="expired")
+            self._end_grant(g, "expired")
+            ended.append(g["id"])
+        return ended
+
+    def _end_grant(self, g: dict, why: str) -> None:
+        for task_id in g.get("tasks") or []:
+            if self.scheduler is not None and self.scheduler.active(task_id):
+                self.scheduler.stop_task(task_id)
+        self.bus.cancel_where(lambda a: (a.payload or {}).get("grant") == g["id"], f"the loan {why}")
+        self.emit({"type": "grant", "event": why, "id": g["id"], "name": g["name"], "channel": g["channel"],
+                   "address": g["address"]})
+
+    def borrow(self, grant_id: str, text: str) -> int:
+        """A request from someone this Lantern is lent to: a task where every tool call is checked against the grant
+        and approved by the owner (lend.Guard)."""
+        from .lend import Guard, LendError, active
+        g = self.lending().get(grant_id)
+        if g is None or not active(g):
+            raise LendError("this Lantern isn't lent to you right now")
+        if self.compiler is None:
+            raise LendError("lending needs Lantern's scheduler (lantern --serve)")
+        text = " ".join(str(text).split())[:500]
+        if not text:
+            raise LendError("say what you'd like Lantern to do")
+        goal = f"{LENT_PREFIX}{g['name']}, who has borrowed this Lantern, asks: {text}"
+        job = self.memory.start_task(goal)
+        self.lending().add_task(grant_id, job.id)
+        self.memory.mark_quoted(job.id)   # the borrower's words stay out of the owner's later briefings
+        self.emit({"type": "queued", "task_id": job.id, "goal": goal})
+        guard = Guard(self.lending(), grant_id, self.policy)
+
+        def run(agent):
+            agent.toolbox.lent = guard
+            try:
+                agent.run(goal, task_id=job.id)
+            finally:
+                agent.toolbox.lent = None
+                self.memory.log_step(job.id, "lend", {"grant": grant_id, "calls": guard.calls})
+        self.scheduler.submit_job(job.id, goal, run)
+        return job.id
+
+    def routines(self) -> list[dict]:
+        return self.compiler.list() if self.compiler is not None else []
+
+    def forget_routine(self, name: str) -> bool:
+        if self.compiler is None:
+            return False
+        path = self.compiler.store.path(name)   # KeyError for a name that can't be a routine
+        if not path.exists():
+            return False
+        self.policy.erase_lantern_data(path, Path(self.cfg.db_path).expanduser().parent)   # overwritten, then gone
+        self.emit({"type": "routines", "changed": "forgot", "name": name})
+        return True
+
+    def _running(self, task_id: int) -> bool:
+        return task_id == self.current_task or (self.scheduler is not None and self.scheduler.active(task_id))
+
+    def _work(self) -> None:
+        while True:
+            task_id, goal, job = self._queue.get()
+            if task_id is None:
+                return
+            self.current_task = task_id
+            try:
+                job() if job else self.agent.run(goal, task_id=task_id)
+            except Exception:
+                pass  # the agent already marked the task failed and emitted "done"
+            finally:
+                self.current_task = None
+                self._queue.task_done()
+
+    def wait_idle(self, timeout: float = 10.0) -> bool:
+        """For tests and the demo script: wait until the queue is drained."""
+        end = time.time() + timeout
+        while time.time() < end:
+            if self._queue.unfinished_tasks == 0 and not (self.scheduler is not None and self.scheduler.busy()):
+                return True
+            time.sleep(0.01)
+        return False
+
+    def stop(self) -> dict:
+        """Kill switch: stop the running task and deny every pending approval."""
+        self.agent.cancel.set()
+        for session in list(self._teaching.values()):   # a recording in progress is thrown away, never learned
+            session["cancelled"] = True
+            session["stop"].set()
+        stopped = self.scheduler.stop_all() if self.scheduler is not None else []
+        denied = self.bus.cancel_all("stopped")
+        self.emit({"type": "stopped", "denied_approvals": denied})
+        first = self.current_task if self.current_task is not None else (stopped[0] if stopped else None)
+        return {"stopped": True, "denied_approvals": denied, "task_id": first, "task_ids": stopped}
+
+    def stop_task(self, task_id: int) -> dict:
+        """Stop one task ("stop #N" on the phone); the others carry on. One-at-a-time mode: only the running one."""
+        if self.scheduler is not None:
+            return {"stopped": self.scheduler.stop_one(task_id), "task_id": task_id}
+        if self.current_task == task_id:
+            return {**self.stop(), "task_id": task_id}
+        return {"stopped": False, "task_id": task_id}
+
+    def retry_task(self, task_id: int) -> int:
+        """Run a failed or cancelled task's goal again as a new task (an interrupted one is resumed)."""
+        t = self.memory.get_task(task_id)
+        if t.status in ("active",):
+            raise ValueError("that task is still running")
+        if t.goal.startswith(LENT_PREFIX):   # S13: only its borrower, under their grant, may ask for it again
+            raise ValueError("a borrowed task runs only when its borrower asks, under their grant")
+        if t.status == "interrupted":
+            return self.resume([task_id])[0]
+        if (of := self._undo_of(task_id)) is not None:   # an undo runs again as an undo, never through the model
+            return self.undo(of)
+        return self.submit(t.goal.split(RESUME_NOTE)[0])
+
+    def resume(self, task_ids: list[int] | None = None) -> list[int]:
+        """Queue interrupted tasks again, each told what its cut-short run already did."""
+        tasks = ([self.memory.get_task(i) for i in task_ids] if task_ids is not None
+                 else self.memory.tasks_with_status("interrupted"))
+        new_ids = []
+        for t in tasks:
+            if t.status != "interrupted":
+                continue
+            if t.goal.startswith(LENT_PREFIX):   # S13: never resumed outside its grant
+                self.memory.finish_task(t.id, "cancelled", "a borrowed task isn't resumed; they can ask again")
+                continue
+            of = self._undo_of(t.id)
+            try:
+                new_id = self.undo(of) if of is not None else self.submit(resume_goal(self.memory, t))
+            except (UndoError, KeyError) as e:   # e.g. the cut-short undo had already put everything back
+                self.memory.finish_task(t.id, "failed", f"couldn't resume: {e}")
+                continue
+            self.memory.finish_task(t.id, "resumed", f"resumed as task #{new_id}")
+            self.emit({"type": "resumed", "from": t.id, "task_id": new_id})
+            new_ids.append(new_id)
+        self.interrupted = [t for t in self.interrupted if t.id not in {x.id for x in tasks}]
+        return new_ids
+
+    # ---- undo (no model: replays the task's own verified moves backwards; one approval) -------------
+    def undo(self, task_id: int) -> int:
+        """Put back what task #task_id moved, as a new task. Raises KeyError, or UndoError with the reason."""
+        with self._undo_lock:
+            if self._running(task_id) or task_id in self._undoing:
+                raise UndoError("that task is still running" if self._running(task_id) else
+                                f"an undo of task #{task_id} is already queued")
+            plan = undo_plan(self.memory, task_id)
+            self._undoing.add(task_id)
+        goal = f"Undo task #{task_id}: put back {len(plan)} file{'s' if len(plan) != 1 else ''}"
+        task = self.memory.start_task(goal)
+        self.memory.log_step(task.id, "plan", {"goal": goal, "undo_of": task_id})
+        self._queue.put((task.id, goal, lambda: self._run_undo(task.id, goal, task_id)))
+        self.emit({"type": "queued", "task_id": task.id, "goal": goal})
+        return task.id
+
+    def undo_last(self) -> int:
+        """UNDO from the phone: the most recent finished task that moved files and isn't undone yet."""
+        busy = self.current_task
+        if busy is None and self.scheduler is not None and self.scheduler.busy():
+            busy = (self.scheduler.snapshot()["running"] or [min(self.scheduler.runs, default=0)])[0]
+        if busy is not None:   # it may be the one about to move things: don't reach past it
+            raise UndoError(f"task #{busy} is still running; undo once it has finished (or say STOP)")
+        for t in self.memory.recent_tasks(20):   # undo tasks are skipped, so UNDO again goes one task further back
+            if t.status not in ("active", "interrupted") and self._undo_of(t.id) is None:
+                try:
+                    undo_plan(self.memory, t.id)
+                except (UndoError, KeyError):
+                    continue
+                return self.undo(t.id)
+        raise UndoError("none of your recent tasks moved files")
+
+    def _undo_of(self, task_id: int) -> int | None:
+        for step in self.memory.steps(task_id)[:1]:
+            if step["kind"] == "plan":
+                try:
+                    of = json.loads(step["content"]).get("undo_of")
+                except (TypeError, ValueError, AttributeError):
+                    return None
+                return of if isinstance(of, int) else None
+        return None
+
+    def _run_undo(self, task_id: int, goal: str, of_id: int) -> None:
+        try:
+            self._undo_job(task_id, goal, of_id)
+        finally:   # only now: until the "undone" note is written, a second tap must still be refused
+            self._undoing.discard(of_id)
+
+    def _undo_job(self, task_id: int, goal: str, of_id: int) -> None:
+        self.agent.cancel.clear()
+        self.toolbox.begin_task(task_id, goal)
+        self._agent_event("task", {"id": task_id, "goal": goal})
+        args = {"of_task": of_id}
+        try:
+            result = self.toolbox.undo_moves(undo_plan(self.memory, of_id), of_id)   # fresh: files may have moved since
+        except (UndoError, ToolError, KeyError) as e:
+            result = {"error": str(e).strip("'")}
+        except Exception as e:   # never leave the task hanging as "active"
+            result = {"error": f"{type(e).__name__}: {e}"}
+        self.memory.log_step(task_id, "tool_call", {"name": "undo_moves", "args": args})
+        self.memory.log_step(task_id, "tool_result", {"name": "undo_moves", "result": result})
+        self._agent_event("tool", {"name": "undo_moves", "args": args, "result": result, "badge": "on this computer"})
+        moved, back = result.get("moved", 0), result.get("already_back", 0)
+        if result.get("verified"):   # all home; a partial undo stays undoable and the next try finishes it
+            self.memory.log_step(of_id, "note", f"{UNDONE}{task_id}")
+            self.emit({"type": "undone", "from": of_id, "task_id": task_id, "moved": moved})
+        if result.get("error"):
+            status, summary = "failed", f"Couldn't undo task #{of_id}: {result['error']}"
+        elif result.get("reason") == "user declined":
+            status, summary = "cancelled", f"Undo of task #{of_id} declined; nothing moved."
+        elif result.get("verified"):
+            n = moved + back
+            status, summary = "done", f"Put {n} file{'s' if n != 1 else ''} back where they were. Each checked on disk."
+        else:
+            first = (result.get("failed") or [{}])[0]
+            status = "failed"
+            summary = (f"Put {moved} of {result.get('of', '?')} back, then stopped: "
+                       f"{first.get('error') or result.get('reason') or 'see the steps'}")
+        self.memory.log_step(task_id, "reply", summary)
+        self.memory.finish_task(task_id, status, summary)
+        self._agent_event("done", {"id": task_id, "status": status, "summary": summary, "reply": summary,
+                                   "cost_usd": 0.0, "steps": 1})
+
+    def task_view(self, task_id: int) -> dict:
+        t = self.memory.get_task(task_id)
+        view = {"id": t.id, "goal": t.goal, "status": t.status, "summary": t.summary,
+                "created_at": t.created_at, "updated_at": t.updated_at,
+                "usage": self.memory.task_usage(t.id), "undoable": undoable(self.memory, t.id)}
+        if self.scheduler is not None and (run := self.scheduler.runs.get(t.id)) is not None:
+            view["phase"], view["reason"] = run.phase, run.reason   # e.g. parked / waiting_user
+        return view
+
+    # ---- agent packs (shareable agents; T3a) --------------------------------------
+    def pack_install(self, data: dict, *, replace: bool = False) -> dict:
+        """Install a pack after the user approves the exact file (bound to its SHA-256).
+
+        Trust on first use: a signed pack from a new key asks "Trust it?" and
+        approving records the key; the same author name on a different key warns."""
+        import hashlib
+        from .agentpacks import canonical_bytes, validate
+        data = dict(data)
+        source = data.pop("source", None)   # local-only: where it came from, never in the shared file
+        if source != "imported skill":
+            source = None
+        skipped = data.pop("skipped", None)   # local-only too: scripts the import listed, never copied
+        if not (isinstance(skipped, list) and all(isinstance(s, str) for s in skipped)):
+            skipped = []
+        pack = validate(data)   # PackError if invalid or tampered: no approval asked for a bad pack
+        raw = canonical_bytes(pack.as_dict())
+        payload = {"name": pack.name, "sha256": hashlib.sha256(raw).hexdigest()}
+        summary = (f"Install agent '{pack.title}' by {pack.author} (v{pack.version}). "
+                   f"It may use: {', '.join(pack.tools)}. "
+                   f"Full instructions: {pack.instructions}")
+        if source == "imported skill":
+            summary += " Imported from a community skill (SKILL.md)."
+        if skipped:
+            summary += f" Not imported (packs never run code): {', '.join(skipped)}."
+        summary += self._signature_line(pack)
+        commit = self.toolbox.gate.ask("install_agent", summary, payload, tainted=False)
+        if commit is None:
+            return {"installed": False, "reason": "user declined", "name": pack.name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"installed": False, "reason": str(e), "name": pack.name}
+        try:
+            stored = self.packs.install(pack.as_dict(), replace=replace, source=source)
+        except PackError as e:
+            return {"installed": False, "reason": str(e), "name": pack.name}
+        if pack.signature is not None:   # approving a new key records it; declining records nothing
+            fp = packsign.fingerprint(pack.signature["public_key"])
+            packsign.record_trust(self.packs.dir, fp, pack.author)
+        result: dict = {"installed": True, "verified": stored.as_dict() == pack.as_dict(), "name": pack.name}
+        if pack.needs:
+            result["needed_servers"] = self.ensure_pack_servers(pack)
+        return result
+
+    # ---- packs that need MCP servers (T8) -----------------------------------------
+    def ensure_pack_servers(self, pack: Pack) -> dict:
+        """Add each MCP server the pack declares in `needs` that isn't in
+        mcp.json yet. Each missing server asks first ("This agent needs the
+        GitHub tool server: Add it?"); declining adds nothing. Reuses the T6
+        flow: the repo is read for its pinned commit and license, the red card
+        shows both plus the exact launch command, and the entry is stored with
+        an empty `read_only` (every tool call still needs approval)."""
+        from . import repolearn
+        added: list[str] = []
+        declined: list[str] = []
+        failed: dict[str, str] = {}
+        if not pack.needs:
+            return {"added": added, "declined": declined, "failed": failed}
+        path = Path(self.toolbox.mcp_config).expanduser() if self.toolbox.mcp_config else None
+        servers: dict = {}
+        if path is not None and path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and isinstance(data.get("servers"), dict):
+                    servers = data["servers"]
+            except ValueError:
+                pass
+        for need in pack.needs:
+            if need.mcp in servers:
+                continue
+            if need.mcp != repolearn.GITHUB_SERVER or need.repo != repolearn.GITHUB_MCP_REPO:
+                failed[need.mcp] = (f"Lantern doesn't know how to add the '{need.mcp}' server "
+                                    f"({need.repo}) yet; add it to mcp.json by hand")
+                continue
+            self._add_github_server(pack, need, servers, added, declined, failed)
+        return {"added": added, "declined": declined, "failed": failed}
+
+    def _add_github_server(self, pack: Pack, need: Any, servers: dict,
+                           added: list[str], declined: list[str], failed: dict[str, str]) -> None:
+        """One missing GitHub tool server: read the repo (pinned SHA, license),
+        ask on the red card, and write the mcp.json entry on yes."""
+        from . import repolearn
+        if not self.toolbox.mcp_config:
+            failed[need.mcp] = "mcp.json isn't set up on this computer"
+            return
+        owner, repo_name = need.repo.split("/", 1)
+        try:
+            repo = repolearn.fetch_repo(owner, repo_name, None, get=self.toolbox.github_get)
+        except repolearn.RepoError as e:
+            failed[need.mcp] = str(e)   # no approval asked for a repo we can't read
+            return
+        spec = repolearn.github_server_spec(repo.sha)
+        if repo.sha not in json.dumps(spec):
+            failed[need.mcp] = "the install plan doesn't pin the commit"
+            return
+        card = repolearn.github_install_card(repo, spec) + f"\nFor: {need.why}"
+        payload = {"pack": pack.name, "server": need.mcp, "repo": need.repo,
+                   "sha": repo.sha, "spec": spec}
+        commit = self.toolbox.gate.ask("add_needed_server", card, payload, tainted=False)
+        if commit is None:
+            declined.append(need.mcp)
+            return
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            failed[need.mcp] = str(e)
+            return
+        try:
+            repolearn.add_learned_server(self.toolbox.mcp_config, need.mcp, spec)
+        except (OSError, ValueError) as e:
+            failed[need.mcp] = f"couldn't write mcp.json ({e})"
+            return
+        try:   # verify: read it back (the running hub picks it up on restart)
+            back = json.loads(Path(self.toolbox.mcp_config).expanduser().read_text(encoding="utf-8"))
+            stored = back.get("servers", {}).get(need.mcp, {})
+        except (OSError, ValueError):
+            stored = {}
+        if stored.get("source", {}).get("sha") == repo.sha and stored.get("read_only") == []:
+            servers[need.mcp] = spec
+            added.append(need.mcp)
+        else:
+            failed[need.mcp] = "the server didn't store correctly"
+
+    def _signature_line(self, pack) -> str:
+        """What the install card says about who sealed the pack (packsign; T3e)."""
+        if pack.signature is None:
+            return " Unsigned: anyone could have changed it."
+        fp = packsign.fingerprint(pack.signature["public_key"])
+        trusted = packsign.load_trusted(self.packs.dir)
+        if fp in trusted:
+            return f" ✓ Signed by {pack.author} · key {fp}."
+        line = f" New author key {fp} ({pack.author}). Trust it?"
+        if any(name == pack.author for name in trusted.values()):
+            line += f" ⚠️ {pack.author}'s packs were signed with a different key before."
+        return line
+
+    def pack_author_is_you(self, author: str) -> bool:
+        """Is this pack's author you: LANTERN_AUTHOR, or the profile's full name."""
+        from .forms import Vault
+        yours = [os.environ.get("LANTERN_AUTHOR", "")]
+        try:
+            profile = Vault(self.cfg.profile_path).load().get("profile", {})
+            yours += [profile.get("full name", ""), profile.get("name", "")]
+        except (OSError, ValueError):
+            pass
+        mine = {str(v).strip().casefold() for v in yours if str(v).strip()}
+        return bool(mine) and str(author or "").strip().casefold() in mine
+
+    def pack_sign(self, name: str) -> dict:
+        """Sign an installed pack with this laptop's key, after an approval.
+        Replaces any previous signature; the disabled flag and face stay as they are."""
+        import hashlib
+        from .agentpacks import canonical_bytes
+        try:
+            current = self.packs.get(name)   # re-validated: a changed file is refused, not signed
+        except KeyError:
+            raise KeyError(name) from None
+        unsigned = {k: v for k, v in current.as_dict().items() if k != "signature"}
+        home = Path(self.cfg.db_path).expanduser().parent
+        private_key, public_b64 = packsign.ensure_key(home)
+        fp = packsign.fingerprint(public_b64)
+        payload = {"name": name, "sha256": hashlib.sha256(canonical_bytes(unsigned)).hexdigest(),
+                   "fingerprint": fp}
+        summary = (f"Sign agent '{current.title}' by {current.author} with your key {fp}? "
+                   "Anyone you share it with will see it is from you, and whether it changed.")
+        commit = self.toolbox.gate.ask("sign_agent", summary, payload, tainted=False)
+        if commit is None:
+            return {"signed": False, "reason": "user declined", "name": name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"signed": False, "reason": str(e), "name": name}
+        signed = packsign.sign(unsigned, private_key)
+        try:
+            stored = self.packs.store_signed(name, signed)
+        except PackError as e:
+            return {"signed": False, "reason": str(e), "name": name}
+        ok = stored.as_dict() == signed   # verify: read it back
+        return {"signed": True, "verified": ok, "name": name, "fingerprint": fp}
+
+    # ---- avatar studio (Lantern's face, designed in words; T4a) ------------------------
+    def design_avatar(self, brief: str, style: str) -> dict:
+        """Draw one canonical preview image from the brief (about $0.01). No approval:
+        the preview is cheap and the accept step carries the approval for the sheet."""
+        clean = studio_mod.validate_brief(brief)   # StudioError before any model call
+        key = studio_mod.validate_style(style)
+        design_id = studio_mod.new_id()
+        folder = self.studio.design_dir(design_id)
+        sheet = avatar_mod.generate(self.client, folder, brief=studio_mod.design_brief(clean, key), only=["idle"],
+                                    on_cost=lambda usd: self.memory.log_usage(None, models.IMAGE, cost_usd=usd))
+        preview = (folder / "idle.webp").read_bytes()
+        self.studio.save_meta(design_id, studio_mod.new_meta(design_id, clean, key,
+                                                             sheet.canonical_response, sheet.cost_usd))
+        return {"id": design_id, "brief": clean, "style": key, "cost_usd": sheet.cost_usd,
+                "preview": "data:image/webp;base64," + base64.b64encode(preview).decode()}
+
+    def accept_avatar(self, design_id: str) -> dict:
+        """Render the remaining expressions anchored on the preview (after approval),
+        write the sheet to ~/.lantern/avatar/<id>/ and set it active. A finished
+        design just becomes active again: no model call, no approval."""
+        try:
+            meta = self.studio.get_meta(design_id)
+        except studio_mod.StudioError:
+            raise KeyError(design_id) from None
+        folder = self.studio.design_dir(design_id)
+        rest = [e for e in avatar_mod.EXPRESSIONS if not (folder / f"{e}.webp").exists()
+                and not (folder / f"{e}.png").exists()]
+        if not rest:   # the gallery switch-back: already on disk, nothing to draw
+            self.studio.set_active(design_id)
+            self.emit({"type": "avatar", "active": design_id})
+            return {"accepted": True, "verified": True, "id": design_id, "cost_usd": 0.0, "model_calls": 0}
+        payload = {"id": design_id, "images": len(rest), "cost_usd": round(models.image_cost(len(rest)), 4)}
+        summary = studio_mod.finish_summary(meta.get("style", "?"), len(rest))
+        commit = self.toolbox.gate.ask("finish_avatar", summary, payload)
+        if commit is None:
+            return {"accepted": False, "reason": "user declined", "id": design_id}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"accepted": False, "reason": str(e), "id": design_id}
+        # The preview's manifest holds the canonical turn; generate() chains the rest on it.
+        sheet = avatar_mod.generate(self.client, folder, only=rest,
+                                    on_cost=lambda usd: self.memory.log_usage(None, models.IMAGE, cost_usd=usd))
+        self.studio.save_meta(design_id, {**meta, "status": "complete",
+                                          "cost_usd": round(meta.get("cost_usd", 0.0) + sheet.cost_usd, 4)})
+        self.studio.set_active(design_id)
+        self.emit({"type": "avatar", "active": design_id})
+        verified = all((folder / f"{e}.webp").exists() or (folder / f"{e}.png").exists()
+                       for e in avatar_mod.EXPRESSIONS)
+        return {"accepted": True, "verified": verified, "id": design_id,
+                "cost_usd": sheet.cost_usd, "model_calls": len(rest)}
+
+    def make_agent_face(self, name: str, *, emoji: str | None = None, generate: bool = False) -> dict:
+        """Give an agent a face for the avatar window: a short emoji (free, kept at
+        once) or one drawn Muse Image icon (about $0.01, behind an approval).
+        The icon is a separate file; the shared pack file stays data-only."""
+        from .agentpacks import PackError as _PackError
+        from .agentpacks import face_prompt, validate_emoji
+        try:
+            pack = self.packs.get(name)
+        except KeyError:
+            raise KeyError(name) from None
+        if emoji is not None and generate:
+            raise ValueError("give an emoji or ask to draw, not both")
+        if emoji is not None:
+            try:
+                face = self.packs.set_face_emoji(name, validate_emoji(emoji))
+            except _PackError as e:
+                raise ValueError(str(e)) from None
+            return {"made": True, "face": face, "cost_usd": 0.0, "model_calls": 0}
+        if not generate:
+            raise ValueError("say what the face is: an emoji, or generate=true to draw one")
+        payload = {"name": name, "images": 1, "cost_usd": round(models.image_cost(1), 4)}
+        summary = (f"Draw a face for agent '{pack.title}' (one Muse Image icon, "
+                   f"about ${models.image_cost(1):.2f}).")
+        commit = self.toolbox.gate.ask("agent_face", summary, payload)
+        if commit is None:
+            return {"made": False, "reason": "user declined", "name": name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"made": False, "reason": str(e), "name": name}
+        image, _ = avatar_mod.render_single(self.client, face_prompt(pack))
+        face = self.packs.save_face_icon(name, image)
+        cost = models.image_cost(1)
+        self.memory.log_usage(None, models.IMAGE, cost_usd=cost)
+        return {"made": True, "verified": True, "face": face, "cost_usd": cost, "model_calls": 1}
+
+    def pack_import_skill(self, body: dict) -> dict:
+        """Preview a SKILL.md import: parse it into a validated pack plus the
+        scripts that were listed but never copied. Saving it goes through the
+        normal install (with its approval), where the panel's tool checkboxes
+        land. Imports read only through the privacy policy. No approval: a
+        preview spends nothing, and an imported pack runs tainted like any pack."""
+        from .skillimport import SkillImportError, import_path, import_text
+        if not isinstance(body, dict):
+            raise SkillImportError("send a SKILL.md path or its text")
+        try:
+            if body.get("path"):
+                return import_path(self.policy, body["path"])
+            if body.get("text"):
+                return import_text(body["text"], filename=body.get("filename") or "SKILL.md")
+        except SkillImportError:
+            raise
+        except (ValueError, OSError) as e:
+            raise SkillImportError(str(e)) from None
+        raise SkillImportError("send a SKILL.md path or its text")
+
+    def pack_a2a_card(self, name: str) -> dict:
+        """This installed pack as an A2A Agent Card (no endpoint URL: Lantern
+        doesn't serve agents to the network). Raises KeyError if unknown."""
+        from .a2acard import card_for_pack
+        try:
+            pack = self.packs.get(name)   # re-validated: a changed file is refused, not exported
+        except KeyError:
+            raise KeyError(name) from None
+        return card_for_pack(pack)
+
+    def pack_draft(self, task_id: int) -> dict:
+        """Draft a pack from a finished task (Muse Spark, structured output).
+        The draft is validated; saving it goes through install (with approval)."""
+        from .agentpacks import PackError as _PackError
+        try:
+            data, _ = draft_pack(self.client, self.memory, task_id)
+        except KeyError:
+            raise ValueError(f"no task #{task_id}") from None
+        except _PackError as e:
+            raise ValueError(str(e)) from None
+        return data
+
+    # ---- agent surfaces (where a pack may start: laptop, phone, or both; T3d) --
+    def pack_surface(self, name: str) -> str:
+        """This pack's Runs-on setting (kept in the store, never in the shared file)."""
+        try:
+            return self.packs.surface(name)
+        except KeyError:
+            raise KeyError(name) from None
+
+    def set_pack_surface(self, name: str, surface: str) -> dict:
+        """Keep a new Runs-on setting. No approval: it spends nothing. Raises
+        KeyError if unknown, ValueError if the surface is not one of the three."""
+        from .agentpacks import PackError as _PackError
+        from .agentpacks import validate_surface
+        try:
+            validate_surface(surface)
+        except _PackError as e:
+            raise ValueError(str(e)) from None
+        try:
+            saved = self.packs.set_surface(name, surface)
+        except KeyError:
+            raise KeyError(name) from None
+        self.emit({"type": "agents", "event": "surface", "name": name, "surface": saved})
+        return {"name": name, "surface": saved}
+
+    # ---- loop agents (packs on a schedule; T3c) -----------------------------------
+    def scheduled_budget(self) -> float | None:
+        """One scheduled run's own task budget: LANTERN_TASK_BUDGET_USD, default $0.10."""
+        return scheduled_task_budget(dict(os.environ))
+
+    def loops(self) -> list[dict]:
+        """Loop status for every installed pack that suggests a schedule."""
+        return [self._loop_view(e["name"], e) for e in self.packs.list() if e.get("schedule") is not None]
+
+    def loop_status(self, name: str) -> dict:
+        """Loop status for one pack (scheduled or not). Raises KeyError if unknown."""
+        pack = self.packs.get(name)   # KeyError if unknown; PackError if tampered
+        return self._loop_view(name, {**pack.as_dict(), "loop": self.packs.loop_state(name)})
+
+    @staticmethod
+    def _loop_view(name: str, entry: dict) -> dict:
+        sched = entry.get("schedule")
+        words = None
+        if isinstance(sched, Schedule):
+            words, sched = schedule_description(sched), sched.as_dict()
+        elif isinstance(sched, dict):
+            try:
+                words = schedule_description(Schedule(**{k: sched.get(k)
+                                                         for k in ("every", "at", "hours", "inputs")}))
+            except (TypeError, KeyError):
+                words = None
+        loop = dict(entry.get("loop") or {})
+        return {"name": name, "title": entry.get("title", name), "scheduled": sched is not None,
+                "schedule": sched, "description": words,
+                "enabled": bool(loop.get("enabled", False)), "next_run": loop.get("next_run"),
+                "last_task": loop.get("last_task"), "last_status": loop.get("last_status"),
+                "failures": loop.get("failures", 0), "running": loop.get("running")}
+
+    def loop_resume(self, name: str) -> dict:
+        """Turn a loop on, after an approval card showing how often it runs and the
+        per-run budget. A run still needs its own approvals; unanswered cards count
+        as declined. The loop starts from now, never by catching up."""
+        try:
+            pack = self.packs.get(name)   # re-validated: a changed file is refused, not looped
+        except KeyError:
+            raise KeyError(name) from None
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        if pack.schedule is None:
+            raise ValueError(f"agent {name!r} has no schedule")
+        if pack.disabled:
+            raise ValueError(f"agent {name!r} is disabled")
+        budget = self.scheduled_budget()
+        per_run = usd(budget) if budget is not None else "no per-run cap"
+        summary = (f"Run agent '{pack.title}' {schedule_description(pack.schedule)} (about {per_run} per run). "
+                   f"Each run is an ordinary task with its own timeline and receipt; every change still needs "
+                   f"approval, unanswered cards count as declined, and it pauses itself after "
+                   f"{MAX_LOOP_FAILURES} failed runs in a row.")
+        payload = {"name": name, "schedule": pack.schedule.as_dict(), "budget_usd": budget}
+        commit = self.toolbox.gate.ask("enable_loop", summary, payload, tainted=False)
+        if commit is None:
+            return {"enabled": False, "reason": "user declined", "name": name}
+        try:
+            commit(payload)
+        except ApprovalError as e:
+            return {"enabled": False, "reason": str(e), "name": name}
+        loop = self.packs.loop_state(name)
+        loop.update(enabled=True, failures=0, next_run=schedule_next(pack.schedule, time.time()))
+        saved = self.packs.save_loop(name, loop)
+        self.emit({"type": "loop", "event": "resumed", "name": name, "next_run": saved["next_run"]})
+        return {"enabled": True, "name": name, "next_run": saved["next_run"], "budget_usd": budget}
+
+    def loop_pause(self, name: str) -> dict:
+        """Turn a loop off. A run already going keeps going (STOP stops it).
+        No approval: pausing spends nothing."""
+        try:
+            loop = self.packs.loop_state(name)
+        except KeyError:
+            raise KeyError(name) from None
+        loop["enabled"] = False
+        saved = self.packs.save_loop(name, loop)
+        self.emit({"type": "loop", "event": "paused", "name": name, "failures": saved["failures"],
+                   "text": f"Paused the '{name}' loop."})
+        return {"name": name, "enabled": False}
+
+    def loop_run_now(self, name: str) -> int:
+        """Start this loop's scheduled run right away, as an ordinary task."""
+        try:
+            pack = self.packs.get(name)
+        except KeyError:
+            raise KeyError(name) from None
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        if pack.schedule is None:
+            raise ValueError(f"agent {name!r} has no schedule")
+        if pack.disabled:
+            raise ValueError(f"agent {name!r} is disabled")
+        try:
+            rendered = pack.render_goal(pack.schedule.inputs)
+        except PackError as e:
+            raise ValueError(str(e)) from None
+        return self._queue_pack_task(pack, rendered)
+
+    def check_loops(self, now: float | None = None) -> list[dict]:
+        """Settle finished loop runs and fire every due loop (each run is an ordinary
+        pack task: allowlisted, tainted, budgeted). Called from the reminder loop;
+        tests pass a fake clock. One bad pack never stops the other loops."""
+        now = time.time() if now is None else now
+        fired = []
+        with self._loops_lock:
+            for entry in self.packs.list():
+                try:
+                    self._check_loop(entry, now, fired)
+                except Exception:
+                    pass
+        return fired
+
+    def _check_loop(self, entry: dict, now: float, fired: list) -> None:
+        name = entry["name"]
+        try:
+            pack = self.packs.get(name)   # re-validated: an edited file refuses instead of running
+        except (KeyError, PackError, ValueError, OSError):
+            return
+        loop = dict(entry.get("loop") or self.packs.loop_state(name))
+        if loop.get("running") is not None and not self._loop_running(loop["running"]):
+            loop = self._settle_loop(pack, loop)
+            if loop is None:   # just paused itself after repeated failures: stay quiet this tick
+                return
+        if not loop["enabled"] or pack.disabled or pack.schedule is None:
+            return
+        if loop["running"] is not None:
+            return   # the previous run is still going: never overlap
+        if loop["next_run"] is None or now < loop["next_run"]:
+            return
+        try:
+            rendered = pack.render_goal(pack.schedule.inputs)
+        except PackError:
+            return
+        try:
+            task_id = self._queue_pack_task(pack, rendered, task_budget=self.scheduled_budget())
+        except Exception:
+            loop["next_run"] = schedule_next(pack.schedule, now, last=now)   # try again next time, not every tick
+            self.packs.save_loop(name, loop)
+            return
+        loop["running"] = task_id
+        loop["next_run"] = schedule_next(pack.schedule, now, last=now)
+        self.packs.save_loop(name, loop)
+        event = {"type": "loop", "event": "fired", "name": name, "task_id": task_id}
+        self.emit(event)
+        fired.append(event)
+
+    def _loop_running(self, task_id: int) -> bool:
+        try:
+            return self.memory.get_task(task_id).status == "active"
+        except KeyError:
+            return False   # forgotten while running: treat it as settled
+
+    def _settle_loop(self, pack, loop: dict) -> dict | None:
+        try:
+            status = self.memory.get_task(loop["running"]).status
+        except KeyError:
+            status = "failed"
+        self.budget.clear_task_budget(loop["running"])
+        loop["last_task"], loop["last_status"], loop["running"] = loop["running"], status, None
+        loop["failures"] = 0 if status == "done" else loop["failures"] + 1
+        if loop["failures"] >= MAX_LOOP_FAILURES and loop["enabled"]:
+            loop["enabled"] = False
+            self.packs.save_loop(pack.name, loop)
+            self.emit({"type": "loop", "event": "paused", "name": pack.name, "failures": loop["failures"],
+                       "text": (f"Paused agent '{pack.title}': {loop['failures']} failed runs in a row. "
+                                "Resume it in the Agents tab.")})
+            return None
+        self.packs.save_loop(pack.name, loop)
+        return loop
+
+    # ---- forgetting (real deletes: secure_delete + VACUUM; Lantern's own files overwritten) -------
+    def forget_task(self, task_id: int) -> dict:
+        if self._running(task_id):
+            raise ValueError("that task is still running; stop it first")
+        self.memory.get_task(task_id)  # KeyError if unknown
+        counts = self.memory.forget_task(task_id)
+        counts["audit"] = self.audit.forget_task(task_id)
+        self.emit({"type": "forgot", "task_id": task_id})
+        return {"forgot_task": task_id, **counts}
+
+    def forget_everything(self) -> dict:
+        """Memory, audit log, voice notes, screenshots, outbox, Lantern's browser profile and form profile."""
+        self.stop()
+        self.wait_idle(15)
+        result = {"memory": self.memory.forget_everything(), "audit": self.audit.forget_all(), "files": {}, "skipped": []}
+        home = Path(self.cfg.db_path).expanduser().parent
+        routines = Path(self.cfg.db_path).expanduser().parent / "routines"   # contracts can hold typed values
+        for target in (self.cfg.media_dir, self.cfg.browser_profile_dir, self.cfg.profile_path, routines):
+            try:
+                result["files"][str(target)] = self.policy.erase_lantern_data(target, home)
+            except (PolicyError, OSError) as e:
+                result["skipped"].append(f"{target}: {e}")
+        self.emit({"type": "forgot", "everything": True})
+        return result
+
+    # ---- reminders ---------------------------------------------------------------
+    def _remind_loop(self) -> None:
+        from . import sleep as sleep_mod
+        while not self._closing.wait(self.reminder_tick):
+            try:
+                self.check_reminders()
+            except Exception:  # a bad row must never stop the timer
+                pass
+            try:   # S13: loans end on time, and their running tasks stop
+                self.expire_grants()
+            except Exception:
+                pass
+            try:   # S11: the nightly check, once a night (LANTERN_SLEEP_AT; `lantern --serve` sets 03:30)
+                if self.compiler is not None and sleep_mod.due(self.memory):
+                    self.sleep()
+            except Exception:
+                pass
+
+    def check_reminders(self, now: float | None = None) -> list[dict]:
+        """Deliver every due reminder (late ones say so); repeating ones move to their next time.
+        Loop agents ride the same timer (no second thread): due loops fire here too."""
+        from .reminders import LATE_AFTER, next_due
+        now = time.time() if now is None else now
+        fired = []
+        for r in self.memory.due_reminders(now):
+            nxt = next_due(r.due_at, r.repeat, now)
+            self.memory.reminder_fired(r.id, now, nxt)
+            event = {"type": "reminder", "id": r.id, "text": r.text, "repeat": r.repeat,
+                     "late": now - r.due_at > LATE_AFTER, "next_due": nxt}
+            self.emit(event)
+            fired.append(event)
+        self.check_loops(now)
+        return fired
+
+    def cancel_reminder(self, reminder_id: int) -> bool:
+        ok = self.memory.cancel_reminder(reminder_id)
+        if ok:
+            self.emit({"type": "reminders", "changed": "cancelled", "id": reminder_id})
+        return ok
+
+    def shutdown(self) -> None:
+        self._closing.set()
+        if self.scheduler is not None:   # scheduled tasks keep their checkpoints and continue on the next start
+            self.scheduler.shutdown()
+            self.agent.cancel.set()
+        else:
+            self.stop()
+        try:
+            self.stop_localsend()
+        except Exception:
+            pass
+        self.mcp.close()
+        self._queue.put((None, None, None))
+
+    # ---- LocalSend receiver (T5): files and links from phones over home Wi-Fi ----
+    def start_localsend(self) -> dict:
+        """Start the LocalSend receiver. Raises RuntimeError if the inbox is
+        not in a writable zone (refuses to start instead of saving elsewhere)."""
+        from . import localsend as localsend_mod
+        if self.localsend is not None and self.localsend.listening:
+            return self.localsend.status()
+        receiver = localsend_mod.Receiver(
+            self.policy, BusGate(self.bus), audit=self.audit,
+            on_link=lambda url: self.submit(f"[localsend] open this link on my laptop: {url}"),
+            emit=self.emit, home=Path(self.cfg.db_path).expanduser().parent,
+            inbox=localsend_mod.inbox_in(dict(os.environ)),
+            pin=localsend_mod.pin_in(dict(os.environ)))
+        server = localsend_mod.Server(receiver, port=localsend_mod.port_in(dict(os.environ)))
+        server.start()  # check_ready raises before anything listens
+        self.localsend = server
+        self.emit({"type": "localsend", "listening": True, "port": server.port})
+        return server.status()
+
+    def stop_localsend(self) -> dict:
+        if self.localsend is not None:
+            try:
+                self.localsend.stop()
+            finally:
+                self.localsend = None
+            self.emit({"type": "localsend", "listening": False})
+        return {"listening": False}
+
+
+def _short(result: Any, limit: int = 600) -> Any:
+    """Trim big tool results for the event stream (full results stay in memory)."""
+    if isinstance(result, dict):
+        out = {}
+        for k, v in result.items():
+            if isinstance(v, str) and len(v) > limit:
+                v = v[:limit] + "…"
+            out[k] = v
+        return out
+    return result

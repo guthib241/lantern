@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
+<meta name="color-scheme" content="light dark">
+<title>Lantern</title>
+<link rel="stylesheet" href="orb.css">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <!-- Lantern's own line icons (24x24, stroke). Referenced with <use href="#i-…">. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-today" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M8 12.4l2.8 2.8L16.4 9.4"/></symbol>
+      <symbol id="i-privacy" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.6"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/><path d="M12 14.5v2.2"/></symbol>
+      <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.8" width="10" height="18.4" rx="2.8"/><path d="M10.6 18.2h2.8"/></symbol>
+      <symbol id="i-costs" viewBox="0 0 24 24"><path d="M5 20v-6M10 20V6.5M15 20v-9M20 20v-11.5"/></symbol>
+      <symbol id="i-widgets" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
+      <symbol id="i-agents" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12.2h6M12 9.2v6"/></symbol>
+      <symbol id="i-setup" viewBox="0 0 24 24"><path d="M4 7.5h9.5M18.5 7.5H20M4 16.5h3.5M12.5 16.5H20"/><circle cx="16" cy="7.5" r="2.3"/><circle cx="10" cy="16.5" r="2.3"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2"/><path d="M15.6 15.6L20 20"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 2H5z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></symbol>
+      <symbol id="i-learn" viewBox="0 0 24 24"><path d="M5 5.5h9.5a4.5 4.5 0 0 1 0 9H9"/><path d="M11.5 11.5L8.5 14.5l3 3"/><path d="M5 19h14"/></symbol>
+      <symbol id="i-teach" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11" rx="2"/><path d="M8 20l4-4.5 4 4.5"/><path d="M7.5 9.5l2 2 4-4"/></symbol>
+      <symbol id="i-meeting" viewBox="0 0 24 24"><path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h7.5A2.5 2.5 0 0 1 16 6.5v4.2a2.5 2.5 0 0 1-2.5 2.5H9l-3.6 3v-3H6a2.5 2.5 0 0 1-2.5-2.5z"/><path d="M18.5 9.2A2 2 0 0 1 20.5 11.2v3.6a2 2 0 0 1-2 2v2.7L15.4 17h-3"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/></symbol>
+      <symbol id="i-lantern" viewBox="0 0 24 24"><path d="M9.8 4.7a2.2 2.2 0 0 1 4.4 0"/><path d="M8.2 6.6h7.6M9.2 20.4h5.6"/><rect x="6.8" y="6.6" width="10.4" height="13.8" rx="4.4"/><path d="M12 10.2c1.4 1.4 1.9 2.5 1.9 3.5a1.9 1.9 0 0 1-3.8 0c0-1 .5-2.1 1.9-3.5z"/></symbol>
+    </defs>
+  </svg>
+
+  <div class="app">
+  <aside class="sidebar" aria-label="Lantern">
+    <div class="sidebar-head">
+      <div class="app-icon" id="mark" aria-hidden="true"><svg class="ico"><use href="#i-lantern"/></svg></div>
+      <div class="title-block">
+        <div class="app-name">Lantern</div>
+        <div class="status" id="conn">connecting…</div>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections" aria-orientation="vertical">
+      <p class="nav-group" aria-hidden="true">Lantern</p>
+      <button role="tab" data-tab="tasks" class="on" aria-selected="true"><svg class="ico"><use href="#i-today"/></svg><span>Today</span><b class="badge" id="badge-tasks" hidden></b></button>
+      <button role="tab" data-tab="reminders"><svg class="ico"><use href="#i-bell"/></svg><span>Reminders</span><b class="badge" id="badge-reminders" hidden></b></button>
+      <button role="tab" data-tab="learn"><svg class="ico"><use href="#i-learn"/></svg><span>Learned</span></button>
+      <button role="tab" data-tab="teach"><svg class="ico"><use href="#i-teach"/></svg><span>Teaching</span></button>
+      <button role="tab" data-tab="meetings"><svg class="ico"><use href="#i-meeting"/></svg><span>Meetings</span></button>
+      <button role="tab" data-tab="widgets"><svg class="ico"><use href="#i-widgets"/></svg><span>Widgets</span></button>
+      <button role="tab" data-tab="agents"><svg class="ico"><use href="#i-agents"/></svg><span>Agents</span></button>
+      <p class="nav-group" aria-hidden="true">You</p>
+      <button role="tab" data-tab="phone"><svg class="ico"><use href="#i-phone"/></svg><span>Phone</span></button>
+      <button role="tab" data-tab="privacy"><svg class="ico"><use href="#i-privacy"/></svg><span>Privacy</span></button>
+      <button role="tab" data-tab="costs"><svg class="ico"><use href="#i-costs"/></svg><span>Usage</span></button>
+      <button role="tab" data-tab="setup"><svg class="ico"><use href="#i-setup"/></svg><span>Settings</span></button>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="foot-label">Spent today</span>
+      <span class="capsule" id="today-cost" title="Model spend so far">$0.00</span>
+    </div>
+  </aside>
+
+  <div class="content">
+    <header class="toolbar">
+      <h1 class="window-title" id="section-title">Today</h1>
+      <p class="hero-status" id="hero-status" aria-live="polite" title="What Lantern is doing right now">Ready when you are.</p>
+    </header>
+
+    <div class="banners">
+      <section id="approvals" class="approvals" aria-live="assertive"></section>
+      <section id="questions" class="approvals" aria-live="polite" aria-label="Questions from your tasks"></section>
+      <section id="offers" class="approvals" aria-live="polite" aria-label="Tasks Lantern can learn"></section>
+      <section id="teaching" class="approvals" aria-live="polite" aria-label="Showing Lantern a task"></section>
+    </div>
+
+    <main>
+    <section data-panel="tasks" class="on chat" aria-label="Today">
+      <div class="chat-empty" id="chat-empty">
+        <div class="chat-face" aria-hidden="true"></div>
+        <p class="eyebrow" id="today-date"></p>
+        <h2 class="greeting" id="today-greeting">Today</h2>
+        <p class="chat-hint">Ask for anything: a form, an email, your files, a reminder.</p>
+        <div class="suggestions" id="suggestions" aria-label="Suggestions"></div>
+      </div>
+      <div id="tasks" class="thread" aria-live="polite"></div>
+      <div class="composer">
+        <p class="talk-live" id="talk-live" aria-live="polite" hidden></p>
+        <form id="ask" class="ask">
+          <input id="goal" autocomplete="off" placeholder="Message Lantern" maxlength="2000" aria-label="Message Lantern">
+          <button type="button" class="mic" id="talk" aria-label="Hold to talk" aria-pressed="false" title="Hold to talk"><svg class="ico"><use href="#i-mic"/></svg></button>
+          <button type="submit" class="send" aria-label="Send" title="Send (Return)"><svg class="ico"><use href="#i-send"/></svg></button>
+        </form>
+      </div>
+    </section>
+
+    <section data-panel="reminders" aria-label="Reminders">
+      <p class="lede">Reminders you set by asking ("remind me at 6 to call Ravi"), here or from your phone.</p>
+      <div id="reminders" class="group"></div>
+    </section>
+
+    <section data-panel="learn" aria-label="Learned">
+      <p class="lede">Tasks Lantern has turned into checked programs. They run again with one approval and no model calls, and repair themselves when a page changes.</p>
+      <div class="group" id="routines" aria-live="polite"></div>
+      <h3 class="section">Show Lantern once</h3>
+      <form class="group form" id="teach-form">
+        <label class="row field"><span>Web address</span><input id="teach-url" type="url" placeholder="http://127.0.0.1:8770/apply/personal" autocomplete="off"></label>
+        <label class="row field"><span>The task</span><input id="teach-goal" type="text" placeholder="apply for a city permit" autocomplete="off"></label>
+        <div class="row"><span class="sub">Lantern opens its browser and watches you do it once, then learns it.</span><button class="tinted" type="submit">Start</button></div>
+      </form>
+    </section>
+
+    <section data-panel="teach" aria-label="Teaching">
+      <p class="lede">Lessons on the board, every step checked by SymPy before it gets a ✓. And a second pair of eyes on your own working.</p>
+      <h3 class="section">New lesson</h3>
+      <form class="group form" id="lesson-form">
+        <label class="row field"><span>Teach me</span><input id="lesson-request" type="text" placeholder="solve x² − 5x + 6 = 0 by factoring" autocomplete="off"></label>
+        <label class="row field"><span>My notes</span><input id="lesson-notes" type="text" placeholder="a notes file (optional, not private)" autocomplete="off"></label>
+        <div class="row"><span class="sub">Muse Spark plans it; SymPy checks every step.</span><button class="tinted" type="submit">Make lesson</button></div>
+      </form>
+      <h3 class="section">Lessons</h3>
+      <div class="group" id="lessons" aria-live="polite"></div>
+      <h3 class="section">Check my work</h3>
+      <form class="group form" id="checkwork-form">
+        <label class="row field"><span>Photo</span><input id="checkwork-file" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        <div class="row"><span class="sub">Lantern circles the first line that doesn't follow, and says why.</span><button class="tinted" type="submit">Check</button></div>
+      </form>
+      <div class="group" id="checkwork-result" aria-live="polite" hidden></div>
+    </section>
+
+    <section data-panel="meetings" aria-label="Meetings">
+      <p class="lede">A recording becomes who said what, and the follow-ups you agreed. Nothing is added until you tick it.</p>
+      <form class="group form" id="meeting-form">
+        <label class="row field"><span>Recording</span><input id="meeting-path" type="text" placeholder="a recording in your folders (wav, mp3, m4a, mp4)" autocomplete="off"></label>
+        <div class="row"><span class="sub">Muse Voice Transcribe labels the speakers; Muse Spark lists what was agreed. Up to 10 minutes.</span><button class="tinted" type="submit" id="meeting-go">Listen</button></div>
+      </form>
+      <div id="meeting-result" hidden>
+        <h3 class="section">Follow-ups</h3>
+        <div class="group" id="meeting-items"></div>
+        <div class="bar"><span class="sub" id="meeting-note"></span><button class="primary small" id="meeting-confirm" type="button">Add selected</button></div>
+        <h3 class="section">Who said what</h3>
+        <div class="group" id="meeting-turns"></div>
+      </div>
+    </section>
+
+    <section data-panel="widgets" aria-label="Widgets">
+      <p class="lede">Small tools Lantern made for you. They run sandboxed: no network, no files.</p>
+      <div id="widget-list" class="widget-list"></div>
+      <iframe id="widget-host" class="widget-host" sandbox="allow-scripts" src="widget-host.html" title="Widget"></iframe>
+      <h3 class="section">Camera check-in</h3>
+      <div class="group checkin-group">
+        <div class="row checkin">
+          <span class="row-icon teal"><svg class="ico"><use href="#i-camera"/></svg></span>
+          <div class="row-text"><b>Look around once</b><small>One snapshot, objects only, nothing stored</small></div>
+          <select id="checkin-concept" aria-label="What to look for"></select>
+          <button id="checkin" class="tinted">Check</button>
+        </div>
+      </div>
+    </section>
+
+    <section data-panel="agents" aria-label="Agents">
+      <p class="lede">Shareable agents: add one from a file or a skill, run it here or from your phone, and watch every step.</p>
+      <div class="group">
+        <div class="row drop" id="agent-drop">
+          <span class="row-icon purple"><svg class="ico"><use href="#i-agents"/></svg></span>
+          <div class="row-text"><b>Add an agent</b><small>Pick a .lantern-agent.json file, or drop it here</small></div>
+          <button class="tinted" id="agent-add" type="button">Add…</button>
+        </div>
+        <div class="row" id="skill-drop">
+          <span class="row-icon purple"><svg class="ico"><use href="#i-agents"/></svg></span>
+          <div class="row-text"><b>Import a skill</b><small>Pick a SKILL.md file or its folder</small></div>
+          <button class="forget" id="agent-import" type="button">Import a skill…</button>
+        </div>
+      </div>
+      <input type="file" id="agent-file" accept=".lantern-agent.json,application/json" hidden>
+      <input type="file" id="skill-file" accept=".md,text/markdown" hidden>
+      <div id="agent-import-form"></div>
+      <div id="agent-draft"></div>
+      <div id="agent-list" class="tasks"></div>
+      <p class="footnote" id="agent-hint">A pack is data, never code: it fills in a goal, lists its tools, and asks before anything changes.</p>
+    </section>
+
+    <section data-panel="phone" aria-label="Phone">
+      <p class="lede">Lantern on WhatsApp and Telegram. In rehearsal this is a simulated phone.</p>
+      <div class="phone">
+        <div class="phone-top"><span class="dot"></span><div><b>Lantern</b><small id="phone-note"></small></div></div>
+        <div class="phone-msgs" id="phone-msgs"></div>
+        <form id="phone-form" class="phone-form">
+          <input id="phone-text" placeholder="Message" autocomplete="off" aria-label="Message Lantern as the owner">
+          <button type="submit" class="send" aria-label="Send"><svg class="ico"><use href="#i-send"/></svg></button>
+        </form>
+      </div>
+    </section>
+
+    <section data-panel="privacy" aria-label="Privacy">
+      <h3 class="section first">Today</h3>
+      <div class="group">
+        <div class="hero">
+          <p class="hero-number" id="audit-headline">…</p>
+          <p class="hero-good" id="audit-private"></p>
+        </div>
+        <table class="rows" id="audit-rows"></table>
+        <p class="footnote warn-text" id="audit-redactions"></p>
+      </div>
+      <section id="decoy-view" hidden aria-label="What the cloud saw">
+        <h3 class="section">What the cloud saw</h3>
+        <div class="group decoy-pair">
+          <figure><img id="decoy-seen" alt="The form as you see it, with your values"><figcaption>What you see</figcaption></figure>
+          <figure><img id="decoy-sent" alt="The same screen as sent to the cloud model, with stand-in values"><figcaption>What the cloud saw</figcaption></figure>
+        </div>
+        <p class="footnote" id="decoy-note"></p>
+      </section>
+      <h3 class="section">Folders</h3>
+      <div class="group">
+        <div id="zones"></div>
+        <form id="zone-add" class="zone-add row">
+          <input id="zone-path" placeholder="Add a folder…" autocomplete="off" aria-label="Folder path">
+          <select id="zone-kind" aria-label="Zone"><option>private</option><option>open</option><option>writable</option><option>hidden</option></select>
+          <button type="submit" class="tinted">Set</button>
+        </form>
+      </div>
+      <p class="footnote">Hidden: never listed. Private: only the model on this computer reads it. Open: readable, scrubbed before sending. Writable: Lantern may change files, after you approve.</p>
+      <h3 class="section">Memory</h3>
+      <div class="group">
+        <button id="forget-all" class="row destructive">Forget everything…</button>
+      </div>
+      <p class="footnote">Memory and the audit log are encrypted on disk. Forgetting deletes for good: rows are overwritten and the files rebuilt.</p>
+    </section>
+
+    <section data-panel="costs" aria-label="Usage">
+      <h3 class="section first">Today at a glance</h3>
+      <div class="glance" id="glance" aria-live="polite"></div>
+      <h3 class="section">Meta Model API</h3>
+      <div class="group">
+        <div class="hero">
+          <p class="hero-number" id="cost-total">…</p>
+          <div class="meter" aria-hidden="true"><span id="cost-bar"></span></div>
+          <p class="meter-note" id="cost-limits"></p>
+        </div>
+        <table class="rows" id="cost-rows"></table>
+      </div>
+      <p class="footnote">Limits are enforced in code before every model call.</p>
+    </section>
+
+    <section data-panel="setup" aria-label="Settings">
+      <h3 class="section first">Stop</h3>
+      <div class="group">
+        <div class="row">
+          <div class="row-text"><b>Stop everything</b><small>Ends every running task and denies the approvals waiting. <span id="kbd-stop-inline">⌘ ⇧ X</span> works from anywhere, even with this window closed.</small></div>
+          <button class="stop" id="stop" type="button"><svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span>Stop</span></button>
+        </div>
+      </div>
+      <h3 class="section">Personality</h3>
+      <div class="group">
+        <div class="row"><div class="segmented" id="persona" role="radiogroup" aria-label="Lantern's personality"></div></div>
+      </div>
+      <p class="footnote" id="persona-note">How Lantern talks to you. It never changes what Lantern is allowed to do.</p>
+      <h3 class="section">Avatar</h3>
+      <div class="group">
+        <div class="row"><span class="row-text">Look</span><div class="segmented" id="avatar-skins" role="radiogroup" aria-label="Lantern's look"></div></div>
+        <div class="row"><div class="segmented" id="avatar-styles" role="radiogroup" aria-label="Avatar style"></div></div>
+        <div class="agent-form">
+          <label>Describe Lantern's face<textarea id="avatar-brief" rows="3" maxlength="600" placeholder="3D animated movie portrait of a sleek personal AI assistant, bright cyan eyes, confident smile, short white-silver hair with neon cyan highlights, dark gray futuristic jacket, soft rim lighting, minimalist dark studio background, clean profile picture."></textarea></label>
+        </div>
+        <div class="row"><button class="tinted" id="avatar-preview" type="button">Preview (one image, a few cents)</button></div>
+        <div id="avatar-now"></div>
+      </div>
+      <p class="footnote">Muse face, orb, glow or a live clock. A new face is drawn by Muse Image with no logos, text or brand marks; “Use this” draws the other expressions (about $0.07) after you approve. Past designs stay in the gallery: switching back is free.</p>
+      <h3 class="section">Pair a phone</h3>
+      <div class="group">
+        <div class="row">
+          <div class="row-text"><b>Phone app</b><small>Same Wi-Fi with <code>lantern --serve --phone</code>, or your own tunnel for HTTPS. The phone sees what WhatsApp sees: never private replies.</small></div>
+          <button class="tinted" id="pair-start" type="button">Pair a phone</button>
+        </div>
+        <div class="row" id="pair-code-row" hidden>
+          <div class="row-text"><b id="pair-code">······</b><small id="pair-url">/m · expires in 5 min</small></div>
+        </div>
+        <div id="pair-devices"></div>
+        <div class="row"><span class="row-text">Receive from phones on Wi-Fi</span><div class="segmented" id="localsend" role="radiogroup" aria-label="Receive from phones on Wi-Fi"></div></div>
+      </div>
+      <p class="footnote">LocalSend: Share → LocalSend on your phone → “Lantern on this laptop”. Files land in the inbox after your OK. Same Wi-Fi only.</p>
+      <h3 class="section">Keyboard</h3>
+      <div class="group">
+        <div class="row"><span class="row-text">Quick Ask</span><kbd id="kbd-ask">⌘ ⇧ Space</kbd></div>
+        <div class="row"><span class="row-text">Stop everything</span><kbd id="kbd-stop">⌘ ⇧ X</kbd></div>
+        <div class="row"><span class="row-text">Go to a section</span><kbd id="kbd-tabs">⌘ 1 – 9</kbd></div>
+      </div>
+      <h3 class="section">Profile from my resume</h3>
+      <form class="group form" id="cv-form">
+        <label class="row field"><span>My resume</span><input id="cv-path" type="text" placeholder="a PDF or text file (not private)" autocomplete="off"></label>
+        <div class="row"><span class="sub">Muse Spark proposes values for your form profile; you choose what to save.</span><button class="tinted" type="submit">Read it</button></div>
+      </form>
+      <div class="group" id="cv-proposal" hidden></div>
+      <h3 class="section">This computer</h3>
+      <div class="group">
+        <div class="hero">
+          <p class="hero-number small" id="ready-demo">…</p>
+          <p class="footnote" id="ready-rehearsal"></p>
+        </div>
+      </div>
+      <div class="group" id="doctor"></div>
+      <div class="group"><button class="row link" id="doctor-again">Check again</button></div>
+      <p class="footnote">Read-only: checking creates nothing and sends nothing. Appearance follows your system's light or dark mode.</p>
+    </section>
+    </main>
+  </div>
+  </div>
+
+  <div id="welcome" class="backdrop" hidden>
+    <div class="sheet welcome" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <div class="app-icon big" aria-hidden="true"><svg class="ico"><use href="#i-lantern"/></svg></div>
+      <h1 id="welcome-title">Welcome to Lantern</h1>
+      <ul class="features">
+        <li><span class="row-icon blue"><svg class="ico"><use href="#i-today"/></svg></span>
+          <div><b>Does the boring computer work</b><small>Forms, emails, files and reminders, by asking in plain words, here or from your phone.</small></div></li>
+        <li><span class="row-icon orange"><svg class="ico"><use href="#i-bell"/></svg></span>
+          <div><b>Asks before anything changes</b><small>Every send, submit or move waits for your OK, bound to exactly what you saw.</small></div></li>
+        <li><span class="row-icon green"><svg class="ico"><use href="#i-privacy"/></svg></span>
+          <div><b>Keeps your private folder private</b><small>Private files are read only by the model on this computer. Privacy shows what left.</small></div></li>
+        <li><span class="row-icon purple"><svg class="ico"><use href="#i-search"/></svg></span>
+          <div><b>Always within reach</b><small><span id="welcome-ask">⌘ ⇧ Space</span> opens Quick Ask anywhere. The island above Lantern shows each step.</small></div></li>
+      </ul>
+      <button class="primary" id="welcome-go">Continue</button>
+      <button class="row link" id="welcome-setup">Check this computer's setup</button>
+    </div>
+  </div>
+
+  <div id="receipt" class="backdrop" hidden>
+    <div class="sheet receipt" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+      <p class="eyebrow" id="receipt-eyebrow">Receipt</p>
+      <h1 id="receipt-title"></h1>
+      <div id="receipt-body"></div>
+      <p class="footnote">From Lantern's own records: the task log, the audit log of every call and the cost meter. No model wrote this.</p>
+      <button class="primary" id="receipt-done">Done</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="../assets/avatar/manifest.js"></script>
+  <script src="lib/state.js"></script>
+  <script src="lib/cards.js"></script>
+  <script src="lib/sprite.js"></script>
+  <script src="lib/expression.js"></script>
+  <script src="lib/activity.js"></script>
+  <script src="lib/audit.js"></script>
+  <script src="lib/widgets.js"></script>
+  <script src="lib/api.js"></script>
+  <script src="lib/setup.js"></script>
+  <script src="lib/today.js"></script>
+  <script src="lib/receipt.js"></script>
+  <script src="lib/routines.js"></script>
+  <script src="lib/teach.js"></script>
+  <script src="lib/lessons.js"></script>
+  <script src="lib/cv.js"></script>
+  <script src="lib/meeting.js"></script>
+  <script src="lib/talk.js"></script>
+  <script src="lib/agents.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

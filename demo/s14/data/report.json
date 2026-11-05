@@ -1,0 +1,97 @@
+{
+ "routines": 22,
+ "held_out_routines": [
+  "renew-library-books",
+  "weekly-timesheet",
+  "report-pothole",
+  "webinar-signup",
+  "rename-scanned-receipts",
+  "water-bill"
+ ],
+ "candidates": 357,
+ "teacher_agreed": 344,
+ "dropped_by_scrubber": 0,
+ "disagreements": [
+  {
+   "goal": "group all the stuff I downloaded in March by file type",
+   "label": "tidy-downloads",
+   "teacher": "none"
+  },
+  {
+   "goal": "Extend my library checkouts that expire on March 5th",
+   "label": "renew-library-books",
+   "teacher": "none"
+  },
+  {
+   "goal": "can you shift the January invoices from last year over to the archive?",
+   "label": "archive-old-invoices",
+   "teacher": "none"
+  },
+  {
+   "goal": "put away last year's invoices from Greenleaf Supplies into the archive",
+   "label": "archive-old-invoices",
+   "teacher": "none"
+  },
+  {
+   "goal": "Could you transfer the invoices from December last year into archive storage for me?",
+   "label": "archive-old-invoices",
+   "teacher": "none"
+  },
+  {
+   "goal": "take everything I was invoiced for last year and archive it",
+   "label": "archive-old-invoices",
+   "teacher": "none"
+  },
+  {
+   "goal": "make my scanned receipt files actually readable with dates in them",
+   "label": "rename-scanned-receipts",
+   "teacher": "none"
+  },
+  {
+   "goal": "sync my July photos to the backup folder please",
+   "label": "backup-photos",
+   "teacher": "none"
+  },
+  {
+   "goal": "please tell the city about multiple potholes on my commute route spotted back in March",
+   "label": "report-pothole",
+   "teacher": "none"
+  },
+  {
+   "goal": "Can you stash yesterday's desktop screenshots in the Pictures folder?",
+   "label": "move-screenshots",
+   "teacher": "none"
+  },
+  {
+   "goal": "My desktop is messy, move the screenshots from March into storage",
+   "label": "move-screenshots",
+   "teacher": "none"
+  },
+  {
+   "goal": "Transfer every screenshot sitting on the desktop to the Screenshots album",
+   "label": "move-screenshots",
+   "teacher": "none"
+  },
+  {
+   "goal": "Move the screenshots I took last weekend off the desktop",
+   "label": "move-screenshots",
+   "teacher": "none"
+  }
+ ],
+ "train": {
+  "examples": 251,
+  "none": 132
+ },
+ "heldout": {
+  "examples": 93,
+  "none": 48
+ },
+ "spark_heldout": {
+  "correct": 93,
+  "of": 93,
+  "model": "muse-spark-1.3",
+  "effort": "low"
+ },
+ "cost_usd": 2.3691,
+ "calls": 472
+}

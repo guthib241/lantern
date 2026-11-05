@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="537" viewBox="0 0 1040 537" role="img"
+  aria-label="The output of lantern --demo-run: a form filled and submitted after approval, an email sent and verified, a private file answered on this computer, and the audit.">
+  <style>
+    text { font-family: 'JetBrains Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 15.5px; white-space: pre; }
+    .cmd { animation: cmd 16.00s linear infinite; }
+    @keyframes cmd { 0%,2.50% {opacity:0} 3.40%,94% {opacity:1} 100% {opacity:0} }
+    .l0{animation:l0 16.00s linear infinite}@keyframes l0{0%,7.50%{opacity:0}8.40%,94%{opacity:1}100%{opacity:0}}.l1{animation:l1 16.00s linear infinite}@keyframes l1{0%,10.94%{opacity:0}11.84%,94%{opacity:1}100%{opacity:0}}.l2{animation:l2 16.00s linear infinite}@keyframes l2{0%,14.37%{opacity:0}15.27%,94%{opacity:1}100%{opacity:0}}.l3{animation:l3 16.00s linear infinite}@keyframes l3{0%,17.81%{opacity:0}18.71%,94%{opacity:1}100%{opacity:0}}.l4{animation:l4 16.00s linear infinite}@keyframes l4{0%,21.25%{opacity:0}22.15%,94%{opacity:1}100%{opacity:0}}.l5{animation:l5 16.00s linear infinite}@keyframes l5{0%,24.69%{opacity:0}25.59%,94%{opacity:1}100%{opacity:0}}.l6{animation:l6 16.00s linear infinite}@keyframes l6{0%,28.12%{opacity:0}29.02%,94%{opacity:1}100%{opacity:0}}.l7{animation:l7 16.00s linear infinite}@keyframes l7{0%,31.56%{opacity:0}32.46%,94%{opacity:1}100%{opacity:0}}.l8{animation:l8 16.00s linear infinite}@keyframes l8{0%,35.00%{opacity:0}35.90%,94%{opacity:1}100%{opacity:0}}.l9{animation:l9 16.00s linear infinite}@keyframes l9{0%,38.44%{opacity:0}39.34%,94%{opacity:1}100%{opacity:0}}.l10{animation:l10 16.00s linear infinite}@keyframes l10{0%,41.88%{opacity:0}42.77%,94%{opacity:1}100%{opacity:0}}.l11{animation:l11 16.00s linear infinite}@keyframes l11{0%,45.31%{opacity:0}46.21%,94%{opacity:1}100%{opacity:0}}.l12{animation:l12 16.00s linear infinite}@keyframes l12{0%,48.75%{opacity:0}49.65%,94%{opacity:1}100%{opacity:0}}.l13{animation:l13 16.00s linear infinite}@keyframes l13{0%,52.19%{opacity:0}53.09%,94%{opacity:1}100%{opacity:0}}.l14{animation:l14 16.00s linear infinite}@keyframes l14{0%,55.62%{opacity:0}56.52%,94%{opacity:1}100%{opacity:0}}.l15{animation:l15 16.00s linear infinite}@keyframes l15{0%,59.06%{opacity:0}59.96%,94%{opacity:1}100%{opacity:0}}
+    @media (prefers-reduced-motion: reduce) { text { animation: none !important; opacity: 1 !important; } }
+  </style>
+  <rect width="1040" height="537" rx="16" fill="#171411"/>
+  <rect x=".5" y=".5" width="1039" height="536" rx="16" fill="none" stroke="#2C2722"/>
+  <circle cx="26" cy="24" r="6.5" fill="#FF5F57"/><circle cx="48" cy="24" r="6.5" fill="#FEBC2E"/><circle cx="70" cy="24" r="6.5" fill="#28C840"/>
+  <text x="520" y="29" text-anchor="middle" fill="#7D746A" style="font-size:13px">lantern --demo-run  ·  offline rehearsal, $0, no key</text>
+  <text class="cmd" x="34" y="64" fill="#F2EBE1"><tspan fill="#FFB347">$</tspan> lantern --demo-run</text>
+    <text class="l0" x="34" y="92" fill="#FFB347">🏮 Rehearsal mode: scripted model, zero tokens, nothing sent</text>
+  <text class="l1" x="34" y="117" fill="#F2EBE1">📱 voice note › “Fill the hackathon reimbursement form for my taxi and email it to the organ…</text>
+  <text class="l2" x="34" y="142" fill="#A79D92">   · searched files (1 found)  [on this computer]</text>
+  <text class="l3" x="34" y="167" fill="#A79D92">   · browser: click (429, 313)  [Muse Wonder]</text>
+  <text class="l4" x="34" y="192" fill="#9DB8FF">   ⏸  needs your OK: Submit 'Hackathon Reimbursement Request' (local demo): Full name: Asha…</text>
+  <text class="l5" x="34" y="217" fill="#7EE2A8">   ✅ approved on the phone</text>
+  <text class="l6" x="34" y="242" fill="#7EE2A8">   · form submitted and verified ✓  [Muse Wonder]</text>
+  <text class="l7" x="34" y="267" fill="#9DB8FF">   ⏸  needs your OK: Send email to organiser@openbuild.example: “Travel reimbursement reque…</text>
+  <text class="l8" x="34" y="292" fill="#7EE2A8">   ✅ approved on the phone</text>
+  <text class="l9" x="34" y="317" fill="#7EE2A8">   · email sent, found in Sent ✓  [on this computer]</text>
+  <text class="l10" x="34" y="342" fill="#FFB347">🏮 Form submitted and checked on the confirmation page (REF-797965), and the receipt is in t…</text>
+  <text class="l11" x="34" y="367" fill="#F2EBE1">💻 you › What base salary does the offer letter in my Private folder say?</text>
+  <text class="l12" x="34" y="392" fill="#A79D92">   · asked the private lane (file stays here)  [Muse Glimmer (fake)]</text>
+  <text class="l13" x="34" y="417" fill="#FFB347">🏮 From the private file: Base salary: INR 24,00,000 per year, paid monthly</text>
+  <text class="l14" x="34" y="442" fill="#FFB347">📋 Audit: 20 model calls would have gone to Meta's API (409.5 KB; rehearsal, so nothing was …</text>
+  <text class="l15" x="34" y="467" fill="#FFB347">💸 Cost: $0.00 (the rehearsal model reports zero tokens)</text>
+</svg>

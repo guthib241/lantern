@@ -1,0 +1,211 @@
+{
+ "note": "Fake routines for S14 (routine choice). Seeded data only: no user's names, paths or values.",
+ "held_out": [
+  "renew-library-books",
+  "weekly-timesheet",
+  "report-pothole",
+  "webinar-signup",
+  "rename-scanned-receipts",
+  "water-bill"
+ ],
+ "routines": [
+  {
+   "name": "city-permit-application",
+   "title": "City permit application",
+   "examples": [
+    "apply for a city permit",
+    "file the permit application on the portal",
+    "fill in the city permit form for my shed"
+   ]
+  },
+  {
+   "name": "tidy-downloads",
+   "title": "Sort the Downloads folder by file type",
+   "examples": [
+    "tidy my downloads",
+    "sort my Downloads folder into folders by type",
+    "clean up Downloads, pictures with pictures and PDFs with PDFs"
+   ]
+  },
+  {
+   "name": "expense-reimbursement",
+   "title": "Submit an expense reimbursement",
+   "examples": [
+    "submit my travel expenses",
+    "file a reimbursement for the taxi receipts",
+    "claim back the conference hotel"
+   ]
+  },
+  {
+   "name": "renew-library-books",
+   "title": "Renew borrowed library books",
+   "examples": [
+    "renew my library books",
+    "extend the due date on my library loans",
+    "renew everything I have out from the library"
+   ]
+  },
+  {
+   "name": "pay-electricity-bill",
+   "title": "Pay the electricity bill",
+   "examples": [
+    "pay the electricity bill",
+    "settle this month's power bill",
+    "pay what I owe the electric company"
+   ]
+  },
+  {
+   "name": "weekly-timesheet",
+   "title": "Submit the weekly timesheet",
+   "examples": [
+    "submit my timesheet",
+    "fill in this week's hours at work",
+    "send my weekly hours to the timesheet portal"
+   ]
+  },
+  {
+   "name": "order-office-supplies",
+   "title": "Order office supplies",
+   "examples": [
+    "order printer paper and pens",
+    "restock the office supplies",
+    "put in the usual stationery order"
+   ]
+  },
+  {
+   "name": "parking-permit",
+   "title": "Renew the residents' parking permit",
+   "examples": [
+    "renew my parking permit",
+    "get this year's residents parking permit",
+    "extend the street parking permit for my car"
+   ]
+  },
+  {
+   "name": "update-shipping-address",
+   "title": "Update the shipping address on my shop account",
+   "examples": [
+    "change my delivery address",
+    "update the shipping address on my online shop account",
+    "send my orders to the new flat from now on"
+   ]
+  },
+  {
+   "name": "leave-request",
+   "title": "Request days off at work",
+   "examples": [
+    "book a day off",
+    "request leave for next Friday",
+    "ask HR for three days of vacation"
+   ]
+  },
+  {
+   "name": "archive-old-invoices",
+   "title": "Move last year's invoices into the archive",
+   "examples": [
+    "archive last year's invoices",
+    "move old invoices into the Archive folder",
+    "put the 2025 invoices away"
+   ]
+  },
+  {
+   "name": "rename-scanned-receipts",
+   "title": "Rename scanned receipts by date and shop",
+   "examples": [
+    "rename my scanned receipts",
+    "give the receipt scans proper names with the date",
+    "fix the file names of the receipts I scanned"
+   ]
+  },
+  {
+   "name": "backup-photos",
+   "title": "Copy new photos to the backup folder",
+   "examples": [
+    "back up my photos",
+    "copy this month's pictures to the backup drive folder",
+    "make a backup of the new photos"
+   ]
+  },
+  {
+   "name": "meeting-room",
+   "title": "Book a meeting room",
+   "examples": [
+    "book a meeting room for tomorrow at 10",
+    "reserve the small conference room",
+    "get a room for the team sync on Thursday"
+   ]
+  },
+  {
+   "name": "report-pothole",
+   "title": "Report a pothole to the city",
+   "examples": [
+    "report a pothole",
+    "tell the council about the hole in the road on my street",
+    "file a road damage report"
+   ]
+  },
+  {
+   "name": "cancel-magazine",
+   "title": "Cancel a magazine subscription",
+   "examples": [
+    "cancel my magazine subscription",
+    "stop the monthly magazine",
+    "end the print subscription"
+   ]
+  },
+  {
+   "name": "webinar-signup",
+   "title": "Sign up for a webinar",
+   "examples": [
+    "register me for the webinar",
+    "sign up for Thursday's online talk",
+    "get me a seat in the product webinar"
+   ]
+  },
+  {
+   "name": "homework-upload",
+   "title": "Upload homework to the school portal",
+   "examples": [
+    "upload my homework",
+    "hand in the essay on the school portal",
+    "submit the assignment file to class"
+   ]
+  },
+  {
+   "name": "move-screenshots",
+   "title": "Move screenshots off the Desktop",
+   "examples": [
+    "move my screenshots off the desktop",
+    "put the desktop screenshots in the Screenshots folder",
+    "clear screenshots from my desktop"
+   ]
+  },
+  {
+   "name": "transcript-request",
+   "title": "Request an official transcript",
+   "examples": [
+    "request my transcript",
+    "order an official copy of my grades",
+    "ask the registrar for my transcript"
+   ]
+  },
+  {
+   "name": "water-bill",
+   "title": "Pay the water bill",
+   "examples": [
+    "pay the water bill",
+    "settle the water company invoice",
+    "pay this quarter's water charges"
+   ]
+  },
+  {
+   "name": "donate-books",
+   "title": "Book a pickup for donated books",
+   "examples": [
+    "schedule a book donation pickup",
+    "get the charity to collect my old books",
+    "arrange collection of the boxes of books"
+   ]
+  }
+ ]
+}

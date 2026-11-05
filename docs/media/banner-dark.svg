@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img"
+  aria-label="Lantern: the AI that lives on your laptop, does the boring computer work, and asks before anything leaves.">
+  <defs>
+    <radialGradient id="room" cx="17%" cy="50%" r="55%">
+      <stop offset="0" stop-color="#FF9F0A" stop-opacity=".30"/><stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sphere" cx="44%" cy="36%" r="70%">
+      <stop offset="0" stop-color="#FFF1C2"/><stop offset=".45" stop-color="#FFC861"/>
+      <stop offset=".8" stop-color="#FF9F43"/><stop offset="1" stop-color="#E8730F"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFB347" stop-opacity=".75"/><stop offset=".55" stop-color="#FFB347" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#FFB347" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="10"/></filter>
+    <style>
+      .float { animation: float 6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      .breathe { animation: breathe 4.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      .light { animation: drift 9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+      @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+      @keyframes breathe { 0%, 100% { opacity: .65; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.06); } }
+      @keyframes drift { 0%, 100% { transform: translate(-6px, 4px); } 50% { transform: translate(8px, -6px); } }
+      @media (prefers-reduced-motion: reduce) { .float, .breathe, .light { animation: none; } }
+    </style>
+  </defs>
+  <rect width="1200" height="380" rx="28" fill="#15120F"/>
+  <rect width="1200" height="380" rx="28" fill="url(#room)"/>
+  <g class="float">
+    <circle class="breathe" cx="196" cy="190" r="118" fill="url(#halo)"/>
+    <circle cx="196" cy="190" r="70" fill="url(#sphere)"/>
+    <ellipse class="light" cx="182" cy="168" rx="34" ry="22" fill="#FFF6DA" opacity=".55" filter="url(#soft)"/>
+    <ellipse cx="176" cy="160" rx="20" ry="12" fill="#FFFFFF" opacity=".35"/>
+  </g>
+  <text x="330" y="172" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="92" font-weight="700" letter-spacing="-3" fill="#F6EFE5">Lantern</text>
+  <text x="334" y="226" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" fill="#B9AFA3">The AI that lives on your laptop, does the boring computer work,</text>
+  <text x="334" y="262" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" fill="#B9AFA3">and asks before anything leaves it.</text>
+  <text x="334" y="318" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="600" letter-spacing="2.5" fill="#E8890C">FORMS · EMAIL · FILES · PRIVATE BY DESIGN · BUILT ON META'S MUSE MODELS</text>
+</svg>

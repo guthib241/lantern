@@ -1,0 +1,40 @@
+/* City Permit Portal, layout v2: "after the redesign". Same form, different everything on the surface. */
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.55 Georgia, "Times New Roman", serif; color: #f0eee8; background: #1e1b2e; }
+a { color: #ffb86b; }
+.masthead { display: flex; flex-direction: row-reverse; align-items: center; justify-content: space-between; padding: 18px 32px;
+            background: linear-gradient(90deg, #6b2d5c, #2b2d6b); border-bottom: 4px solid #ffb86b; }
+.brand { color: #ffb86b; font: 800 22px/1 "Trebuchet MS", sans-serif; text-transform: uppercase; letter-spacing: .08em; text-decoration: none; }
+.demo-tag { font: 600 12px/1 "Trebuchet MS", sans-serif; border: 1px solid #ffb86b; color: #ffb86b; padding: 5px 10px; }
+.shell { display: grid; grid-template-columns: 200px 1fr; gap: 24px; max-width: 1000px; margin: 28px auto; padding: 0 16px; }
+.steps { list-style: none; margin: 0; padding: 0; border-left: 3px solid #4a4566; }
+.steps li { padding: 8px 14px; color: #b7b2cc; font: 14px "Trebuchet MS", sans-serif; }
+.steps li.done { color: #9fe0b5; }
+.steps li.current { color: #1e1b2e; background: #ffb86b; font-weight: 700; }
+main { grid-column: 2; background: #2a2640; border-radius: 0 18px 18px 18px; padding: 26px 30px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+body.step-start main, body.step-done main { grid-column: 1 / -1; }
+h1 { margin: 0 0 14px; font: 700 30px/1.15 "Trebuchet MS", sans-serif; color: #ffb86b; }
+.lead { color: #d8d4e8; }
+.field { margin: 0 0 18px; display: grid; grid-template-columns: 200px 1fr; gap: 6px 16px; align-items: center; }
+.field label { font: 600 14px "Trebuchet MS", sans-serif; color: #d8d4e8; text-align: right; }
+.field .error, .field .hint { grid-column: 2; }
+input[type=text], input[type=email], input[type=tel], input[type=date], input[type=number], input[type=password],
+select, textarea { width: 100%; padding: 10px 12px; font: inherit; color: #f0eee8; background: #1e1b2e; border: 0; border-bottom: 2px solid #8a83b3; border-radius: 4px 4px 0 0; }
+input:focus, select:focus, textarea:focus, .button:focus-visible { outline: 3px solid #ffb86b; outline-offset: 2px; }
+.actions.top { display: flex; flex-direction: row; gap: 10px; margin: 0 0 22px; padding-bottom: 16px; border-bottom: 1px dashed #4a4566; }
+.button { display: inline-block; padding: 9px 22px; font: 700 14px "Trebuchet MS", sans-serif; text-transform: uppercase; letter-spacing: .05em;
+          border-radius: 99px; border: 2px solid #8a83b3; background: transparent; color: #f0eee8; cursor: pointer; text-decoration: none; }
+.button.primary { background: #ffb86b; border-color: #ffb86b; color: #1e1b2e; }
+.error { color: #ff9a9a; font-weight: 700; margin: 0; }
+.error-summary { background: #4a1f2e; border-left: 6px solid #ff9a9a; padding: 10px 16px; margin-bottom: 18px; }
+.review { width: 100%; border-collapse: collapse; font-size: 14px; }
+.review th, .review td { text-align: left; padding: 8px; border-bottom: 1px solid #4a4566; }
+fieldset { border: 1px solid #4a4566; margin: 0 0 18px; padding: 12px 18px; border-radius: 10px; }
+legend { color: #ffb86b; font: 700 14px "Trebuchet MS", sans-serif; }
+.choice { display: block; margin: 6px 0; text-align: left !important; }
+.fieldset .field label { text-align: left; }
+.card-fields[hidden] { display: none; }
+.confirmation { text-align: left; }
+.reference { font: 700 34px/1.2 "Courier New", monospace; color: #9fe0b5; border: 2px dashed #9fe0b5; display: inline-block; padding: 6px 16px; }
+.foot { max-width: 1000px; margin: 0 auto 32px; padding: 0 16px; color: #b7b2cc; font-size: 13px; text-align: right; }
+@media (max-width: 720px) { .shell { grid-template-columns: 1fr; } main { grid-column: 1; } .field { grid-template-columns: 1fr; } .field label { text-align: left; } }
