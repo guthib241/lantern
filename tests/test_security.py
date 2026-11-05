@@ -16,7 +16,7 @@ from lantern.ladder import RUNGS
 from lantern.policy import OPEN, PRIVATE, WRITABLE, Policy, Rule
 from lantern.reader import READER_RULES, Reader, ReaderError, coerce, schema_for
 from lantern.router import FakeGlimmer, OffGlimmer, Router
-from lantern.security import TIERS, tier_of
+from lantern.security import LEAVES, TARGETS, TIERS, tier_of
 from lantern.taskrun import PRIVATE_SHOWN
 from lantern.tools import TOOL_NAMES
 from test_scheduler import Routed, config, finish, until
@@ -194,6 +194,9 @@ def test_every_tool_has_a_risk_tier():
     assert {tier_of(n) for n in ("send_email", "fill_form", "run_in_project", "submit_form", "run_routine")} == {"red"}
     assert {tier_of(n) for n in ("write_file", "move_file", "remember")} == {"yellow"}
     assert {tier_of(n) for n in ("read_file", "ask_reader", "ask_private")} == {"green"}
+    # the agent-pack line's tools joined S0 when the branches were combined
+    assert {tier_of(n) for n in ("open_link", "send_to_phone", "learn_repo")} == {"red"}
+    assert TARGETS["open_link"] == ("url",) and TARGETS["learn_repo"] == ("url",) and "send_to_phone" in LEAVES
     assert tier_of("something.new") == "red"            # unknown actions get the strictest tier
 
 

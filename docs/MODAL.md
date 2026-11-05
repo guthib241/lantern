@@ -164,7 +164,7 @@ The token file is Lantern's own state file (like `~/.lantern/token` for the serv
 | `deploy/modal/glimmer_config.py` | All settings, prices, the llama-server command, VRAM and cost math |
 | `deploy/modal/rotate_token.py` | New token → Modal Secret + `~/.lantern/private_token`, never printed |
 | `deploy/modal/smoke.py` | Deploy, test, measure, stop |
-| `tests/modal/` | Unit tests for config, gate and rotation (no Modal, no network) |
+| `tests/deploy_modal/` | Unit tests for config, gate and rotation (no Modal, no network). Not named `modal/`: on the test path that folder would stand in for the real `modal` package |
 
 ## Notes from building it in the cloud sandbox
 

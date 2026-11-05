@@ -676,10 +676,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
         try:
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
+            unsubscribe()   # first: the sink never outlives the socket, even if this cleanup is cancelled
             for t in tasks:
                 t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            unsubscribe()
+            # asyncio.wait, not gather: a gather cancelled by the server re-raises the helpers' own CancelledError,
+            # which the server's cancel scope doesn't take for its own; the socket's close then failed at random
+            # (CI, Nov 1). wait() only waits; the error, if any, is read so it isn't logged as unhandled.
+            done, _ = await asyncio.wait(tasks)
+            for t in done:
+                if not t.cancelled():
+                    t.exception()
 
     @app.get("/m/face")
     def phone_face():
@@ -1513,10 +1519,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
         try:
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
+            unsubscribe()   # first: the sink never outlives the socket, even if this cleanup is cancelled
             for t in tasks:
                 t.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            unsubscribe()
+            # asyncio.wait, not gather: a gather cancelled by the server re-raises the helpers' own CancelledError,
+            # which the server's cancel scope doesn't take for its own; the socket's close then failed at random
+            # (CI, Nov 1). wait() only waits; the error, if any, is read so it isn't logged as unhandled.
+            done, _ = await asyncio.wait(tasks)
+            for t in done:
+                if not t.cancelled():
+                    t.exception()
 
     directory = Path(phone_dir) if phone_dir else PHONE_DIR
     if directory.is_dir():

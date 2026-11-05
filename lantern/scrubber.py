@@ -74,6 +74,7 @@ def _p(kind: str, rx: str, group: int = 0, check: Check | None = None, flags: in
 
 
 SECRET_PATTERNS = [
+    _p("telegram_bot_token", r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"),   # <bot id>:<35 chars>, from @BotFather
     _p("private_key", r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY-----|\Z)"),
     _p("aws_access_key", r"\b(?:AKIA|ASIA|AGPA|AIDA|AROA)[0-9A-Z]{16}\b"),
     _p("github_token", r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})\b"),

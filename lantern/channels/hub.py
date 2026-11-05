@@ -879,11 +879,12 @@ class ChannelHub:
 
     def _on_event(self, event: dict) -> None:
         kind = event.get("type")
-        if kind == "queued" and event.get("task_id") is not None:
-            if event.get("pack"):   # a pack run: remember it, so cards and results follow its surface
-                if len(self.pack_of) > 1000:
-                    self.pack_of.pop(next(iter(self.pack_of)))
-                self.pack_of[event["task_id"]] = event["pack"]
+        if kind == "queued" and event.get("task_id") is not None and event.get("pack"):
+            # a pack run: remember it, so cards and results follow its surface. Other queued tasks go on down the
+            # chain (an automatic learn reports back to the chat that asked for it).
+            if len(self.pack_of) > 1000:
+                self.pack_of.pop(next(iter(self.pack_of)))
+            self.pack_of[event["task_id"]] = event["pack"]
             return
         if kind == "approval" and event.get("event") == "requested":
             if self._surface_muted(event.get("task_id")):

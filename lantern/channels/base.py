@@ -11,6 +11,7 @@ computer, not a general chatbot.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import urllib.error
 import urllib.request
@@ -38,6 +39,15 @@ def urllib_http(method: str, url: str, headers: dict, body: bytes | None = None,
         raise ChannelError(f"network error: {e}") from e
 
 
+_BOT_TOKEN = re.compile(r"/bot[^/?#]+")
+
+
+def safe_url(url: str) -> str:
+    """A request URL fit for an error message: no query string, and a Telegram bot token in the path (the Bot API
+    puts it there: /bot<token>/sendMessage) is hidden. Error texts reach logs, task notes and the model."""
+    return _BOT_TOKEN.sub("/bot<token>", url.split("?")[0])
+
+
 def json_call(http: Http, method: str, url: str, payload: dict | None = None,
               headers: dict | None = None) -> dict:
     h = {"Accept": "application/json", **(headers or {})}
@@ -51,7 +61,7 @@ def json_call(http: Http, method: str, url: str, payload: dict | None = None,
     except json.JSONDecodeError:
         parsed = {"raw": data[:200].decode(errors="replace")}
     if status >= 300:
-        raise ChannelError(f"{method} {url.split('?')[0]} failed [{status}]: {json.dumps(parsed)[:300]}")
+        raise ChannelError(f"{method} {safe_url(url)} failed [{status}]: {json.dumps(parsed)[:300]}")
     return parsed
 
 
@@ -81,7 +91,7 @@ def multipart_call(http: Http, url: str, fields: dict, file_field: str, filename
     except json.JSONDecodeError:
         parsed = {"raw": raw[:200].decode(errors="replace")}
     if status >= 300:
-        raise ChannelError(f"POST {url.split('?')[0]} failed [{status}]: {json.dumps(parsed)[:300]}")
+        raise ChannelError(f"POST {safe_url(url)} failed [{status}]: {json.dumps(parsed)[:300]}")
     return parsed
 
 

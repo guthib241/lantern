@@ -117,6 +117,9 @@ def test_the_export_keeps_what_the_teacher_agrees_with_and_stops_at_the_cap(tmp_
 
 
 def test_the_modal_eval_reads_the_routine_out_of_an_answer():
+    modal = pytest.importorskip("modal")
+    if not hasattr(modal, "App"):   # a folder called modal/ on the path is not Modal's SDK: skip, don't crash
+        pytest.skip("Modal's SDK isn't installed")
     modal_script = pytest.importorskip("s14_modal")
     assert modal_script.routine_of('thinking... {"routine": "x"} then {"routine": "water-bill", "params": []}') == \
         "water-bill"

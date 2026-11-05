@@ -59,7 +59,9 @@ def test_protocol_ignores_chatter_and_matches_ids(fake_cmd):
 
 
 def test_hang_times_out_and_crash_restarts(fake_cmd):
-    b = FreeCADBackend("freecadcmd", popen=fake_cmd, timeout=1.5).start()
+    # 3 s, not 1.5: the call after a restart includes starting a new process, which a busy CI runner can take
+    # longer than 1.5 s to do (it failed that way once, Nov 5); the hang is still caught well before a real one.
+    b = FreeCADBackend("freecadcmd", popen=fake_cmd, timeout=3.0).start()
     try:
         with pytest.raises(BackendError, match="didn't answer"):
             b.call("hang", {})

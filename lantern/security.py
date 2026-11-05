@@ -42,6 +42,9 @@ TIERS: dict[str, str] = {
     "write_file": YELLOW, "move_file": YELLOW, "organize_files": YELLOW, "undo_moves": YELLOW, "remember": YELLOW,
     "forget": YELLOW, "set_reminder": YELLOW, "cancel_reminder": YELLOW, "make_widget": YELLOW,
     "send_email": RED, "fill_form": RED, "run_in_project": RED, "mcp_call": RED,
+    # from the agent-pack line (T1, T2, T6): a page in the user's own browser, a file to the phone, another
+    # project's code that may be installed next
+    "open_link": RED, "send_to_phone": RED, "learn_repo": RED,
     # approval actions that aren't tool names
     "save_widget": YELLOW, "submit_form": RED, "run_routine": RED, "cua_safety_check": RED,
     "open_untrusted_url": RED, "reel_steps": RED, "network_send": RED, "network_import": YELLOW, "lent_action": RED,
@@ -50,11 +53,12 @@ TIERS: dict[str, str] = {
 # without the user approving that exact value.
 # Another program's tool (MCP) is called by its own name; all of its arguments count, since any one may address.
 TARGETS: dict[str, tuple[str, ...]] = {"send_email": ("to", "cc"), "fill_form": ("url",),
-                                       "run_in_project": ("command", "path"), "mcp_call": ("args",)}
+                                       "run_in_project": ("command", "path"), "mcp_call": ("args",),
+                                       "open_link": ("url",), "learn_repo": ("url",)}
 WHAT = {"to": "recipient", "cc": "recipient", "url": "web address", "command": "command", "path": "project",
         "args": "input for another program"}
 ASK_FILLED_MAX = 1500   # an ask_user question with its handles filled in (shown to the user only)
-LEAVES = ("send_email", "fill_form", "mcp_call")   # what goes into these leaves the computer
+LEAVES = ("send_email", "fill_form", "mcp_call", "send_to_phone")   # what goes into these leaves the computer
 URL = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 DOC_NOTE = ("Kept away from you: content from files, pages, emails and other programs is never shown to you. "
