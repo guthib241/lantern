@@ -30,5 +30,8 @@
 | huggingface_hub (in the Modal image build, deploy only) | Apache-2.0 | downloads the pinned Muse Glimmer GGUF weights into a Modal Volume once |
 | Muse Glimmer 30B GGUF weights (`meta-models/Muse-Glimmer-30B-GGUF`) | Apache-2.0 | the private lane's model on the self-hosted server |
 | FreeCAD (user-installed, run as a separate process) | LGPL-2.1-or-later | CAD kernel for S17 (not bundled) |
-
 | LocalSend protocol (spec only) | MIT | implemented from the public README (https://github.com/localsend/protocol); no LocalSend code used |
+| Pyodide 0.27.2 (loaded from jsDelivr by the playground page, not bundled) | MPL-2.0 | runs `lantern/scrubber.py` in the browser on the GitHub Pages playground (`site/`) |
+| Inter and JetBrains Mono (Google Fonts, loaded by the playground page) | SIL OFL 1.1 | the playground's type |
+
+Lantern's own code is under the MIT license ([LICENSE](../LICENSE)); everything above keeps its own license.

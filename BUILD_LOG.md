@@ -739,3 +739,6 @@ Packs take an optional `needs` list (`lantern/agentpacks.py`: `{mcp, repo, why}`
 **Video.** A 3-minute demo and a 34-second cut, made from footage of the real app in rehearsal mode with an original soundtrack; no Meta logos (the models are named, nothing more).
 
 Tests: 1,152 passed, 2 skipped (FreeCAD and the Modal SDK aren't installed in this sandbox), the Electron end-to-end run included; pyflakes clean. API spend: $0 (everything offline).
+
+## Nov 5, 2026: MIT license
+The owner chose the MIT license: `LICENSE` at the root (copyright line: the repository owner, guthib241), `"license": "MIT"` in `desktop/package.json` and its lockfile, a license badge and line in the README, and "open source (MIT)" on the playground. `docs/THIRD_PARTY.md` now lists the playground's Pyodide (MPL-2.0) and web fonts (SIL OFL 1.1), and a stray blank line no longer cuts the LocalSend row off the table. Third-party code keeps its own license (KaTeX ships with its own `LICENSE` in `desktop/board/vendor/katex/`).

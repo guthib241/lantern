@@ -2,6 +2,7 @@
   "name": "lantern-desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Lantern's desktop overlay: avatar, approval cards, privacy view, simulated phone, widgets",
   "main": "main.js",
   "scripts": {

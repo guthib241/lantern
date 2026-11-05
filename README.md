@@ -7,6 +7,7 @@
 
 [![tests](https://github.com/guthib241/lantern/actions/workflows/ci.yml/badge.svg)](https://github.com/guthib241/lantern/actions/workflows/ci.yml)
 ![1,150+ tests](https://img.shields.io/badge/tests-1%2C150%2B%20passing-2ea043)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![Desktop: Electron](https://img.shields.io/badge/desktop-Electron-47848F)
 ![Accessibility: WCAG 2.1 AA](https://img.shields.io/badge/a11y-WCAG%202.1%20AA-6f42c1)
@@ -2226,5 +2227,7 @@ gitGraph
 </details>
 
 ---
+
+Lantern is open source under the [MIT license](LICENSE). The libraries it uses keep their own licenses: [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md).
 
 Submitting: [docs/SUBMISSION.md](docs/SUBMISSION.md) (video script, slide, write-up). More: [docs/SPEC.md](docs/SPEC.md) · [docs/DECISIONS.md](docs/DECISIONS.md) · [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) · [BUILD_LOG.md](BUILD_LOG.md) · [desktop/README.md](desktop/README.md)
