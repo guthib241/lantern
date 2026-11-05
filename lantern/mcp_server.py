@@ -91,7 +91,11 @@ def build_server(toolbox: Toolbox, *, audit=None, forward: Forward | None = None
 
     @server.tool(description="Ask about a private file: Lantern's local model reads it; only a short scrubbed answer comes back.")
     def ask_private(path: str, question: str) -> dict:
-        return out("ask_private", lambda: toolbox.ask_private(path, question))
+        def answer() -> dict:   # the placeholder is for Lantern's own cloud model; this caller gets the answer
+            r = toolbox.ask_private(path, question)
+            r.pop("note", None)
+            return {**r, "answer": toolbox.fill_private(r.get("answer", ""))}
+        return out("ask_private", answer)
 
     @server.tool(description="Find software projects by name.")
     def find_project(name: str) -> dict:
