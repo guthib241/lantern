@@ -230,13 +230,13 @@ def test_run_renders_goal_and_appends_instructions_after_now(tmp_path):
         assert core_p.memory.get_task(pack_id).goal == "[agent:tidy-test] Tidy Downloads into subfolders."
         first = fake_n.requests[0]["instructions"]
         second = fake_p.requests[0]["instructions"]
-        head_first, _, _ = first.partition("Now: ")
-        head_second, _, tail = second.partition("Now: ")
-        # The only difference is the briefing's "in progress" line, which names each task's own goal.
-        pack_goal = "[agent:tidy-test] Tidy Downloads into subfolders."
-        assert head_first.replace("say hi", "GOAL") == head_second.replace(pack_goal, "GOAL")
-        assert tail.strip().endswith(pack_suffix(core_p.packs.get("tidy-test")))
-        assert "Agent pack" in tail and "organize_files once" in tail
+        # With prompt caching (live-api-qa) the instructions are the same bytes on every task (rules and personality;
+        # the memory briefing and the time moved into the input). A pack's instructions come after that prefix,
+        # so a pack run still shares the cached prefix of every other task.
+        suffix = pack_suffix(core_p.packs.get("tidy-test"))
+        assert second == first + "\n\n" + suffix
+        assert "Agent pack" in suffix and "organize_files once" in suffix
+        assert "Now: " not in first and "Now: " in fake_n.requests[0]["input"]
         assert core_n.memory.get_task(normal).goal == "say hi"
     finally:
         core_n.shutdown()

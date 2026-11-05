@@ -253,6 +253,11 @@ main > section.chat.on { display: flex; flex-direction: column; min-height: 100%
 .chip.sam { background: color-mix(in srgb, var(--blue) 14%, transparent); color: color-mix(in srgb, var(--blue) 55%, var(--label)); }
 .task .actions { display: flex; gap: 14px; margin-top: 6px; }
 .task .actions:empty { display: none; }
+/* a text button (Undo, Receipt, Import a skill…, an agent's Run/Stop): tint-coloured words, no chrome */
+.forget { flex: none; border: 0; background: transparent; color: var(--tint-text); font: inherit; font-size: 13px; font-weight: 500;
+          padding: 0; cursor: pointer; }
+.forget:hover { text-decoration: underline; }
+.forget.quiet { color: var(--label-2); }
 .task .forget { border: 0; background: transparent; color: var(--tint-text); font-size: 12px; padding: 0; }
 .task .forget.quiet { color: var(--label-2); }
 .task .undone { font-size: 12px; color: var(--label-2); }

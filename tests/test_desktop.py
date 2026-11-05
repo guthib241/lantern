@@ -49,3 +49,15 @@ def test_tray_icons_are_ours_and_up_to_date():
         for suffix, size in (("", 16), ("@2x", 32)):
             committed = (DESKTOP / "assets" / "tray" / f"{name}{suffix}.png").read_bytes()
             assert committed.startswith(b"\x89PNG") and committed == mod.render(size, rgb), f"{name}{suffix}"
+
+
+def test_every_icon_the_panel_uses_is_defined():
+    """The panel draws its icons from one SVG sheet (<symbol id="i-…">). When the branches were combined the
+    Agents section kept its <use href="#i-agents"> but lost the symbol, and the icon silently drew nothing."""
+    import re
+    html = (DESKTOP / "renderer" / "panel.html").read_text(encoding="utf-8")
+    sources = [html, (DESKTOP / "renderer" / "panel.js").read_text(encoding="utf-8")]
+    sources += [p.read_text(encoding="utf-8") for p in (DESKTOP / "renderer" / "lib").glob("*.js")]
+    used = {m for s in sources for m in re.findall(r"#(i-[a-z0-9-]+)", s)}
+    defined = set(re.findall(r'<symbol id="(i-[a-z0-9-]+)"', html))
+    assert used and used <= defined, sorted(used - defined)
