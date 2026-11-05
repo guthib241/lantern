@@ -520,15 +520,18 @@ body.chatting .toast { bottom: 84px; }   /* above the message box */
 .sprite.hero-orb:hover, .sprite.hero-orb:active { transform: none; }
 .sprite.hero-orb .sat { --orbit: 56px; }
 
-/* What Lantern is doing right now: a quiet pill on the right of the toolbar, whatever the look */
+/* What Lantern is doing right now: a quiet pill on the right of the toolbar, whatever the look. The state shows as a
+   coloured dot; the words stay in the label colour, so every state meets WCAG AA contrast in light and dark. */
 .hero-status { flex: none; max-width: 46%; margin: 0; padding: 5px 12px; border-radius: 99px; font-size: 12.5px; font-weight: 500;
                color: var(--label-2); background: var(--fill); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
                transition: color .3s, background .3s; }
-.hero-status[data-mode="working"], .hero-status[data-mode="retry"] { color: var(--label); }
-.hero-status[data-mode="working"]::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; vertical-align: 1px;
-                                            border-radius: 50%; background: var(--orange); animation: blink 1.2s ease-in-out infinite; }
-.hero-status[data-mode="approval"] { color: #fff; background: var(--blue); }
-.hero-status[data-mode="done"] { color: var(--green-text); }
-.hero-status[data-mode="failed"], .hero-status[data-mode="stopped"] { color: var(--red-text); }
+.hero-status:not([data-mode="idle"]) { color: var(--label); }
+.hero-status:not([data-mode="idle"])::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px;
+                                                vertical-align: 1px; border-radius: 50%; background: var(--label-2); }
+.hero-status[data-mode="working"]::before, .hero-status[data-mode="retry"]::before { background: var(--orange); animation: blink 1.2s ease-in-out infinite; }
+.hero-status[data-mode="approval"] { color: #fff; background: var(--tint-fill); }
+.hero-status[data-mode="approval"]::before { background: #fff; }
+.hero-status[data-mode="done"]::before { background: var(--green); }
+.hero-status[data-mode="failed"]::before, .hero-status[data-mode="stopped"]::before { background: var(--red); }
 @keyframes blink { 50% { opacity: .25; } }
-@media (prefers-reduced-motion: reduce) { .hero-status[data-mode="working"]::before { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .hero-status::before { animation: none !important; } }
