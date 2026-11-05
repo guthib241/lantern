@@ -141,6 +141,7 @@ class Core:
         self.checkin = CheckIn(self.client, self.memory, self.emit)
         self.toolbox.on_event = self._agent_event
         self.agent = Agent(self.client, self.memory, self.toolbox, model=cfg.model, persona=cfg.persona,
+                           reasoning=getattr(cfg, "reasoning", ""),
                            on_event=self._agent_event)
         self._sinks: list[EventSink] = []
         self._queue: queue.Queue = queue.Queue()

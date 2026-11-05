@@ -90,6 +90,15 @@ SECRET_PATTERNS = [
     _p("password_assignment",
        r"(?i)\b(?:password|passwd|pwd|passphrase|secret|api[_\-]?key|access[_\-]?token|auth[_\-]?token|"
        r"client[_\-]?secret|private[_\-]?key)\b[\"']?\s*[:=]\s*[\"']?([^\s\"',;]{6,})", group=1),
+    # Said in plain words (live run, Oct 27: "my password is hunter2pass", "OTP 482913", "CVC 123" and
+    # "UPI PIN 9090" in a request all reached the cloud). A postal "PIN code"/"pincode" is not a secret.
+    _p("password", r"(?i)\b(?:password|passcode|passwd|passphrase|pwd)\s*(?:is|was|=|:|-)\s*[\"']?([^\s\"',;]{4,})",
+       group=1),
+    _p("otp", r"(?i)\b(?:otp|one[- ]time (?:pass)?(?:code|password)|verification code|security code|2fa code|"
+              r"auth(?:entication)? code|login code)\s*(?:is|was|=|:|-)?\s*(\d{4,8})\b", group=1),
+    _p("card_cvv", r"(?i)\b(?:cvv2?|cvc2?|csc|card security code)\s*(?:is|was|=|:|-)?\s*(\d{3,4})\b", group=1),
+    _p("pin", r"(?i)\b(?:(?:upi|atm|card|debit|credit|bank)\s+)?pin\b(?!\s*code)\s*(?:is|was|=|:|-|number)?\s*(\d{4,6})\b",
+       group=1),
     # S0: env-style names (LANTERN_DEMO_API_KEY=..., DB_PASSWORD=...): the \b above can't see a word after "_"
     _p("env_secret", r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_(?:API_?KEY|KEY|TOKEN|SECRET|PASSWORD|PASS|PWD)\b\s*[:=]\s*"
                      r"[\"']?([^\s\"',;]{6,})", group=1),

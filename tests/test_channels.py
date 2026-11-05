@@ -581,3 +581,43 @@ def test_both_pack_cards_reach_both_channels_first_answer_wins(tmp_path):
     finally:
         hub.stop()
         core.shutdown()
+
+
+def test_voice_languages_are_sent_as_language_bias(tmp_path, monkeypatch):
+    """Live API, Oct 27: Hindi/Hinglish notes transcribed perfectly with languageBias ["Hindi"], badly without."""
+    from lantern import config as config_mod, demo
+    monkeypatch.setenv("LANTERN_VOICE_LANGUAGES", "hindi")
+    assert config_mod.load().voice_languages == ["Hindi"]
+    got = {}
+
+    def fake_transcribe(wav, keywords=None, language_bias=None):
+        got["language_bias"] = language_bias
+        return {"transcript": "status", "audioDurationMs": 1000}
+    cfg = demo.prepare(tmp_path / "data")
+    core, hub, phone = demo.build(cfg, transcriber=fake_transcribe)
+    hub.start(listen=False)
+    try:
+        hub.receive(phone.incoming(audio=b"OggS fake", ext=".ogg"))
+        hub.wait_idle(10)
+        assert got["language_bias"] == ["Hindi"]
+    finally:
+        core.shutdown()
+
+
+def test_second_task_says_it_is_queued_behind_a_waiting_one(tmp_path):
+    """Live run, Oct 27: the phone said 'On it' while the task actually waited 83 s behind an approval."""
+    from fakes import call
+    core, hub, graph, http, _ = make(tmp_path, [
+        ([call("write_file", "c1", path="a.txt", content="x")], ""),
+        ([], "ok"), ([], "ok"),
+    ])
+    post(http, payload(text("write a file")))
+    for _ in range(300):
+        if list(core.bus.pending()):
+            break
+        time.sleep(0.01)
+    post(http, payload({**text("and another thing"), "id": "wamid.second"}))
+    hub.wait_idle(5)
+    assert any("Queued as task #2: I'll start right after task #1. It's waiting for your approval." in t
+               for t in graph.texts())
+    core.stop()

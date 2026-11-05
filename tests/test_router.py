@@ -91,7 +91,7 @@ def test_private_answer_is_not_resent_in_later_briefings(setup, tmp_path):
     Agent(GuardedClient(first, audit), mem, tb).run("what's my salary?")
     later = FakeClient([([], "Sure.")])
     Agent(GuardedClient(later, audit), mem, tb).run("what did you do today?")
-    briefing = later.requests[0]["instructions"]
+    briefing = later.requests[0]["input"]
     assert "42 lakh" not in briefing and "private file" in briefing and "what's my salary?" in briefing
     task = mem.recent_tasks(2)[1]
     assert mem.is_private_task(task.id) and mem.get_task(task.id).summary == "salary is 42 lakh"  # kept locally

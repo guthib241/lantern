@@ -292,6 +292,7 @@ class ComputerLoop:
 
     def _create(self, first: bool, **kw):
         try:
+            kw.setdefault("prompt_cache_key", "lantern-forms")   # route together: rules + tools are cached
             response = self.client.responses.create(model=self.model, **kw)
         except Exception as e:
             status = getattr(e, "status_code", None)

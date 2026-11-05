@@ -163,8 +163,9 @@ def test_full_task_search_move_remember_finish(home):
     second = client.requests[1]
     assert second["previous_response_id"] == "resp_1"
     assert second["input"][0]["call_id"] == "c1"
-    # memory briefing reaches the model
-    assert "What you know about the user" in client.requests[0]["instructions"]
+    # memory briefing reaches the model, after the request (the instructions stay byte-identical)
+    assert "What you know about the user" in client.requests[0]["input"]
+    assert client.requests[0]["input"].startswith("put my invoice in the tax folder")
 
 
 def test_next_task_sees_what_was_done(home):
@@ -174,7 +175,7 @@ def test_next_task_sees_what_was_done(home):
                       ([], "ok")]), mem, tb).run("sort downloads")
     client = FakeClient([([], "You already sorted downloads.")])
     Agent(client, mem, tb).run("what did you do earlier?")
-    assert "sorted downloads" in client.requests[0]["instructions"]
+    assert "sorted downloads" in client.requests[0]["input"]
 
 
 def test_tool_error_is_fed_back_not_crashed(home):
@@ -230,7 +231,74 @@ def test_the_cacheable_prefix_is_identical_across_tasks(tmp_path):
     agent.run("hello")
     first, later = fake.requests[0], fake.requests[-1]
     assert json.dumps(first["tools"]) == json.dumps(later["tools"])
-    cut = first["instructions"].index("# Your memory")
-    assert first["instructions"][:cut] == later["instructions"][:cut] and first["instructions"].startswith(BASE_RULES)
-    assert first["instructions"] != later["instructions"]          # the memory moved on, after the stable part
-    assert "vim" in later["instructions"][cut:] and "vim" not in later["instructions"][:cut]
+    assert first["instructions"] == later["instructions"] and first["instructions"].startswith(BASE_RULES)
+    assert "# Your memory" not in first["instructions"] and "Now:" not in first["instructions"]
+    assert "vim" in later["input"] and later["input"].startswith("hello")   # what changes rides at the end
+
+
+def test_lost_conversation_continues_from_a_recap(home):
+    """Live API, Oct 27: 'referenced response not found or expired' mid-task used to fail the task."""
+    root, mem = home
+    tb, _ = toolbox(root, mem)
+
+    class LosesThread(FakeClient):
+        def create(self, **kw):
+            if kw.get("previous_response_id") == "resp_1" and not getattr(self, "lost", False):
+                self.lost = True
+                self.requests.append(kw)
+                err = RuntimeError("referenced response not found or expired")
+                err.status_code = 400
+                raise err
+            return super().create(**kw)
+    client = LosesThread([
+        ([call("search_files", "c1", query="invoice")], ""),
+        ([call("finish", "c2", status="done", summary="found the invoice")], ""),
+        ([], "Found it."),
+    ])
+    r = Agent(client, mem, tb).run("find my invoice")
+    assert r.status == "done" and r.reply == "Found it."
+    fresh = client.requests[2]
+    assert "previous_response_id" not in fresh and "search_files" in fresh["input"] and "find my invoice" in fresh["input"]
+    assert any("lost this conversation" in s["content"] for s in mem.steps(r.task_id))
+
+
+def test_other_errors_still_fail_the_task(home):
+    root, mem = home
+    tb, _ = toolbox(root, mem)
+
+    class Broken(FakeClient):
+        def create(self, **kw):
+            if kw.get("previous_response_id"):
+                err = RuntimeError("bad request: tools malformed")
+                err.status_code = 400
+                raise err
+            return super().create(**kw)
+    with pytest.raises(RuntimeError):
+        Agent(Broken([([call("list_dir", "c1")], "")]), mem, tb).run("x")
+
+
+
+def test_reasoning_effort_is_sent_when_set(home):
+    """Live API, Oct 27: effort "low" made a multi-step task ~40% faster at half the cost, same answer."""
+    root, mem = home
+    tb, _ = toolbox(root, mem)
+    client = FakeClient([([call("list_dir", "c1")], ""), ([], "done")])
+    Agent(client, mem, tb, reasoning="low").run("look around")
+    assert all(r["reasoning"] == {"effort": "low"} for r in client.requests)
+    plain = FakeClient([([], "hi")])
+    Agent(plain, mem, tb).run("hi")
+    assert "reasoning" not in plain.requests[0]
+    with pytest.raises(ValueError):
+        Agent(plain, mem, tb, reasoning="none")
+
+
+
+def test_every_agent_request_carries_the_cache_key(home):
+    """Live API, Oct 27: with a shared prompt_cache_key, 90-94% of input tokens came from the cache
+    (first call of a later task: 2,929 of 3,111 cached, cost -70%); without it, often 0."""
+    from lantern.agent import PROMPT_CACHE_KEY
+    root, mem = home
+    tb, _ = toolbox(root, mem)
+    client = FakeClient([([call("list_dir", "c1")], ""), ([], "done")])
+    Agent(client, mem, tb).run("look around")
+    assert {r["prompt_cache_key"] for r in client.requests} == {PROMPT_CACHE_KEY} == {"lantern-agent"}

@@ -312,8 +312,8 @@ class ResumableAgent(Agent):
             except Exception as e:
                 if not chain_lost(e):
                     raise
-                self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; "
-                                                      "continued with a recap")
+                self.memory.log_step(task_id, "note", "the model API lost this conversation (it no longer had this "
+                                                      "task's earlier turns); continued with a recap")
                 response = self._model(task_id, kind, rung, input=self._recap(task_id, state, outputs), **kw)
         state["model"] = self.model
         return response

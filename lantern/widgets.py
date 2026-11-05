@@ -121,7 +121,8 @@ def _complete(client: Any, **kw) -> Any:
     Live API, Oct 27: the non-streamed call failed every time after 30 s ("upstream request failed")
     while the model reasoned through ~23k tokens; streamed at effort "low" it takes ~14 s and ~3k
     tokens. Returns the final response (a fake client in tests may return it directly)."""
-    result = client.responses.create(stream=True, reasoning={"effort": WIDGET_EFFORT}, **kw)
+    result = client.responses.create(stream=True, reasoning={"effort": WIDGET_EFFORT},
+                                     prompt_cache_key="lantern-widgets", **kw)
     if hasattr(result, "output_text"):
         return result
     final = None

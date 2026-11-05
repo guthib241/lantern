@@ -22,6 +22,8 @@ from .mcp_client import with_deferred
 from .memory import Memory
 from .tools import TOOL_SPECS, Toolbox, ToolError, _fn
 
+PROMPT_CACHE_KEY = "lantern-agent"
+REASONING = ("minimal", "low", "medium", "high", "xhigh", "max")   # Muse Spark rejects "none"
 PERSONAS = {
     "helpful": "You are warm, upbeat and encouraging. Short sentences.",
     "sarcastic": "You are dry and sarcastic, but you always get the job done properly. Tease lightly, never insult.",
@@ -128,8 +130,11 @@ class Result:
 class Agent:
     def __init__(self, client, memory: Memory, toolbox: Toolbox,
                  model: str = models.SPARK, persona: str = "smug",
-                 max_steps: int = 20, on_event=None):
+                 max_steps: int = 20, on_event=None, reasoning: str = ""):
         self.client = client
+        if reasoning and reasoning not in REASONING:
+            raise ValueError(f"reasoning must be one of {', '.join(REASONING)}")
+        self.reasoning = reasoning   # "" = the model decides (dev.meta.ai/docs/reasoning)
         self.memory = memory
         self.toolbox = toolbox
         self.model = models.check_model(model)
@@ -145,15 +150,23 @@ class Agent:
             toolbox.cancel = self.cancel  # long tools (form filling) stop too
 
     def instructions(self) -> str:
-        return (
-            BASE_RULES
-            + f"\nPersonality: {PERSONAS[self.persona]}\n\n"
-            + "# Your memory\n" + self.memory.context_block()
-            + f"\n\nNow: {dt.datetime.now().strftime('%a %d %b %Y, %H:%M')}"
-        )
+        """Rules and personality only: byte-identical on every request of every task, so with the tool
+        list it forms a cacheable prefix (CLAUDE.md). Live API, Oct 27: with the memory inside the
+        instructions the next task's first call cached 0 tokens; with it in the input, 2,801 of 2,874."""
+        return BASE_RULES + f"\nPersonality: {PERSONAS[self.persona]}\n"
+
+    def first_input(self, goal: str) -> str:
+        """The request, then what changes between tasks (memory briefing, the time) at the very end."""
+        return (f"{goal}\n\n---\n# Your memory (Lantern's own notes, for context)\n{self.memory.context_block()}"
+                f"\n\nNow: {dt.datetime.now().strftime('%a %d %b %Y, %H:%M')}")
 
     def _create(self, task_id: int, **kw):
         """One Responses API call; its token usage and cost are logged to the task."""
+        if self.reasoning:
+            kw.setdefault("reasoning", {"effort": self.reasoning})
+        # Same key on every agent request: requests that share it route together, so the identical
+        # rules + tools prefix is found in the cache (dev.meta.ai/docs/prompt-caching). Not per user.
+        kw.setdefault("prompt_cache_key", PROMPT_CACHE_KEY)
         response = self.client.responses.create(model=self.model, **kw)
         usage = models.Usage.from_response(getattr(response, "usage", None))
         cost = models.token_cost(self.model, usage)
@@ -195,8 +208,9 @@ class Agent:
         except Exception as e:
             if not chain_lost(e):
                 raise
-        self.memory.log_step(task_id, "note", "the model API no longer had this task's earlier turns; continued "
-                                              "with a recap")
+        note = "the model API lost this conversation (it no longer had this task's earlier turns); continued with a recap"
+        self.memory.log_step(task_id, "note", note)
+        self.on_event("note", {"id": task_id, "text": note})
         done = "; ".join(_recap_step(c) for c in calls_made[-16:])
         confirmed = [c["name"] + (f" {c['result'].get('form_url')}" if c["name"] == "fill_form" else "")
                      for c in calls_made if isinstance(c.get("result"), dict) and c["result"].get("verified")
@@ -252,7 +266,7 @@ class Agent:
         response = self._create(
             task_id,
             instructions=instructions,
-            input=goal,
+            input=self.first_input(goal),
             tools=self.tools,
         )
 
