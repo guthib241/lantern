@@ -23,6 +23,38 @@
     return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`;
   }
 
+  /** Short human form matching lantern/timesaved.py: "30 sec", "6 min", "1 h", "2 h 15 min". */
+  function formatSaved(min) {
+    const m = Math.max(0, Number(min) || 0);
+    if (m <= 0) return '0 min';
+    if (m < 1) return `${Math.round(m * 60)} sec`;
+    if (m < 60) return `${+m.toFixed(1)} min`;
+    const h = Math.floor(m / 60), rest = m - h * 60;
+    return rest < 1 ? `${h} h` : `${h} h ${+rest.toFixed(1)} min`;
+  }
+
+  function weekday(day) {
+    const d = new Date(`${day}T12:00:00`);
+    return Number.isNaN(d.getTime()) ? day : d.toLocaleDateString(undefined, { weekday: 'short' });
+  }
+
+  /** The fifth tile: this week's honest total plus the 7 per-day bars. Pure.
+   * saved: GET /stats/time-saved ({total_min, days: [{day, minutes}]}), or null when unknown. */
+  function savedTile(saved) {
+    const days = (saved && saved.days) || [];
+    const total = (saved && saved.total_min) || 0;
+    const bars = days.slice(-7).map((d) => Math.max(0, Number(d.minutes) || 0));
+    while (bars.length < 7) bars.unshift(0);
+    let note = 'nothing saved yet';
+    if (total > 0) {
+      const best = days.slice().sort((a, b) => b.minutes - a.minutes)[0];
+      note = best && best.minutes > 0 ? `most on ${weekday(best.day)}` : `${days.length}-day total`;
+    }
+    return { id: 'saved', label: 'Time saved this week', tone: total > 0 ? 'teal' : 'gray',
+             value: formatSaved(total), note, bars,
+             a11y: total > 0 ? `Time saved this week: ${formatSaved(total)}. ${note}.` : 'Time saved this week: nothing yet.' };
+  }
+
   /** state: the reducer state; extra: {reminders: [{due, text}], now: seconds, budget: /usage's budget}. */
   function glance(state, extra) {
     const now = (extra && extra.now) || Date.now() / 1000;
@@ -43,6 +75,7 @@
         note: next ? next.text : 'none set' },
       { id: 'spend', label: 'Spent today', tone: 'purple', value: money((state.usage && state.usage.total) || 0),
         note: spendNote(extra && extra.budget) },
+      savedTile(extra && extra.timeSaved),
     ];
   }
 
@@ -74,5 +107,5 @@
     return new Date(nowSec * 1000).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
   }
 
-  return { glance, greeting, dateLine, budgetView, SUGGESTIONS };
+  return { glance, greeting, dateLine, budgetView, formatSaved, savedTile, SUGGESTIONS };
 });

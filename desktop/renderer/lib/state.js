@@ -26,6 +26,7 @@
       lastReminder: null, // {text, late, at}: a reminder just went off
       lastHeal: null,     // {name, version, at}: a learned routine fixed itself after a page changed (S4)
       listening: false,   // push to talk is open (live talk to the avatar)
+      agents: [],        // [{task_id, pack}]: pack tasks still running, one face each in the avatar window
       interrupted: [],    // [{id, goal}]: tasks cut short when Lantern stopped, waiting for "resume"
       questions: [],      // [{task_id, question, options, tainted}]: parked tasks waiting for an answer (S1)
       juggling: null,     // {on, active, running, queued, parked}: the scheduler's snapshot (S1)
@@ -134,6 +135,9 @@
         break;
       case 'queued':
         ensureTask(s, e.task_id, e.goal, at);
+        if (e.pack && !s.agents.some((a) => a.task_id === e.task_id)) {
+          s.agents.push({ task_id: e.task_id, pack: String(e.pack) });   // the avatar shows a face for it
+        }
         break;
       case 'task': {
         const t = ensureTask(s, e.id, e.goal, at);
@@ -184,6 +188,7 @@
       }
       case 'done': {
         const t = ensureTask(s, e.id, '', at);
+        s.agents = s.agents.filter((a) => a.task_id !== e.id);   // its face folds back into the main avatar
         t.status = e.status;
         t.summary = e.summary || '';
         t.reply = e.reply || '';
@@ -197,6 +202,7 @@
       case 'stopped':
         s.lastStop = at;
         s.approvals = {};
+        s.agents = [];   // the kill switch stops everything: no faces left
         break;
       case 'channel_error':
         s.lastError = at;
@@ -222,9 +228,11 @@
           s.order = [];
           s.usage = { byBadge: {}, total: 0 };
           s.lastDone = null;
+          s.agents = [];
         } else if (e.task_id != null) {
           delete s.tasks[e.task_id];
           s.order = s.order.filter((id) => id !== e.task_id);
+          s.agents = s.agents.filter((a) => a.task_id !== e.task_id);
         }
         break;
       default:

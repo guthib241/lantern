@@ -30,6 +30,7 @@ HOME = Path(os.environ.get("LANTERN_HOME", "~/.lantern")).expanduser()
 class Config:
     roots: list[str] = field(default_factory=lambda: [str(Path.home() / "Documents")])
     persona: str = "smug"
+    skin: str = "muse"          # the avatar window's skin: muse (drawn faces), glow, or clock (T4b)
     model: str = models.SPARK
     base_url: str = models.BASE_URL
     db_path: str = str(HOME / "memory.db")
@@ -48,17 +49,19 @@ class Config:
     media_dir: str = str(HOME / "media")
     envmap_path: str = str(HOME / "envmap.db")
     widgets_dir: str = str(HOME / "widgets")
+    agents_dir: str = str(HOME / "agents")
     mcp_config: str = str(HOME / "mcp.json")
     encrypt: bool = True                  # memory + audit log encrypted at rest (key in the OS keychain)
     timeout: float = 120.0                # seconds per model call (LANTERN_TIMEOUT)
     workers: int = 3                      # tasks the server runs at once (LANTERN_WORKERS; scheduler.py)
+    localsend: bool = False               # receive files from phones over Wi-Fi (Setup switch or LANTERN_LOCALSEND=1)
 
 
 PATH_FIELDS = ("db_path", "zones_file", "audit_path", "profile_path", "browser_profile_dir", "media_dir",
-               "envmap_path", "widgets_dir", "mcp_config")
+               "envmap_path", "widgets_dir", "agents_dir", "mcp_config")
 
 
-SETTABLE = ("persona",)   # what the desktop's Preferences may change
+SETTABLE = ("persona", "skin", "localsend")   # what the desktop's Preferences may change
 
 
 def save_setting(key: str, value, home: str | Path) -> Path:
@@ -136,4 +139,6 @@ def load() -> Config:
         cfg.encrypt = _flag(os.environ["LANTERN_ENCRYPT"])
     if os.environ.get("LANTERN_WORKERS", "").strip().isdigit():
         cfg.workers = int(os.environ["LANTERN_WORKERS"])
+    if os.environ.get("LANTERN_LOCALSEND") not in (None, ""):
+        cfg.localsend = _flag(os.environ["LANTERN_LOCALSEND"])
     return cfg

@@ -115,7 +115,8 @@ def build_agent(cfg, mem: Memory) -> Agent:
     email = EmailService(EmailSettings.from_env(dict(os.environ)), policy, audit,
                          outbox_dir=os.path.join(cfg.media_dir, "outbox"))
     tools = Toolbox(policy, mem, ask_approval, router=router, forms=forms, email=email,
-                    envmap=EnvMap(policy, cfg.envmap_path), widgets=Widgets(Path(cfg.widgets_dir)))
+                    envmap=EnvMap(policy, cfg.envmap_path), widgets=Widgets(Path(cfg.widgets_dir)),
+                    audit=audit)
     tools.client = client
     tools.on_event = show_event
     return Agent(client, mem, tools, model=cfg.model, persona=cfg.persona, on_event=show_event)
@@ -397,11 +398,22 @@ def main(argv=None) -> None:
         mem.close()
         core = Core(cfg, workers=cfg.workers if a.serve else 0)
         hub = ChannelHub(core, channels_from_env(dict(os.environ)))
+        from .channels.base import Channel
+        core.toolbox.phone_sender = next(
+            (c.send_file for c in hub.channels.values() if type(c).send_file is not Channel.send_file),
+            None)
         if a.channel_test:  # prove the phone side works before the demo
             for ch in hub.channels.values():
                 ch.send_text(a.channel_test)
                 print(f"sent via {ch.name}")
             return
+        from . import localsend as localsend_mod
+        if localsend_mod.enabled_in(dict(os.environ), cfg):
+            try:
+                status = core.start_localsend()
+                print(f"   LocalSend receiver on {status['alias']} (port {status['port']}, inbox {status['inbox']})")
+            except RuntimeError as e:
+                print(f"   LocalSend receiver off: {e}")
         return serve(core, config_mod.HOME, port=a.port, hub=hub.start(), phone=bool(a.phone))
 
     # Terminal tasks take the same protected path as the desktop and phone (terminal.py: scheduler, S0 split).

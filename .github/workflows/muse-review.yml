@@ -1,0 +1,35 @@
+name: muse-review
+
+# Muse Spark reviews each push to a claude/* branch (and each pull request) against CLAUDE.md.
+# Needs the repository secret MODEL_API_KEY; without it (e.g. fork PRs) the job skips cleanly.
+on:
+  push:
+    branches: ["claude/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: muse-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the client
+        run: pip install "openai>=1.50"
+      - name: Review with Muse Spark
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/ci_review.py --base "$BASE" --head "$HEAD_SHA"

@@ -191,10 +191,13 @@ select { appearance: none; -webkit-appearance: none; border: 0; border-radius: 7
 .tile .t-label::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--gray); }
 .tile.orange .t-label::before { background: var(--orange); } .tile.green .t-label::before { background: var(--green); }
 .tile.blue .t-label::before { background: var(--blue); } .tile.purple .t-label::before { background: var(--purple); }
+.tile.teal .t-label::before { background: var(--teal); }
 .tile .t-value { font-size: 24px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .tile.orange .t-value { color: var(--orange-text); }
 .tile .t-note { font-size: 12px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .checkin-group .checkin select { flex: none; }
+.tile .bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; margin-top: 6px; }
+.tile .bars span { flex: 1; min-height: 2px; border-radius: 2px; background: var(--teal); opacity: .75; }
 
 /* ---- Today: a conversation (Messages-like), the composer pinned to the bottom ---- */
 body.chatting main { padding-bottom: 0; }
@@ -261,6 +264,37 @@ main > section.chat.on { display: flex; flex-direction: column; min-height: 100%
                       display: grid; place-items: center; color: var(--label-2); background: var(--fill-2); font-variant-numeric: tabular-nums; }
 .tabs button .badge[hidden] { display: none; }
 #badge-tasks { color: #fff; background: var(--red-fill); }
+
+/* ---- agents ---- */
+.agent .goal .chip { margin-left: 8px; vertical-align: 1px; }
+.agent-tools { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.agent-form { display: grid; gap: 10px; margin-top: 12px; }
+.agent-form label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; color: var(--label-2); }
+.agent-form input, .agent-form textarea { width: 100%; box-sizing: border-box; border: 0; border-radius: 9px;
+  background: var(--fill); padding: 9px 11px; font-size: 14px; font-weight: 400; color: var(--label); }
+.agent-form textarea { resize: vertical; }
+.agent-run { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px;
+  font-size: 13.5px; font-weight: 600; }
+.agent-loop { display: grid; gap: 2px; margin-top: 10px; font-size: 13.5px; }
+.agent-loop .status { color: var(--label-2); }
+.agent-loop .actions { display: flex; gap: 10px; margin-top: 6px; }
+.agent .row-btns { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; margin-top: 4px; }
+.agent-run .row-btns { margin-top: 0; }
+.stop-big { border: 0; border-radius: 12px; min-height: 46px; padding: 10px 26px; font-weight: 700; font-size: 16px;
+  color: #fff; background: var(--red-fill); }
+.stop-big:hover { filter: brightness(1.06); }
+.stop-big:active { transform: scale(.98); }
+.row.drop.over { background: var(--fill); border-radius: var(--radius); outline: 2px dashed var(--tint); }
+
+/* ---- avatar studio ---- */
+.avatar-thumb { width: 44px; height: 44px; flex: none; border-radius: 50%; object-fit: cover; background: var(--fill); }
+.agent-sig { margin-top: 6px; font-size: 12.5px; color: var(--label-2); }
+.agent-sig.signed { color: var(--green-text); }
+.agent-sig.tampered { color: var(--red-text); font-weight: 600; }
+.agent-face { width: 40px; height: 40px; flex: none; border-radius: 50%; object-fit: cover; background: var(--fill);
+  display: grid; place-items: center; font-size: 22px; }
+.agent .head { display: flex; align-items: center; gap: 10px; }
+.avatar-row small { display: block; color: var(--label-2); font-size: 12.5px; word-break: break-word; }
 
 /* ---- reminders ---- */
 .reminder .when { flex: none; font-weight: 600; font-size: 12.5px; color: var(--orange-text); font-variant-numeric: tabular-nums; }

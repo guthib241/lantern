@@ -3,6 +3,22 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
        -webkit-font-smoothing: antialiased; letter-spacing: -.01em; }
 .stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 8px; gap: 10px; }
 
+/* ---- the Muse portrait, the glow and the clock (every look but the orb, which orb.css animates) ---- */
+.sprite:not(.skin-orb) { width: 150px; height: 150px; cursor: pointer; animation: bob 3.2s ease-in-out infinite; filter: drop-shadow(0 10px 22px rgba(255, 140, 40, .35)); flex: none; }
+.sprite:not(.skin-orb) svg { width: 100%; height: 100%; display: block; }
+.sprite:not(.skin-orb) .portrait { width: 140px; height: 140px; margin: 5px auto 0; display: block; border-radius: 50%; object-fit: cover;
+                    box-shadow: 0 0 0 3px rgba(255, 255, 255, .92), 0 0 34px rgba(255, 179, 71, .6); }
+.sprite:not(.skin-orb).sleeping { animation-duration: 6s; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .2)); }
+.sprite:not(.skin-orb).celebrating { animation: hop .6s ease-in-out 3, bob 3.2s ease-in-out 1.8s infinite; }
+.sprite:not(.skin-orb).needs-approval { animation: nudge 1.4s ease-in-out infinite; }
+.sprite:not(.skin-orb).annoyed { animation: shake .35s ease-in-out 2, bob 3.2s ease-in-out .7s infinite; }
+.sprite:not(.skin-orb) .clock-ring.pulse { animation: clockpulse 1.6s ease-in-out infinite; }
+@keyframes clockpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-20px) rotate(-4deg); } }
+@keyframes nudge { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-5deg); } 75% { transform: rotate(5deg); } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
 /* ---- the live activity island ---- */
 .island {
   --spring: cubic-bezier(.32, 1.4, .5, 1);
@@ -39,6 +55,17 @@ body { font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe 
 .island[data-mode="failed"] .lead, .island[data-mode="stopped"] .lead { background: #ff453a; }
 .island[data-mode="reminder"] .lead { background: #ff9f0a; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- running agents: one small face per pack task, stacked beside the main avatar ---- */
+.faces { display: flex; gap: 10px; }
+.faces[hidden] { display: none; }
+.face { position: relative; width: 46px; height: 46px; border-radius: 50%; cursor: pointer;
+        display: grid; place-items: center; font-size: 24px; background: #2c2c2e; color: #fff;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, .92), 0 0 18px rgba(255, 179, 71, .55); }
+.face img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.face .dot { position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%;
+             background: #30d158; border: 2px solid #000; animation: facedot 1.6s ease-in-out infinite; }
+@keyframes facedot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }

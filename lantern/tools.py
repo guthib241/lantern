@@ -18,10 +18,12 @@ import hashlib
 import json
 import re
 import threading
+import webbrowser
 from pathlib import Path
 from typing import Callable
 
 from .approvals import ApprovalError, Gate, as_gate
+from .linkopen import clean_url, open_url
 from .memory import Memory
 from .policy import PRIVATE, WRITABLE, Policy, PolicyError
 from .untrusted import wrap
@@ -68,7 +70,10 @@ SECRET_QUESTION = re.compile(
 
 class Toolbox:
     def __init__(self, policy: Policy | list[str | Path], memory: Memory, approve: Approver | Gate,
-                 router=None, forms=None, email=None, envmap=None, widgets=None, mcp=None):
+                 router=None, forms=None, email=None, envmap=None, widgets=None, mcp=None,
+                 phone_sender=None, audit=None):
+        """phone_sender: (data, filename, caption) -> {"ok", "bytes"} (a channel's send_file,
+        wired where the hub is created). audit: AuditLog, for recording what left the laptop."""
         if not isinstance(policy, Policy):
             if not policy:
                 raise ValueError("Lantern needs at least one allowed folder")
@@ -86,8 +91,15 @@ class Toolbox:
         self.mcp = mcp          # mcp_client.MCPHub: other programs' tools, offered as deferred tools
         self.lent = None        # lend.Guard while a borrowed task runs (S13): every call checked, then approved
         self.freecad = None     # S17: integrations.freecad.FreeCADConnector when mcp.json has a "freecad" server
+        self.phone_sender = phone_sender  # a channel's send_file; None means no phone is connected
+        self.audit = audit                # AuditLog: every send is recorded as leaving the laptop
+        self.github_get = None    # repolearn's network hook (url -> bytes); None means real GitHub
+        self.mcp_probe = None     # repolearn.probe_server hook (name, spec -> [tools]); tests swap it
+        self.mcp_config = None    # Lantern's mcp.json path (Core sets it); learned servers go there
+        self.link_opener = webbrowser.open  # open_link's browser hook, so tests can swap it
         self.tainted = False  # set once untrusted content reached the model in this task
         self.request = ""     # the user's own request for this task (begin_task), for the form plan
+        self.allowed_tools: set[str] | None = None  # an agent pack's allowlist for this task (None = everything)
         self.untrusted_emails: set[str] = set()  # addresses seen only in files/web/email content
         self.task_id: int | None = None
         self.can_park = False   # True when a scheduler can park this task while it waits for an answer
@@ -97,6 +109,7 @@ class Toolbox:
     def begin_task(self, task_id: int | None = None, goal: str = "") -> None:
         self.filed: dict[str, str] = {}   # form page -> what confirmed it, in this task (fill_form never files twice)
         self.tainted = False
+        self.allowed_tools = None
         self.untrusted_emails = set()
         self.task_id = task_id
         self.request = "" if goal.startswith(EXTERNAL_PREFIX) else goal   # the user's own words, for the form plan
@@ -272,6 +285,22 @@ class Toolbox:
         if ok:
             self._log_undo([{"source": str(dst), "destination": str(src)}])
         return {"done": ok, "from": str(src), "to": str(dst), "verified": ok}
+
+    # ---- links (open on this laptop) -------------------------------------------
+    def open_link(self, url: str) -> dict:
+        """Open a web link in this laptop's default browser, after approval."""
+        link = clean_url(url or "")
+        if link is None:
+            return {"done": False, "reason": "not a web link (only http/https)"}
+        payload = {"url": link, "url_sha256": hashlib.sha256(link.encode()).hexdigest()}
+        commit = self._approve("open_link", f"Open on this laptop: {link}", payload)
+        if commit is None:
+            return {"done": False, "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return refused
+        opened = open_url(link, self.link_opener)
+        # verified honestly means "the browser accepted it"
+        return {"done": opened, "verified": opened, "url": link}
 
     def _log_undo(self, moves: list[dict]) -> None:
         """Record the reverse of verified moves in the task's log (memory only, never sent to the model):
@@ -462,6 +491,60 @@ class Toolbox:
         except EmailError as e:
             raise ToolError(str(e)) from e
 
+    # ---- phone (send a file to the owner's Telegram) -------------------------
+    def send_to_phone(self, path: str, caption: str = "") -> dict:
+        """Send a file to the owner's phone on Telegram, after approval.
+
+        Private-zone files are refused (they stay on this laptop). The approval is
+        bound to the file's name, size and SHA-256; the file is re-read right before
+        sending and refused if it changed. `verified` is true only when the channel
+        reports the send ok with the same byte count."""
+        from .channels.base import ChannelError
+        from .channels.telegram import MAX_FILE_BYTES
+        from .email_tool import _size
+        if self.phone_sender is None:
+            return {"done": False, "verified": False,
+                    "reason": "no phone connected (set up Telegram, see README)"}
+        try:
+            p, zone = self.policy.check_visible(path)
+        except PolicyError as e:
+            raise ToolError(str(e)) from e
+        if zone == PRIVATE:
+            return {"done": False, "verified": False,
+                    "reason": f"{p} is in a private zone; it stays on this laptop"}
+        if not p.is_file():
+            raise ToolError(f"{p} is not a file")
+        size = self.policy.stat(p).st_size
+        if size > MAX_FILE_BYTES:
+            return {"done": False, "verified": False,
+                    "reason": f"{p.name} is {_size(size)}; Telegram bots can only send 50 MB"}
+        data = self.policy.read_bytes(p)
+
+        def plan(raw: bytes) -> dict:
+            return {"file": p.name, "bytes": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(), "to": "Telegram (owner)"}
+        commit = self._approve("send_to_phone", f"Send {p} ({_size(len(data))}) to your phone on Telegram",
+                               plan(data))
+        if commit is None:
+            return {"done": False, "verified": False, "reason": "user declined"}
+        final = self.policy.read_bytes(p)   # re-read: what's on disk now is what goes out
+        if refused := self._commit(commit, plan(final)):
+            return {"done": False, "verified": False, "reason": refused["reason"]}
+        try:
+            reply = self.phone_sender(final, p.name, caption or "")
+        except NotImplementedError:
+            return {"done": False, "verified": False, "reason": "Telegram only for now"}
+        except (ChannelError, OSError) as e:
+            raise ToolError(f"send_to_phone failed: {e}") from e
+        ok = bool(reply.get("ok"))
+        verified = ok and reply.get("bytes") == len(final)
+        if self.audit is not None:   # what left the laptop: lane, destination, name and size, no contents
+            self.audit.record(lane="cloud", destination="api.telegram.org", endpoint="telegram.send",
+                              model="telegram", task_id=self.task_id,
+                              payload=json.dumps({"file": p.name, "bytes": len(final)}).encode(),
+                              preview=f"sent {p.name} ({_size(len(final))}) to Telegram")
+        return {"done": ok, "verified": verified, "file": p.name, "bytes": len(final)}
+
     # ---- projects (environment map) ------------------------------------------
     def _envmap(self):
         if self.envmap is None:
@@ -618,6 +701,8 @@ class Toolbox:
 
     def mcp_call(self, function: str, args: dict) -> dict:
         """Call another program's tool. Needs approval unless the user allowlisted it as read-only."""
+        if getattr(self, "freecad", None) is not None and self.mcp.tools[function].server == "freecad":
+            return self.freecad.call(self, function, args)
         import json as _json
 
         from .mcp_client import MCPError
@@ -643,6 +728,154 @@ class Toolbox:
         if out["structured"] is not None:
             result["structured"] = out["structured"]
         return result
+
+    # ---- GitHub repos (learn_repo) ----------------------------------------------
+    def _learn_base(self):
+        """Lantern's own folder: learned servers and wrapper builds live here."""
+        from pathlib import Path as _Path
+        if self.mcp_config:
+            return _Path(self.mcp_config).expanduser().parent
+        return _Path.home() / ".lantern"
+
+    def learn_repo(self, url: str) -> dict:
+        """Read a GitHub repo, explain it, and act on what it is: install its MCP
+        server pinned to a commit (red approval), build a wrapper with Muse Code,
+        or draft an agent pack from its docs. Reading runs no code."""
+        from . import repolearn
+        try:
+            owner, name, ref = repolearn.parse_url(url)
+        except repolearn.RepoError as e:
+            raise ToolError(str(e)) from e
+        if self.client is None:
+            raise ToolError("the model client isn't set up, so I can't summarize the repo")
+        try:
+            repo = repolearn.fetch_repo(owner, name, ref, get=self.github_get)
+        except repolearn.RepoError as e:
+            raise ToolError(str(e)) from e
+        self._saw_untrusted(repo.readme + "\n" + " ".join(repo.top_files))
+        try:
+            summary, _ = repolearn.summarize(self.client, self.memory, self.task_id, repo)
+        except repolearn.RepoError as e:
+            raise ToolError(str(e)) from e
+        kind = summary.get("kind")
+        if repolearn.looks_like_mcp(repo):   # facts win over the model
+            kind = "mcp_server"
+        base = {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "license": repo.license,
+                "stars": repo.stars, "archived": repo.archived, "kind": kind,
+                "explanation": summary.get("explanation", ""),
+                "tools": summary.get("tools", []), "risks": summary.get("risks", []),
+                "readme": wrap(repo.readme[:MAX_READ_CHARS] or "(no README)", f"github:{repo.owner}/{repo.repo}",
+                               kind="github")}
+        if kind == "mcp_server":
+            return self._learn_install(repo, summary, base)
+        if kind == "library_or_app":
+            return self._learn_wrapper(repo, summary, base)
+        try:
+            pack = repolearn.draft_docs_pack(self.client, self.memory, self.task_id, repo)
+        except repolearn.RepoError as e:
+            return {**base, "pack_draft": None, "reason": str(e)}
+        return {**base, "pack_draft": pack,
+                "note": "A draft only; installing it goes through the agent install approval."}
+
+    def _learn_install(self, repo, summary: dict, base: dict, folder=None,
+                       cmds=None, spec=None) -> dict:
+        """(A): red approval, install pinned, add to mcp.json, start, list tools."""
+        import json as _json
+        from . import repolearn
+        try:
+            name = repolearn.server_name(repo.repo)
+            folder = folder or self._learn_base() / "mcp" / name
+            if cmds is None or spec is None:
+                cmds, spec = repolearn.install_plan(repo, summary.get("install_method", "none"), folder)
+        except repolearn.RepoError as e:
+            return {**base, "installed": False, "reason": str(e)}
+        method = "pip" if cmds[0][1:3] == ["-m", "venv"] else "npm"
+        if repo.sha not in _json.dumps({"commands": cmds, "spec": spec}):
+            return {**base, "installed": False, "reason": "the install plan doesn't pin the commit"}
+        card = repolearn.install_summary(repo, summary, cmds, spec, folder)
+        payload = {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "server": name,
+                   "method": method, "commands": cmds, "spec": spec}
+        commit = self._approve("learn_repo_install", card, payload)
+        if commit is None:
+            return {**base, "installed": False, "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return {**base, "installed": False, **refused}
+        if self.mcp_config is None:
+            return {**base, "installed": False, "reason": "mcp.json isn't set up on this computer"}
+        from .envmap import run_command, safe_env
+        runner = self.command_runner or run_command
+        folder.mkdir(parents=True, exist_ok=True)   # Lantern's own folder, after approval
+        for argv in cmds:
+            code, out = runner(argv, str(folder), safe_env(""), 600)
+            if code != 0:
+                tail = "\n".join(out.splitlines()[-3:]) if out else f"exit {code}"
+                return {**base, "installed": False, "verified": False,
+                        "reason": f"install failed ({' '.join(argv[:4])}…): {tail[:300]}"}
+        repolearn.add_learned_server(self.mcp_config, name, spec)
+        probe = self.mcp_probe or repolearn.probe_server
+        try:
+            tools = probe(name, spec)
+        except Exception as e:
+            repolearn.remove_server(self.mcp_config, name)   # own config entry, not a user file
+            return {**base, "installed": False, "verified": False,
+                    "reason": f"the server didn't start, so I removed it again: {str(e)[:300]}"}
+        return {**base, "installed": True, "verified": True, "server": name, "server_tools": tools,
+                "suggest_draft": (f"Offer to make an agent for it: POST /agents/draft for task "
+                                  f"#{self.task_id} would use the new {name}.* tools.")}
+
+    def _learn_wrapper(self, repo, summary: dict, base: dict) -> dict:
+        """(B): with Muse Code, build a small MCP wrapper (red approval), then install it as (A)."""
+        from . import repolearn
+        muse = repolearn.find_muse()
+        if muse is None:
+            return {**base, "wrapper": "skipped",
+                    "reason": "muse (Muse Code) isn't installed on this computer, so I can't build a wrapper"}
+        try:
+            name = repolearn.server_name(repo.repo)
+        except repolearn.RepoError as e:
+            return {**base, "wrapper": "skipped", "reason": str(e)}
+        builds = self._learn_base() / "builds" / name
+        prompt = repolearn.wrapper_prompt(repo, summary) + " Put the server in `server.py` so it runs as `python -m server`."
+        argv = [muse, "exec", *repolearn.MUSE_FLAGS, prompt]
+        card = (f"Build an MCP wrapper for {repo.owner}/{repo.repo}@{repo.sha} with Muse Code "
+                f"(up to 150 model steps, roughly a few dollars). It runs in {builds} with approvals on. "
+                f"Risks noticed: {'; '.join(summary.get('risks', [])[:5]) or 'none noted'}.")
+        payload = {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "command": argv, "cwd": str(builds)}
+        commit = self._approve("learn_repo_wrapper", card, payload)
+        if commit is None:
+            return {**base, "wrapper": "skipped", "reason": "user declined"}
+        if refused := self._commit(commit, payload):
+            return {**base, "wrapper": "skipped", **refused}
+        import time as _time
+        from .envmap import run_command, safe_env
+        runner = self.command_runner or run_command
+        builds.mkdir(parents=True, exist_ok=True)   # Lantern's own folder, after approval
+        start = _time.time()
+        code, out = runner(argv, str(builds), safe_env(""), 1800)
+        self.memory.log_step(self.task_id, "note",
+                             {"muse_exec": {"repo": f"{repo.owner}/{repo.repo}", "exit": code,
+                                            "seconds": round(_time.time() - start),
+                                            "tail": "\n".join(out.splitlines()[-5:]) if out else ""}})
+        if code != 0:
+            return {**base, "wrapper": "failed", "verified": False,
+                    "reason": f"muse exec failed (exit {code}); nothing was installed"}
+        import sys as _sys
+        test_code, test_out = runner([_sys.executable, "-m", "pytest", "-q", str(builds)],
+                                     str(builds), safe_env(""), 600)
+        if test_code != 0:
+            tail = "\n".join(test_out.splitlines()[-3:]) if test_out else f"exit {test_code}"
+            return {**base, "wrapper": "failed", "verified": False,
+                    "reason": f"the wrapper's tests didn't pass: {tail[:300]}"}
+        venv = builds / "venv"
+        py = str(venv / ("Scripts" if _sys.platform == "win32" else "bin") / "python")
+        cmds = [[_sys.executable, "-m", "venv", str(venv)],
+                [py, "-m", "pip", "install", str(builds)]]
+        spec = {"command": py, "args": ["-m", "server"], "cwd": str(builds), "read_only": [],
+                "source": {"repo": f"{repo.owner}/{repo.repo}", "sha": repo.sha, "wrapper": str(builds)}}
+        result = self._learn_install(repo, summary, base, folder=builds, cmds=cmds, spec=spec)
+        if not result.get("installed"):
+            return {**base, **{k: v for k, v in result.items() if k != "repo"}, "wrapper": "failed"}
+        return {**result, "wrapper": "built"}
 
     # ---- memory tools ------------------------------------------------------
     def remember(self, key: str, value: str) -> dict:
@@ -685,6 +918,9 @@ class Toolbox:
 
     # ---- dispatch ----------------------------------------------------------
     def call(self, name: str, args: dict) -> dict:
+        from .agentpacks import tool_allowed
+        if not tool_allowed(self.allowed_tools, name):
+            raise ToolError(f"this agent pack may not use {name}")
         if self.lent is not None:   # S13: a borrowed task; refused calls come back as a ToolError the model reads
             self.lent.allow(self, name, args)
         if self.mcp is not None and name in self.mcp.tools:
@@ -772,6 +1008,17 @@ TOOL_SPECS = [
         ["text", "when"]),
     _fn("list_reminders", "List upcoming reminders.", {}, []),
     _fn("cancel_reminder", "Cancel an upcoming reminder by its number.", {"id": {"type": "integer"}}, ["id"]),
+    _fn("open_link",
+        "Open a web link (YouTube, a website) in the browser on this laptop. The user approves the exact link first.",
+        {"url": {**S, "description": "The link to open, e.g. a shared YouTube URL"}}, ["url"]),
+    _fn("send_to_phone",
+        "Send a file to the owner's phone on Telegram as a document. The user approves the exact file first; "
+        "the result says whether the send was verified. Private-zone files stay on this laptop.",
+        {"path": {**S, "description": "The file to send"},
+         "caption": {**S, "description": "An optional short note sent with the file"}}, ["path"]),
+    _fn("learn_repo", "Learn a GitHub repo from its link (reads it, never runs code): explain what it is; "
+        "install its MCP server pinned to a commit after approval; or draft an agent pack from its docs.",
+        {"url": {**S, "description": "https://github.com/<owner>/<repo>, optionally /tree/<ref>"}}, ["url"]),
     _fn("organize_files", "Tidy files: move many files at once (into new subfolders if needed). The user approves "
         "the whole plan once; each move is verified, and the result includes an undo plan.",
         {"moves": {"type": "array", "description": "Up to 200 moves",

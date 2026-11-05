@@ -116,6 +116,9 @@ class GuardedToolbox(Toolbox):
 
     # ---- every call ----------------------------------------------------------------------------------
     def call(self, name: str, args: dict) -> dict:
+        from .agentpacks import tool_allowed
+        if not tool_allowed(self.allowed_tools, name):   # an agent pack's allowlist: refused before any card is shown
+            raise ToolError(f"this agent pack may not use {name}")
         ref = (getattr(self.mcp, "tools", None) or {}).get(name) if self.mcp is not None else None
         kind = "mcp_call" if ref is not None else name
         if name == "ask_reader":   # its doc is the handle itself: never filled in

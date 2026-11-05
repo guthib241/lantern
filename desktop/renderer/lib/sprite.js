@@ -63,5 +63,21 @@
     return el;
   }
 
-  return { PALETTES, LABELS, palette, style, markup, build };
+  /** The glow: a faceless radial light in the state's colours (the "glow" look, and the face's fallback until
+   *  Lantern's Muse-made portraits exist). Our own trusted SVG, no user text inside. */
+  function svg(expression) {
+    const p = palette(expression);
+    const name = LABELS[expression] || 'Lantern';
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" role="img" aria-label="${name}">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${p.a}"/><stop offset="70%" stop-color="${p.b}" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="${p.b}" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle class="orb" cx="100" cy="130" r="92" fill="url(#g)"/>
+</svg>`;
+  }
+
+  return { PALETTES, LABELS, palette, style, markup, build, svg };
 });

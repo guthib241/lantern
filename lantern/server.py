@@ -16,11 +16,19 @@ in the browser can't drive Lantern through localhost.
   GET  /zones, POST /zones {path, zone}
   GET  /memory                      remembered facts
   GET  /usage                       tokens and cost per model, and the spending limits (budget.py)
+  GET  /stats/time-saved?days=7      honest week total of estimated minutes saved (timesaved.py)
   GET  /profile, POST /profile {key, value, section?}   the form profile vault (M7)
   POST /profile/resume {path}       S15: values for the profile from your own resume (a proposal; nothing saved)
   GET  /webhook/whatsapp            WhatsApp handshake (no token: hub.verify_token instead)
   POST /webhook/whatsapp            WhatsApp messages (no token: X-Hub-Signature-256 instead)
   GET  /widgets, GET /widgets/{name}   sandboxed widgets for the desktop (re-checked on every load)
+  GET  /agents, GET /agents/{name}, POST /agents/install, POST /agents/{name}/sign,
+  POST /agents/{name}/run, POST /agents/{name}/disable|enable, GET /agents/{name}/export, POST /agents/draft,
+  POST /agents/import-skill, GET /agents/{name}/a2a-card,
+  POST /agents/{name}/face {emoji}|{generate}, GET /agents/{name}/face   the icon file (T4c)
+  GET  /loops, POST /agents/{name}/loop/resume|pause|run-now   loop agents: packs on a schedule (T3c)
+  POST /avatar/design {brief, style}   one preview image; POST /avatar/design/{id}/accept
+  GET  /avatar/manifest, GET /avatar/file/{id}/{expression}   the active avatar (T4a)
   POST /forget/task/{id}, POST /forget/fact {key}, POST /forget/everything {confirm: "forget everything"}
   POST /checkin {image: data URL, concept}   SAM 3.1 camera check-in (objects only, nothing stored)
   POST /tasks/{id}/retry            run a failed task's goal again (an interrupted one is resumed)
@@ -50,12 +58,13 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.requests import HTTPConnection
 from pydantic import BaseModel, Field
 
-from . import __version__, models
+from . import __version__, models, packsign
+from .agentpacks import PackError
 from .approvals import ApprovalError
 from .channels import ChannelHub, FakeChannel, WhatsAppChannel, verify_handshake, verify_signature
 from .channels.hub import CHECK_WORK
@@ -177,8 +186,13 @@ class ZoneIn(BaseModel):
     zone: str
 
 
+SKINS = ("muse", "orb", "glow", "clock")   # Lantern's looks (T4b): its Muse face, the orb, the glow, a live clock
+
+
 class SettingsIn(BaseModel):
-    persona: str
+    persona: str | None = None
+    skin: str | None = None
+    localsend: bool | None = None
 
 
 class CheckInIn(BaseModel):
@@ -308,6 +322,34 @@ def _submit_goal(core: Core, goal: str) -> int:
         return core.submit(goal)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+class PackRunIn(BaseModel):
+    inputs: dict = {}
+
+
+class SurfaceIn(BaseModel):
+    surface: str = ""
+
+
+class PackDraftIn(BaseModel):
+    task_id: int
+
+
+class SkillImportIn(BaseModel):
+    path: str | None = None
+    text: str | None = None
+    filename: str = "SKILL.md"
+
+
+class AvatarDesignIn(BaseModel):
+    brief: str = ""
+    style: str = ""
+
+
+class AgentFaceIn(BaseModel):
+    emoji: str | None = None
+    generate: bool = False
 
 
 def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
@@ -934,7 +976,9 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
 
     def settings_view() -> dict:
         from .agent import PERSONAS
-        return {"persona": core.agent.persona, "personas": sorted(PERSONAS)}
+        return {"persona": core.agent.persona, "personas": sorted(PERSONAS),
+                "skin": core.cfg.skin, "skins": list(SKINS),
+                "localsend": bool(core.localsend and core.localsend.listening)}
 
     @app.get("/settings", dependencies=[Depends(auth)])
     def get_settings():
@@ -944,10 +988,29 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
     def set_settings(body: SettingsIn):
         from . import config as config_mod
         from .agent import PERSONAS
-        if body.persona not in PERSONAS:
-            raise HTTPException(400, f"persona must be one of {', '.join(sorted(PERSONAS))}")
-        core.agent.persona = core.cfg.persona = body.persona   # the next task speaks this way
-        config_mod.save_setting("persona", body.persona, Path(core.cfg.db_path).parent)
+        if body.persona is None and body.skin is None and body.localsend is None:
+            raise HTTPException(400, "nothing to change: give a persona, a skin and/or localsend")
+        if body.persona is not None:
+            if body.persona not in PERSONAS:
+                raise HTTPException(400, f"persona must be one of {', '.join(sorted(PERSONAS))}")
+            core.agent.persona = core.cfg.persona = body.persona   # the next task speaks this way
+            config_mod.save_setting("persona", body.persona, Path(core.cfg.db_path).parent)
+        if body.skin is not None:
+            if body.skin not in SKINS:
+                raise HTTPException(400, f"skin must be one of {', '.join(SKINS)}")
+            core.cfg.skin = body.skin   # free and instant: no model call
+            config_mod.save_setting("skin", body.skin, Path(core.cfg.db_path).parent)
+            core.emit({"type": "settings", "skin": body.skin})   # the avatar window changes look at once
+        if body.localsend is not None:   # Setup -> "Receive from phones on Wi-Fi"
+            core.cfg.localsend = body.localsend
+            config_mod.save_setting("localsend", body.localsend, Path(core.cfg.db_path).parent)
+            try:
+                if body.localsend:
+                    core.start_localsend()
+                else:
+                    core.stop_localsend()
+            except RuntimeError as e:   # e.g. the inbox is not in a writable zone
+                raise HTTPException(409, str(e))
         return settings_view()
 
     @app.get("/doctor", dependencies=[Depends(auth)])
@@ -1013,6 +1076,16 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
     def usage():
         return {"by_model": core.memory.usage_by_model(), "total_usd": core.memory.total_cost(),
                 "budget": core.budget.status()}
+
+    @app.get("/stats/time-saved", dependencies=[Depends(auth)])
+    def time_saved(days: int = 7):
+        """Honest week total: stored per-task estimates (verified actions only,
+        fixed table) plus verified LocalSend receives, per local day."""
+        from . import timesaved
+        try:
+            return timesaved.summarize(core.memory, core.audit, days=days)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/profile", dependencies=[Depends(auth)])
     def profile():
@@ -1095,6 +1168,238 @@ def create_app(core: Core, token: str, hub: ChannelHub | None = None, *,
             return {"name": name, "html": core.widgets.get(name)}
         except WidgetError as e:
             raise HTTPException(404 if "no widget" in str(e) else 422, str(e))
+
+    @app.get("/agents", dependencies=[Depends(auth)])
+    def list_agents():
+        out = []
+        for entry in core.packs.list():
+            out.append({**entry, "mine": core.pack_author_is_you(entry.get("author", ""))})
+        return {"agents": out}
+
+    @app.get("/agents/{name}", dependencies=[Depends(auth)])
+    def get_agent(name: str):
+        try:
+            pack = core.packs.get(name)   # re-validated: a changed file answers 422, not a stale pack
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
+        info = packsign.signature_info(pack.as_dict())
+        return {**pack.as_dict(), "disabled": pack.disabled, "face": core.packs.face(name),
+                "loop": core.packs.loop_state(name), "surface": core.pack_surface(name),
+                "signature_status": info["status"], "fingerprint": info["fingerprint"],
+                "mine": core.pack_author_is_you(pack.author)}
+
+    @app.post("/agents/install", dependencies=[Depends(auth)])
+    def install_agent(body: dict, replace: bool = False):
+        """Install a pack file. Blocks until the install card is approved or declined."""
+        try:
+            return core.pack_install(body, replace=replace)
+        except PackError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/draft", dependencies=[Depends(auth)])
+    def draft_agent(body: PackDraftIn):
+        """Draft a pack from a finished task. The panel lets the user edit it;
+        saving goes through install (with approval)."""
+        try:
+            return core.pack_draft(body.task_id)
+        except ValueError as e:
+            raise HTTPException(404 if str(e).startswith("no task") else 502, str(e))
+
+    @app.post("/agents/import-skill", dependencies=[Depends(auth)])
+    def import_skill(body: SkillImportIn):
+        """Preview a SKILL.md import: the validated pack, skipped scripts and
+        whether the body was cut. The panel's tool checkboxes land when the
+        preview is saved through install (with its approval)."""
+        from .skillimport import SkillImportError
+        try:
+            return core.pack_import_skill({"path": body.path, "text": body.text,
+                                           "filename": body.filename})
+        except SkillImportError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/agents/{name}/a2a-card", dependencies=[Depends(auth)])
+    def a2a_card(name: str):
+        """This installed pack as an A2A Agent Card (`agent-card.json`), so
+        other agent tools can discover it. No endpoint URL is published."""
+        try:
+            return core.pack_a2a_card(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/agents/{name}/run", dependencies=[Depends(auth)])
+    def run_agent(name: str, body: PackRunIn):
+        try:
+            return {"task_id": core.submit("", pack=name, inputs=body.inputs)}
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.get("/agents/{name}/surface", dependencies=[Depends(auth)])
+    def get_surface(name: str):
+        from .agentpacks import PackError as _PackError
+        try:
+            return {"name": name, "surface": core.pack_surface(name)}
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/agents/{name}/surface", dependencies=[Depends(auth)])
+    def set_surface(name: str, body: SurfaceIn):
+        """Pick where an agent runs (laptop, phone or both). Local-only, like
+        enable/disable: it spends nothing, so no approval card."""
+        from .agentpacks import PackError as _PackError
+        try:
+            return core.set_pack_surface(name, body.surface)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/{name}/sign", dependencies=[Depends(auth)])
+    def sign_agent(name: str):
+        """Sign your own installed pack with this laptop's key. Blocks until approved."""
+        try:
+            return core.pack_sign(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
+
+    @app.get("/loops", dependencies=[Depends(auth)])
+    def list_loops():
+        """Loop status for every installed pack that suggests a schedule."""
+        return {"loops": core.loops()}
+
+    @app.post("/agents/{name}/loop/resume", dependencies=[Depends(auth)])
+    def resume_loop(name: str):
+        """Turn a loop on. Blocks until the enable card (how often, per-run budget) is approved."""
+        from .agentpacks import PackError as _PackError
+        try:
+            return core.loop_resume(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/{name}/loop/pause", dependencies=[Depends(auth)])
+    def pause_loop(name: str):
+        """Turn a loop off. No approval: pausing spends nothing."""
+        try:
+            return core.loop_pause(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+
+    @app.post("/agents/{name}/loop/run-now", dependencies=[Depends(auth)])
+    def run_loop_now(name: str):
+        """Start this loop's scheduled run right away, as an ordinary task."""
+        from .agentpacks import PackError as _PackError
+        try:
+            return {"task_id": core.loop_run_now(name)}
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except _PackError as e:
+            raise HTTPException(422, str(e))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/agents/{name}/disable", dependencies=[Depends(auth)])
+    def disable_agent(name: str):
+        try:
+            pack = core.packs.disable(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        return {"name": pack.name, "disabled": True}
+
+    @app.post("/agents/{name}/enable", dependencies=[Depends(auth)])
+    def enable_agent(name: str):
+        try:
+            pack = core.packs.enable(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        return {"name": pack.name, "disabled": False}
+
+    @app.get("/agents/{name}/export", dependencies=[Depends(auth)])
+    def export_agent(name: str):
+        try:
+            raw = core.packs.export(name)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except PackError as e:
+            raise HTTPException(422, str(e))
+        return Response(content=raw, media_type="application/json",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.lantern-agent.json"'})
+
+    @app.post("/agents/{name}/face", dependencies=[Depends(auth)])
+    def set_agent_face(name: str, body: AgentFaceIn):
+        """Give an agent a face: a short emoji (free), or one drawn icon (approval,
+        about $0.01). Blocks until the draw card is approved or declined."""
+        try:
+            return core.make_agent_face(name, emoji=body.emoji, generate=body.generate)
+        except KeyError:
+            raise HTTPException(404, f"no agent called {name!r}")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # no key, network: say so plainly
+            raise HTTPException(502, f"agent face failed: {type(e).__name__}: {str(e)[:120]}")
+
+    @app.get("/agents/{name}/face", dependencies=[Depends(auth)])
+    def agent_face_file(name: str):
+        from .agentpacks import PackError
+        try:
+            path = core.packs.face_path(name)
+        except (KeyError, PackError):
+            raise HTTPException(404, "no face for that agent")
+        return Response(content=path.read_bytes(), media_type="image/webp")
+
+    @app.post("/avatar/design", dependencies=[Depends(auth)])
+    def design_avatar(body: AvatarDesignIn):
+        """Draw one canonical preview image from words (about $0.01). Accepting it
+        renders the full sheet; that step carries the approval."""
+        from .studio import StudioError
+        try:
+            return core.design_avatar(body.brief, body.style)
+        except StudioError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # no key, network: say so plainly
+            raise HTTPException(502, f"avatar preview failed: {type(e).__name__}: {str(e)[:120]}")
+
+    @app.post("/avatar/design/{design_id}/accept", dependencies=[Depends(auth)])
+    def accept_avatar(design_id: str):
+        """Finish a preview into the full sheet (approval, ~$0.06) and set it active.
+        A finished design just becomes active again: no model call. Blocks until
+        the card is approved or declined, like installing an agent pack."""
+        from .avatar import AvatarError
+        from .studio import StudioError
+        try:
+            return core.accept_avatar(design_id)
+        except (KeyError, StudioError):
+            raise HTTPException(404, "no such design")
+        except AvatarError as e:
+            raise HTTPException(502, str(e))
+
+    @app.get("/avatar/manifest", dependencies=[Depends(auth)])
+    def avatar_manifest():
+        return core.studio.manifest()
+
+    @app.get("/avatar/file/{design_id}/{expression}", dependencies=[Depends(auth)])
+    def avatar_file(design_id: str, expression: str):
+        from .studio import StudioError
+        try:
+            path = core.studio.file_path(design_id, expression)
+        except (KeyError, StudioError):
+            raise HTTPException(404, "no such avatar image")
+        media = "image/png" if path.suffix == ".png" else "image/webp"
+        return Response(content=path.read_bytes(), media_type=media)
 
     whatsapp = hub.channels.get("whatsapp") if hub else None
     if isinstance(whatsapp, WhatsAppChannel):

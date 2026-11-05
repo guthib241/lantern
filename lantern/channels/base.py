@@ -155,6 +155,11 @@ class Channel:
         """S6: a Lantern Network message to another Lantern's address (not the owner's chat)."""
         raise NotImplementedError(f"{self.name} can't send to other addresses")
 
+    def send_file(self, data: bytes, filename: str, caption: str = "") -> dict:
+        """Send a file to the owner. Returns {"ok": bool, "bytes": int},
+        where "bytes" is the size the service reports back."""
+        raise NotImplementedError
+
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         """Optional: confirm a button tap in the channel's own UI (Telegram spinner)."""
 

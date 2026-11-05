@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src http://127.0.0.1:* ws://127.0.0.1:*; frame-src 'self'">
 <meta name="color-scheme" content="light dark">
 <title>Lantern</title>
 <link rel="stylesheet" href="orb.css">
@@ -49,6 +49,7 @@
       <button role="tab" data-tab="teach"><svg class="ico"><use href="#i-teach"/></svg><span>Teaching</span></button>
       <button role="tab" data-tab="meetings"><svg class="ico"><use href="#i-meeting"/></svg><span>Meetings</span></button>
       <button role="tab" data-tab="widgets"><svg class="ico"><use href="#i-widgets"/></svg><span>Widgets</span></button>
+      <button role="tab" data-tab="agents"><svg class="ico"><use href="#i-agents"/></svg><span>Agents</span></button>
       <p class="nav-group" aria-hidden="true">You</p>
       <button role="tab" data-tab="phone"><svg class="ico"><use href="#i-phone"/></svg><span>Phone</span></button>
       <button role="tab" data-tab="privacy"><svg class="ico"><use href="#i-privacy"/></svg><span>Privacy</span></button>
@@ -158,6 +159,28 @@
       </div>
     </section>
 
+    <section data-panel="agents" aria-label="Agents">
+      <p class="lede">Shareable agents: add one from a file or a skill, run it here or from your phone, and watch every step.</p>
+      <div class="group">
+        <div class="row drop" id="agent-drop">
+          <span class="row-icon purple"><svg class="ico"><use href="#i-agents"/></svg></span>
+          <div class="row-text"><b>Add an agent</b><small>Pick a .lantern-agent.json file, or drop it here</small></div>
+          <button class="tinted" id="agent-add" type="button">Add…</button>
+        </div>
+        <div class="row" id="skill-drop">
+          <span class="row-icon purple"><svg class="ico"><use href="#i-agents"/></svg></span>
+          <div class="row-text"><b>Import a skill</b><small>Pick a SKILL.md file or its folder</small></div>
+          <button class="forget" id="agent-import" type="button">Import a skill…</button>
+        </div>
+      </div>
+      <input type="file" id="agent-file" accept=".lantern-agent.json,application/json" hidden>
+      <input type="file" id="skill-file" accept=".md,text/markdown" hidden>
+      <div id="agent-import-form"></div>
+      <div id="agent-draft"></div>
+      <div id="agent-list" class="tasks"></div>
+      <p class="footnote" id="agent-hint">A pack is data, never code: it fills in a goal, lists its tools, and asks before anything changes.</p>
+    </section>
+
     <section data-panel="phone" aria-label="Phone">
       <p class="lede">Lantern on WhatsApp and Telegram. In rehearsal this is a simulated phone.</p>
       <div class="phone">
@@ -233,6 +256,17 @@
         <div class="row"><div class="segmented" id="persona" role="radiogroup" aria-label="Lantern's personality"></div></div>
       </div>
       <p class="footnote" id="persona-note">How Lantern talks to you. It never changes what Lantern is allowed to do.</p>
+      <h3 class="section">Avatar</h3>
+      <div class="group">
+        <div class="row"><span class="row-text">Look</span><div class="segmented" id="avatar-skins" role="radiogroup" aria-label="Lantern's look"></div></div>
+        <div class="row"><div class="segmented" id="avatar-styles" role="radiogroup" aria-label="Avatar style"></div></div>
+        <div class="agent-form">
+          <label>Describe Lantern's face<textarea id="avatar-brief" rows="3" maxlength="600" placeholder="3D animated movie portrait of a sleek personal AI assistant, bright cyan eyes, confident smile, short white-silver hair with neon cyan highlights, dark gray futuristic jacket, soft rim lighting, minimalist dark studio background, clean profile picture."></textarea></label>
+        </div>
+        <div class="row"><button class="tinted" id="avatar-preview" type="button">Preview (one image, a few cents)</button></div>
+        <div id="avatar-now"></div>
+      </div>
+      <p class="footnote">Muse face, orb, glow or a live clock. A new face is drawn by Muse Image with no logos, text or brand marks; “Use this” draws the other expressions (about $0.07) after you approve. Past designs stay in the gallery: switching back is free.</p>
       <h3 class="section">Pair a phone</h3>
       <div class="group">
         <div class="row">
@@ -243,7 +277,9 @@
           <div class="row-text"><b id="pair-code">······</b><small id="pair-url">/m · expires in 5 min</small></div>
         </div>
         <div id="pair-devices"></div>
+        <div class="row"><span class="row-text">Receive from phones on Wi-Fi</span><div class="segmented" id="localsend" role="radiogroup" aria-label="Receive from phones on Wi-Fi"></div></div>
       </div>
+      <p class="footnote">LocalSend: Share → LocalSend on your phone → “Lantern on this laptop”. Files land in the inbox after your OK. Same Wi-Fi only.</p>
       <h3 class="section">Keyboard</h3>
       <div class="group">
         <div class="row"><span class="row-text">Quick Ask</span><kbd id="kbd-ask">⌘ ⇧ Space</kbd></div>
@@ -320,6 +356,7 @@
   <script src="lib/cv.js"></script>
   <script src="lib/meeting.js"></script>
   <script src="lib/talk.js"></script>
+  <script src="lib/agents.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>

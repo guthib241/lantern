@@ -8,6 +8,7 @@ const C = require('../renderer/lib/cards.js');
 const A = require('../renderer/lib/audit.js');
 const W = require('../renderer/lib/widgets.js');
 const P = require('../renderer/lib/sprite.js');
+const V = require('../renderer/lib/avatar.js');
 
 const run = (events) => events.reduce(S.reduce, S.initial());
 
@@ -95,6 +96,9 @@ test('approval card shows what matters and builds the decision', () => {
   const email = C.card({ ...approval, action: 'send_email', tainted: false,
     summary: 'Send email to x@evil.test: “Files”. Body (8 chars): attached ⚠️ x@evil.test appeared only in a file/web page, not in your request' }, 100);
   assert.equal(email.title, 'Send this email?');
+  assert.equal(C.card({ ...approval, action: 'install_agent',
+    summary: "Install agent 'Tidy Downloads' by lantern (v1.0.0). It may use: organize_files. Full instructions: Tidy." }, 100).title,
+    'Install this agent?');
   assert.equal(email.warnings.length, 1);
   assert.ok(email.warnings[0].startsWith('⚠️'));
 });
@@ -229,6 +233,10 @@ test('receipt: what it did, what you approved, what left, what it cost', () => {
   const empty = R.view({ task: { goal: 'hi', status: 'done' }, looked: 0, actions: [], approvals: [], sent: [], redactions: {},
                          cost_usd: 0, models: [] });
   assert.deepEqual(empty.sections.map((s) => s.rows[0].text), ['Nothing changed', 'Nothing', '$0.00']);
+  const saved = R.view({ task: { goal: 'hi', status: 'done' }, looked: 0, actions: [], approvals: [], sent: [], redactions: {},
+                         cost_usd: 0, models: [], time_saved_min: 6, time_saved: 'form filled', time_saved_text: '6 min' });
+  assert.deepEqual(saved.sections[0].rows.map((r) => [r.mark, r.text, r.detail]),
+    [['⏱', 'Estimated time saved: 6 min', 'verified: form filled']]);
 });
 
 test('setup check: failures first, fixes only where needed, a plain readiness line', () => {
@@ -263,7 +271,8 @@ test('today: glance tiles and suggestions', () => {
                { type: 'done', id: 1, status: 'done', reply: 'ok', ts: now - 40 },
                { type: 'usage', badge: 'Muse Spark', cost_usd: 0.0123, task_id: 1, ts: now - 45 }]);
   let tiles = T.glance(s, { now, reminders: [{ due: 'today 18:00', text: 'send the video' }] });
-  assert.deepEqual(tiles.map((t) => [t.id, t.value]), [['needs', '0'], ['done', '1'], ['next', 'today 18:00'], ['spend', '$0.01']]);
+  assert.deepEqual(tiles.map((t) => [t.id, t.value]), [['needs', '0'], ['done', '1'], ['next', 'today 18:00'], ['spend', '$0.01'],
+    ['saved', '0 min']]);
   assert.equal(tiles[1].note, '1 verified');
   s = S.reduce(s, { type: 'approval', event: 'requested', approval, ts: now });
   tiles = T.glance(s, { now });
@@ -274,6 +283,31 @@ test('today: glance tiles and suggestions', () => {
   assert.ok(T.SUGGESTIONS.length >= 4 && T.SUGGESTIONS.every((x) => x.label && x.goal));
   const yesterday = run([{ type: 'done', id: 9, status: 'done', ts: now - 86400 * 2 }]);
   assert.equal(T.glance(yesterday, { now })[1].value, '0');   // only today counts
+});
+
+test('time saved: weekly tile, bars and accessible text', () => {
+  const T = require('../renderer/lib/today.js');
+  assert.equal(T.formatSaved(0), '0 min');
+  assert.equal(T.formatSaved(0.5), '30 sec');
+  assert.equal(T.formatSaved(6), '6 min');
+  assert.equal(T.formatSaved(135), '2 h 15 min');
+  const days = [{ day: '2026-10-26', minutes: 6 }, { day: '2026-10-27', minutes: 0 }, { day: '2026-10-28', minutes: 9 },
+                { day: '2026-10-29', minutes: 0 }, { day: '2026-10-30', minutes: 0 }, { day: '2026-10-31', minutes: 0 },
+                { day: '2026-11-01', minutes: 120 }];
+  const tile = T.savedTile({ total_min: 135, days });
+  assert.equal(tile.id, 'saved');
+  assert.equal(tile.label, 'Time saved this week');
+  assert.equal(tile.tone, 'teal');
+  assert.equal(tile.value, '2 h 15 min');
+  assert.deepEqual(tile.bars, [6, 0, 9, 0, 0, 0, 120]);
+  assert.ok(tile.a11y.includes('2 h 15 min'), 'the total is spoken, not only drawn');
+  const empty = T.savedTile(null);
+  assert.equal(empty.value, '0 min');
+  assert.equal(empty.tone, 'gray');
+  assert.equal(empty.bars.length, 7);
+  assert.ok(empty.a11y.includes('nothing yet'));
+  const withSaved = T.glance(S.initial(), { now: 1000, timeSaved: { total_min: 135, days } });
+  assert.equal(withSaved.find((g) => g.id === 'saved').value, '2 h 15 min');
 });
 
 test('form approvals read as a field list, and fall back to the raw text when unsure', () => {
@@ -354,6 +388,35 @@ test('menu bar status, badge and terse notifications', () => {
   assert.equal(N.notice({ type: 'done', status: 'done', reply: 'ok' }, s, {}), null);
 });
 
+test('avatar face: server design first, then bundled art, then the glow', () => {
+  const server = { active: 'abc123', expressions: { idle: { file: '/avatar/file/abc123/idle' } } };
+  const bundled = { expressions: { idle: { file: 'idle.webp' } } };
+  assert.equal(V.pickSource(server, bundled), 'server');
+  assert.equal(V.pickSource({ active: null, expressions: {}, designs: [] }, bundled), 'bundled');
+  assert.equal(V.pickSource({ active: 'abc123', expressions: {} }, bundled), 'bundled');   // active but bare
+  assert.equal(V.pickSource(null, null), 'glow');
+  assert.equal(V.pickSource(null, { expressions: {} }), 'glow');
+  assert.equal(C.card({ action: 'finish_avatar', summary: 'Finish this avatar design (neon): 6 more expressions.' }, 0).title,
+    'Make this your avatar?');
+  assert.equal(C.card({ action: 'agent_face', summary: "Draw a face for agent 'Hello' (one Muse Image icon, about $0.01)." }, 0).title,
+    "Draw this agent's face?");
+});
+
+test('running agents grow on queued with a pack and shrink on done/stopped', () => {
+  let s = run([{ type: 'queued', task_id: 1, goal: 'a', ts: 1 }]);
+  assert.deepEqual(s.agents, []);   // a plain task shows no face
+  s = S.reduce(s, { type: 'queued', task_id: 2, goal: '[agent:tidy] Tidy.', pack: 'tidy', ts: 2 });
+  assert.deepEqual(s.agents, [{ task_id: 2, pack: 'tidy' }]);
+  s = S.reduce(s, { type: 'queued', task_id: 2, goal: '[agent:tidy] Tidy.', pack: 'tidy', ts: 3 });
+  assert.equal(s.agents.length, 1);   // the same task twice is still one face
+  s = S.reduce(s, { type: 'queued', task_id: 3, goal: '[agent:box] Box.', pack: 'box', ts: 4 });
+  assert.equal(s.agents.length, 2);
+  s = S.reduce(s, { type: 'done', id: 2, status: 'done', ts: 5 });
+  assert.deepEqual(s.agents, [{ task_id: 3, pack: 'box' }]);   // its face folds back into the main avatar
+  s = S.reduce(s, { type: 'stopped', ts: 6 });
+  assert.deepEqual(s.agents, []);   // the kill switch clears every face
+});
+
 test('widget storage: no key can reach the index, and the cap holds', () => {
   const mem = new Map();
   const store = { getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => mem.set(k, v) };
@@ -376,4 +439,12 @@ test('a routine that healed itself shows the healed face and says what it fixed;
   const talking = run([{ type: 'listening', on: true, ts: 1 }]);
   assert.equal(X.pick(talking, 2), 'listening');
   assert.equal(X.pick(S.reduce(talking, { type: 'listening', on: false, ts: 3 }), 4), 'idle');
+});
+
+test('avatar window CSP allows blob: images (agent faces, authed server portraits)', () => {
+  const html = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'renderer', 'avatar.html'), 'utf8');
+  const csp = html.match(/img-src([^;"]*)/)[1];
+  assert.ok(csp.includes('blob:'), csp);
+  const js = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'renderer', 'avatar.js'), 'utf8');
+  assert.ok(!/cfg\.apiBase \+ v\.file/.test(js), 'server portraits must be fetched with the token, not linked directly');
 });

@@ -39,7 +39,7 @@ CHARACTER = (
 )
 FRAMING = (
     "Square portrait, the character centred and filling about 70% of the frame, on a plain soft warm "
-    "cream-to-peach gradient background. No text, no letters, no logos, no watermark."
+    "cream-to-peach gradient background. No logos, no text, no brand marks, no letters, no watermark."
 )
 # Reactions: each one a Muse Image *edit* of the idle portrait (dev.meta.ai/docs/image-generation: an `input_image`
 # plus the instruction; the model changes only what's asked). Made once and cached as a file; remade only when the
@@ -86,7 +86,8 @@ def canonical_prompt(brief: str | None, from_reference: bool) -> str:
 
 def expression_prompt(expression: str) -> str:
     return (f"The same character as in the canonical portrait: identical design, colours, style, framing and "
-            f"background. Change only the expression and pose: {EXPRESSIONS[expression]}. No text.")
+            f"background. Change only the expression and pose: {EXPRESSIONS[expression]}. "
+            "No logos, no text, no brand marks.")
 
 
 def reaction_prompt(name: str) -> str:
@@ -133,6 +134,14 @@ def write_manifest(out_dir: Path, entries: dict, meta: dict) -> None:
 def read_manifest(out_dir: Path) -> dict:
     path = out_dir / "manifest.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"expressions": {}}
+
+
+def render_single(client: Any, prompt: str) -> tuple[bytes, str]:
+    """One unchained Muse Image turn (an icon, not the expression sheet).
+    Returns (webp bytes, response id)."""
+    response = client.responses.create(model=models.IMAGE, tools=[{"type": "image_generation", "size": SIZE}],
+                                       input=prompt)
+    return _image(response), response.id
 
 
 def generate(client: Any, out_dir: str | Path, *, brief: str | None = None, reference: tuple[bytes, str] | None = None,

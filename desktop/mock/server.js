@@ -25,7 +25,22 @@ function createMock() {
   let nextTask = 1;
   const reminders = [];   // {id, text, due_at, due, repeat, status}
   let nextReminder = 1;
-  const settings = { persona: 'smug' };
+  const agents = new Map([   // name -> {pack, disabled}: two samples shaped like agents/*.lantern-agent.json
+    ['tidy-downloads', { disabled: false, pack: {
+      format: 'lantern-agent/1', name: 'tidy-downloads', title: 'Tidy Downloads',
+      description: 'Sorts a messy folder into subfolders, one approval for the whole plan.',
+      author: 'lantern', version: '1.0.0',
+      inputs: [{ key: 'folder', question: 'Which folder to tidy?', example: 'Downloads' }],
+      goal: 'Tidy {folder} into subfolders by type.', instructions: 'List the folder, then organize it.',
+      tools: ['list_folders', 'list_dir', 'search_files', 'organize_files', 'move_file'],
+      schedule: { every: 'day', at: '09:00', inputs: { folder: 'Downloads' } } } }],
+    ['hello-agent', { disabled: false, pack: {
+      format: 'lantern-agent/1', name: 'hello-agent', title: 'Hello agent',
+      description: 'A tiny sample agent for the panel.', author: 'lantern', version: '1.0.0',
+      inputs: [], goal: 'Say hello.', instructions: 'Reply with one friendly line.',
+      tools: ['search_files'] } }],
+  ]);
+  const settings = { persona: 'smug', skin: 'muse', localsend: false };
 
   const now = () => Date.now() / 1000;
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -141,10 +156,10 @@ function createMock() {
     phoneSay(reply);
   }
 
-  function submit(goal) {
+  function submit(goal, pack) {
     const id = nextTask++;
     tasks.push({ id, goal, status: 'active', summary: null, created_at: now(), updated_at: now(), usage: { calls: 0, cost_usd: 0 } });
-    emit({ type: 'queued', task_id: id, goal });
+    emit({ type: 'queued', task_id: id, goal, pack: pack || null });
     story(id, goal);
     return id;
   }
@@ -193,6 +208,15 @@ function createMock() {
                                                              task_usd: 3, left_usd: Math.max(0, 150 - spent) } };
     },
     'GET /memory': () => ({ facts: { 'manager email': 'priya@example.com' } }),
+    'GET /stats/time-saved': () => {
+      const days = [];
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      for (let back = 6; back >= 0; back--) {
+        const d = new Date(today.getTime() - back * 86400000);
+        days.push({ day: d.toISOString().slice(0, 10), minutes: 0 });
+      }
+      return { days, total_min: 0, total: '0 min' };
+    },
     'GET /channel/messages': () => ({ owner: 'owner', messages: phone }),
     'POST /channel/fake': (b) => { phoneIn(b); return { ok: true }; },
     'POST /forget/everything': (b) => {
@@ -203,13 +227,29 @@ function createMock() {
       return { memory: {}, audit: 0 };
     },
     'GET /widgets': () => ({ widgets: [{ name: 'water-timer', title: 'Water break timer', source: 'built-in', ok: true }] }),
+    'GET /avatar/manifest': () => ({ active: null, expressions: {}, designs: [] }),
+    'POST /avatar/design': (b) => {
+      if (!b.brief || !String(b.brief).trim()) return [400, { detail: 'describe the avatar in a few words first' }];
+      if (String(b.brief).trim().length > 600) return [400, { detail: 'the brief is too long (at most 600 characters)' }];
+      if (!['3d', 'flat', 'pixel', 'neon'].includes(b.style)) return [400, { detail: 'style must be one of 3d, flat, pixel, neon' }];
+      return { id: 'mock-design', brief: String(b.brief).trim(), style: b.style, cost_usd: 0.01, preview: '' };
+    },
     'GET /reminders': () => reminders.filter((r) => r.status === 'pending'),
     'POST /tasks/resume': () => ({ task_ids: [] }),
-    'GET /settings': () => ({ persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] }),
+    'GET /settings': () => ({ persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'],
+      skin: settings.skin, skins: ['muse', 'glow', 'clock'], localsend: settings.localsend }),
     'POST /settings': (b) => {
-      if (!['helpful', 'sarcastic', 'smug'].includes(b.persona)) return [400, { detail: 'unknown persona' }];
-      settings.persona = b.persona;
-      return { persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'] };
+      if (b.persona !== undefined && !['helpful', 'sarcastic', 'smug'].includes(b.persona)) {
+        return [400, { detail: 'unknown persona' }];
+      }
+      if (b.skin !== undefined && !['muse', 'glow', 'clock'].includes(b.skin)) {
+        return [400, { detail: 'unknown skin' }];
+      }
+      if (b.persona !== undefined) settings.persona = b.persona;
+      if (b.skin !== undefined) settings.skin = b.skin;
+      if (b.localsend !== undefined) settings.localsend = !!b.localsend;
+      return { persona: settings.persona, personas: ['helpful', 'sarcastic', 'smug'],
+        skin: settings.skin, skins: ['muse', 'glow', 'clock'], localsend: settings.localsend };
     },
     'GET /doctor': () => ({
       checks: [
@@ -266,6 +306,132 @@ function createMock() {
         r.status = 'cancelled';
         emit({ type: 'reminders', changed: 'cancelled', id: r.id });
         return send(200, { cancelled: r.id });
+      }
+      const loopOf = (a) => a.loop || (a.loop = { enabled: false, next_run: null, last_task: null,
+        last_status: null, failures: 0, running: null });
+      const describeSchedule = (s) => !s ? '' : s.every === 'hours' ? `every ${s.hours} hour${s.hours === 1 ? '' : 's'}`
+        : `every ${s.every} at ${s.at}`;
+      const loopView = (name, a) => ({ name, title: a.pack.title, scheduled: !!a.pack.schedule,
+        schedule: a.pack.schedule || null, description: describeSchedule(a.pack.schedule), ...loopOf(a) });
+      const surfaceOf = (a) => a.surface || 'laptop';
+      const signedView = (a) => ({ ...a.pack, disabled: a.disabled, face: a.face || null, loop: loopOf(a),
+        surface: surfaceOf(a), source: a.source || null,
+        signature_status: a.pack.signature ? 'signed' : 'unsigned', fingerprint: null, mine: false });
+      const lp = url.pathname.match(/^\/agents\/([^/]+)\/loop\/(resume|pause|run-now)$/);
+      if (lp && req.headers['x-lantern-token'] === TOKEN) {
+        const item = agents.get(lp[1]);
+        if (!item) return send(404, { detail: `no agent called '${lp[1]}'` });
+        if (!item.pack.schedule) return send(400, { detail: `agent '${lp[1]}' has no schedule` });
+        if (lp[2] === 'pause') {   // the mock approves at once, like its other shortcuts
+          loopOf(item).enabled = false;
+          return send(200, { name: lp[1], enabled: false });
+        }
+        if (lp[2] === 'resume') {
+          const l = loopOf(item);
+          l.enabled = true; l.failures = 0; l.next_run = now() + 3600;
+          return send(200, { enabled: true, name: lp[1], next_run: l.next_run, budget_usd: 0.1 });
+        }
+        if (item.disabled) return send(400, { detail: `agent '${lp[1]}' is disabled` });
+        const goal = `[agent:${lp[1]}] ` + item.pack.goal.replace(/\{(\w+)\}/g, (_, k) => item.pack.schedule.inputs[k] || `{${k}}`);
+        return send(200, { task_id: submit(goal, lp[1]) });
+      }
+      if (req.method === 'GET' && url.pathname === '/loops' && req.headers['x-lantern-token'] === TOKEN) {
+        return send(200, { loops: [...agents.entries()].filter(([, a]) => a.pack.schedule)
+          .map(([name, a]) => loopView(name, a)) });
+      }
+      const ac = url.pathname.match(/^\/agents\/([^/]+)\/a2a-card$/);
+      if (ac && req.method === 'GET' && req.headers['x-lantern-token'] === TOKEN) {
+        const card = agents.get(ac[1]);
+        if (!card) return send(404, { detail: `no agent called '${ac[1]}'` });
+        const p = card.pack;
+        const examples = (p.inputs || []).map((i) => i.example).filter(Boolean);
+        const skill = { id: p.name, name: p.title, description: p.description, tags: p.tools };
+        if (examples.length) skill.examples = examples;
+        return send(200, { name: p.name, description: p.description, version: p.version,
+          provider: { organization: p.author }, capabilities: { streaming: false, pushNotifications: false },
+          defaultInputModes: ['text'], defaultOutputModes: ['text'], skills: [skill] });
+      }
+      const g = url.pathname.match(/^\/agents(?:\/([^/]+)(?:\/(run|disable|enable|export|face|sign|surface))?)?$/);
+      if (g && req.headers['x-lantern-token'] === TOKEN) {
+        // Same shapes as lantern/server.py's /agents routes; installs approve at once (no card in mock).
+        if (req.method === 'GET' && !g[1]) {
+          return send(200, { agents: [...agents.values()].map(signedView) });
+        }
+        if (req.method === 'POST' && url.pathname === '/agents/install') {
+          let data = {};
+          try { data = body ? JSON.parse(body) : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          if (!data || typeof data.name !== 'string' || !data.name) return send(400, { detail: 'not an agent pack' });
+          const old = agents.get(data.name);
+          const replace = url.searchParams.get('replace') === 'true';
+          if (old && old.pack.author !== data.author && !replace) {
+            return send(200, { installed: false, reason: `an agent called '${data.name}' is already installed (pass replace=true)`, name: data.name });
+          }
+          const { source, ...pack } = data;   // the source stays local, never in the shared file
+          agents.set(data.name, { disabled: false, pack, source: source === 'imported skill' ? source : null });
+          return send(200, { installed: true, verified: true, name: data.name });
+        }
+        if (req.method === 'POST' && url.pathname === '/agents/draft') {
+          const sample = agents.get('tidy-downloads').pack;
+          return send(200, { ...sample, author: '', version: '1.0.0' });
+        }
+        if (req.method === 'POST' && url.pathname === '/agents/import-skill') {
+          // A canned preview shaped like lantern/server.py's: validated pack, skipped scripts.
+          const skill = { ...agents.get('tidy-downloads').pack, name: 'my-skill', title: 'My Skill',
+            description: 'A community skill, imported.', author: 'unknown', version: '1.0.0',
+            tools: ['list_folders', 'list_dir', 'search_files', 'read_file'] };
+          return send(200, { pack: skill, skipped: ['helper.py'], truncated: false,
+            source: 'imported skill', available_tools: ['list_folders', 'list_dir', 'search_files', 'read_file'] });
+        }
+        const item = g[1] && agents.get(g[1]);
+        if (!item) return send(404, { detail: `no agent called '${g[1] || ''}'` });
+        if (req.method === 'GET' && !g[2]) return send(200, signedView(item));
+        if (req.method === 'GET' && g[2] === 'export') return send(200, item.pack);
+        if (req.method === 'POST' && g[2] === 'sign') {   // the mock approves at once (no card)
+          item.pack.signature = { alg: 'ed25519', public_key: 'bW9jaw', sig: 'bW9jaw' };
+          return send(200, { signed: true, verified: true, name: g[1], fingerprint: 'MOCK-0000' });
+        }
+        if (req.method === 'POST' && g[2] === 'run') {
+          if (item.disabled) return send(400, { detail: `agent '${g[1]}' is disabled` });
+          let inputs = {};
+          try { inputs = body ? JSON.parse(body).inputs || {} : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          const goal = `[agent:${g[1]}] ` + item.pack.goal.replace(/\{(\w+)\}/g, (_, k) => inputs[k] || `{${k}}`);
+          return send(200, { task_id: submit(goal, g[1]) });
+        }
+        if (g[2] === 'face') {
+          if (req.method === 'GET') return send(404, { detail: 'no face for that agent' });   // the mock keeps no bytes
+          let b = {};
+          try { b = body ? JSON.parse(body) : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          if (typeof b.emoji === 'string' && b.emoji.trim()) {
+            item.face = { emoji: b.emoji.trim() };
+            return send(200, { made: true, face: item.face, cost_usd: 0, model_calls: 0 });
+          }
+          if (b.generate) {
+            item.face = { icon: true };
+            return send(200, { made: true, verified: true, face: item.face, cost_usd: 0.01, model_calls: 1 });
+          }
+          return send(400, { detail: 'give an emoji or generate=true' });
+        }
+        if (req.method === 'POST' && (g[2] === 'disable' || g[2] === 'enable')) {
+          item.disabled = g[2] === 'disable';
+          return send(200, { name: g[1], disabled: item.disabled });
+        }
+        if (g[2] === 'surface') {
+          if (req.method === 'GET') return send(200, { name: g[1], surface: surfaceOf(item) });
+          let b = {};
+          try { b = body ? JSON.parse(body) : {}; } catch { return send(400, { detail: 'bad JSON' }); }
+          if (!['laptop', 'phone', 'both'].includes(b.surface)) {
+            return send(400, { detail: 'surface must be one of laptop, phone, both' });
+          }
+          item.surface = b.surface;
+          return send(200, { name: g[1], surface: item.surface });
+        }
+        return send(404, { detail: 'not found' });
+      }
+      const av = url.pathname.match(/^\/avatar\/design\/([a-z0-9-]+)\/accept$/);
+      if (av && req.method === 'POST' && req.headers['x-lantern-token'] === TOKEN) {
+        // Mock approves at once (no card); the real server waits for the approval.
+        emit({ type: 'avatar', active: av[1] });
+        return send(200, { accepted: true, verified: true, id: av[1], cost_usd: 0.06, model_calls: 0 });
       }
       const m = url.pathname.match(/^\/approvals\/([\w-]+)$/);
       const key = m ? `${req.method} /approvals/:id` : `${req.method} ${url.pathname}`;

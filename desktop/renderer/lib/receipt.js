@@ -24,6 +24,10 @@
       did.push({ tone: 'quiet', mark: '·', text: r.looked === 1 ? 'Looked something up' : `Looked things up ${r.looked} times`,
                  detail: 'reading and searching; nothing changed' });
     }
+    if (r.time_saved_min > 0) {
+      did.push({ tone: 'good', mark: '⏱', text: `Estimated time saved: ${r.time_saved_text || ''}`,
+                 detail: r.time_saved ? `verified: ${r.time_saved}` : 'verified actions only, never a model guess' });
+    }
     const sections = [{ title: 'What it did', rows: did.length ? did : [{ tone: 'quiet', mark: '·', text: 'Nothing changed', detail: '' }] }];
     if (r.approvals.length) {
       sections.push({ title: 'What you approved', rows: r.approvals.map((a) => ({

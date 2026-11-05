@@ -182,16 +182,27 @@ class ResumableAgent(Agent):
             state.get("untrusted_emails") or [])
 
     # ---- start ---------------------------------------------------------------------
-    def _run(self, task_id: int, goal: str) -> Result:
+    def _run(self, task_id: int, goal: str, instructions_suffix: str = "",
+             allowed_tools: set[str] | None = None, taint: bool = False) -> Result:
+        """A task from its goal. An agent pack's run (T3a) adds its instructions, allows only its tools and starts
+        tainted; the allowlist is saved with the task, so a pack task parked for an approval keeps it."""
         if hasattr(self.toolbox, "begin_task"):
             self.toolbox.begin_task(task_id, goal)
+        if allowed_tools is not None:
+            self.toolbox.allowed_tools = set(allowed_tools)
+        if taint:   # a shared pack was written by someone else: untrusted from the start
+            self.toolbox.tainted = True
         if hasattr(self.client, "set_task"):
             self.client.set_task(task_id)
         self.memory.log_step(task_id, "plan", {"goal": goal})
         self.on_event("task", {"id": task_id, "goal": goal})
         instructions = self.instructions()
+        if instructions_suffix:
+            instructions += "\n\n" + instructions_suffix
         state = {"v": STATE_VERSION, "goal": goal, "instructions": instructions, "step": 1, "response_id": None,
                  "calls": [], "results": {}, "in_flight": None, "ask": None}
+        if allowed_tools is not None:
+            state["allowed_tools"] = sorted(allowed_tools)
         self._save(task_id, state)
         response = self._model(task_id, "plan", instructions=instructions, input=goal, tools=self.tools)
         state["model"] = self.model
@@ -211,6 +222,8 @@ class ResumableAgent(Agent):
         if hasattr(self.toolbox, "begin_task"):
             self.toolbox.begin_task(task_id, goal)
         self._restore_taint(state)
+        if state.get("allowed_tools") is not None:   # an agent pack's task keeps its allowlist after a pause
+            self.toolbox.allowed_tools = set(state["allowed_tools"])
         if hasattr(self.toolbox, "load_state"):
             self.toolbox.load_state(state.get("toolbox"))
         if self.ladder is not None:

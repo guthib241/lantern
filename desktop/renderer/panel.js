@@ -29,6 +29,14 @@
       orbs.push(orb);
     }
   }
+  let look = 'muse';
+  function setLook(skin) {   // Settings → Avatar → Look; only the orb changes the panel's own mark and face
+    const next = skin === 'orb' ? 'orb' : 'muse';
+    if (next === look) return;
+    look = next;
+    showOrbs(look === 'orb');
+    renderOrb();
+  }
   function renderOrb() {
     const t = now();
     const mood = LanternExpression.pick(state, t);
@@ -89,7 +97,8 @@
 
   // ---- tabs ---------------------------------------------------------------------------------
   const loaders = { privacy: loadPrivacy, phone: loadPhone, costs: loadCosts, learn: loadRoutines, teach: loadLessons,
-                    widgets: loadWidgets, reminders: () => loadReminders(), setup: () => { loadSettings(); loadPairing(); loadDoctor(); } };
+                    widgets: loadWidgets, agents: loadAgents, reminders: () => loadReminders(),
+                    setup: () => { loadSettings(); loadPairing(); loadDoctor(); loadAvatar(); } };
   if (cfg.platform === 'darwin') document.body.classList.add('mac');   // traffic lights over the sidebar; vibrancy
   const tabButtons = [...document.querySelectorAll('.tabs button')];
   let tab = 'tasks';
@@ -107,6 +116,14 @@
     if (loaders[name]) loaders[name]();
   }
   for (const b of tabButtons) b.addEventListener('click', () => showTab(b.dataset.tab));
+  // The avatar window's agent faces open a task's timeline here (T4c).
+  if (window.lantern.onShowTask) window.lantern.onShowTask((id) => {
+    openSteps.add(Number(id));
+    showTab('tasks');
+    renderTasks();
+    const el = document.getElementById(`task-${Number(id)}`);
+    if (el) el.scrollIntoView({ block: 'center' });
+  });
   // Ctrl/Cmd+1…9 go to the first nine sections, in sidebar order.
   window.addEventListener('keydown', (e) => {
     const n = Number(e.key);
@@ -578,7 +595,7 @@
         h('summary', {}, `${t.steps.length} step${t.steps.length === 1 ? '' : 's'}`),
         h('ul', { class: 'steps' }, t.steps.slice(-12).map((s) => h('li', { class: s.ok ? '' : 'bad' }, chip(s.badge), h('span', {}, s.label)))));
       const said = t.reply || (live ? (t.steps.length ? t.steps[t.steps.length - 1].label + '…' : 'On it…') : '');
-      box.append(h('article', { class: 'task' },
+      box.append(h('article', { class: 'task', id: `task-${t.id}` },
         h('div', { class: 'me' }, h('p', { class: 'goal' }, t.goal || `Task #${t.id}`)),
         h('div', { class: 'them' },
           h('span', { class: 'face', 'aria-hidden': 'true' }, lanternFace()),
@@ -594,6 +611,8 @@
               t.undoneBy ? h('span', { class: 'undone' }, `Undone in #${t.undoneBy}`) : null,
               ['failed', 'cancelled', 'interrupted'].includes(t.status)
                 ? h('button', { class: 'forget', onclick: () => retryTask(t.id) }, t.status === 'interrupted' ? 'Resume' : 'Try again') : null,
+              ['done', 'failed'].includes(t.status)
+                ? h('button', { class: 'forget', onclick: () => draftFromTask(t.id), title: 'Turn this finished task into a shareable agent' }, 'Make an agent') : null,
               !live ? h('button', { class: 'forget', onclick: () => showReceipt(t.id) }, 'Receipt') : null,
               !live ? h('button', { class: 'forget quiet', onclick: () => forgetTask(t.id) }, 'Forget') : null)))));
     });
@@ -617,6 +636,7 @@
   }
 
   showOrbs(false);   // the portrait until the avatar settings say otherwise
+  api.get('/settings').then((st) => setLook(st && st.skin)).catch(() => {});
 
   // ---- welcome (first launch) and preferences ------------------------------------------------------
   const keyName = (k) => k.replace('CommandOrControl', cfg.platform === 'darwin' ? '⌘' : 'Ctrl').replace(/Shift/, '⇧')
@@ -656,6 +676,52 @@
         loadSettings();
       },
     }, PERSONA_NAMES[p] || p)));
+    const SKIN_NAMES = { muse: 'Face', orb: 'Orb', glow: 'Glow', clock: 'Clock' };
+    setLook(st.skin);
+    $('avatar-skins').replaceChildren(...(st.skins || ['muse', 'orb', 'glow', 'clock']).map((s) => h('button', {
+      role: 'radio', 'aria-checked': String(s === (st.skin || 'muse')), type: 'button',
+      onclick: async () => {
+        try {
+          await api.post('/settings', { skin: s });
+          toast(s === 'clock' ? 'Lantern is a clock now.' : `Lantern's skin is ${SKIN_NAMES[s] || s}.`);
+        } catch (err) {
+          toast(`Couldn't change it: ${err.message}`);
+        }
+        loadSettings();
+      },
+    }, SKIN_NAMES[s] || s)));
+    const LS_NAMES = { true: 'On', false: 'Off' };
+    $('localsend').replaceChildren(...[true, false].map((on) => h('button', {
+      role: 'radio', 'aria-checked': String(on === !!st.localsend), type: 'button',
+      onclick: async () => {
+        try {
+          await api.post('/settings', { localsend: on });
+          toast(on ? 'Lantern answers phones on this Wi-Fi.' : 'Lantern ignores phones.');
+        } catch (err) {
+          toast(`Couldn't change it: ${err.message}`);
+        }
+        loadSettings();
+      },
+    }, LS_NAMES[on])));
+  }
+
+  // ---- avatar studio (Setup → Avatar; routes are lantern/server.py's /avatar) -------------------------
+  const AVATAR_STYLES = ['3d', 'flat', 'pixel', 'neon'];
+  let avatarStyle = '3d';
+  let avatarPreview = null;   // {id, preview, cost_usd} waiting for “Use this”
+
+  function renderAvatarStyles() {
+    $('avatar-styles').replaceChildren(...AVATAR_STYLES.map((s) => h('button', {
+      role: 'radio', 'aria-checked': String(s === avatarStyle), type: 'button',
+      onclick: () => { avatarStyle = s; renderAvatarStyles(); },
+    }, s)));
+  }
+
+  function avatarRow(imgSrc, title, note, button) {
+    return h('div', { class: 'row avatar-row' },
+      imgSrc ? h('img', { class: 'avatar-thumb', src: imgSrc, alt: '' }) : null,
+      h('div', { class: 'row-text' }, h('b', {}, title), note ? h('small', {}, note) : null),
+      button);
   }
 
   // ---- pair a phone (lantern/pairing.py) ----------------------------------------------------------
@@ -698,16 +764,103 @@
     }
   });
 
+  async function avatarThumb(id) {
+    try {
+      const blob = await api.blob(`/avatar/file/${encodeURIComponent(id)}/idle`);
+      return URL.createObjectURL(blob);
+    } catch (e) {
+      return '';   // no idle image yet (a bare preview): the row shows text only
+    }
+  }
+
+  async function loadAvatar() {
+    renderAvatarStyles();
+    const box = $('avatar-now');
+    box.textContent = '';
+    let manifest = null;
+    try { manifest = await api.get('/avatar/manifest'); } catch (e) { manifest = null; }
+    if (!manifest) {
+      box.append(h('p', { class: 'hint' }, 'Avatar designs need the newest Lantern server.'));
+      return;
+    }
+    if (avatarPreview) {
+      box.append(avatarRow(avatarPreview.preview,
+        `Preview · ${LanternAudit.money(avatarPreview.cost_usd)}`,
+        'One image. “Use this” draws the other six after you approve.',
+        h('button', { class: 'tinted', onclick: acceptAvatarPreview }, 'Use this')));
+    }
+    const designs = manifest.designs || [];
+    if (!designs.length && !avatarPreview) {
+      box.append(h('p', { class: 'hint' }, 'No designs yet. Describe the face above and tap Preview.'));
+    }
+    for (const d of designs) {
+      const thumb = d.status === 'complete' ? await avatarThumb(d.id) : '';
+      const label = d.active ? 'On screen now' : d.status === 'complete' ? 'Finished' : 'Preview';
+      const button = !d.active && d.status === 'complete'
+        ? h('button', { class: 'tinted', onclick: () => useAvatarDesign(d.id) }, 'Use') : null;
+      box.append(avatarRow(thumb, `${d.style} · ${label}`, String(d.brief || '').slice(0, 140), button));
+    }
+  }
+
+  async function acceptAvatarPreview() {
+    if (!avatarPreview) return;
+    try {
+      const r = await api.post(`/avatar/design/${encodeURIComponent(avatarPreview.id)}/accept`);
+      toast(r.accepted ? 'Lantern has a new face.' : `Not changed: ${r.reason || 'declined'}.`);
+      if (r.accepted) avatarPreview = null;
+    } catch (e) {
+      toast(`Couldn't finish it: ${e.message}`);
+    }
+    loadAvatar();
+  }
+
+  async function useAvatarDesign(id) {
+    try {   // a finished design just becomes active again: no model call
+      const r = await api.post(`/avatar/design/${encodeURIComponent(id)}/accept`);
+      toast(r.accepted ? 'Lantern has a new face.' : `Not changed: ${r.reason || 'declined'}.`);
+    } catch (e) {
+      toast(`Couldn't switch: ${e.message}`);
+    }
+    loadAvatar();
+  }
+
+  $('avatar-preview').addEventListener('click', async () => {
+    const brief = $('avatar-brief').value.trim();
+    if (!brief) {
+      toast('Describe the face first.');
+      return;
+    }
+    try {
+      avatarPreview = await api.post('/avatar/design', { brief, style: avatarStyle });
+      toast(`Preview drawn for ${LanternAudit.money(avatarPreview.cost_usd)}.`);
+    } catch (e) {
+      toast(`Couldn't draw it: ${e.message}`);
+      avatarPreview = null;
+    }
+    loadAvatar();
+  });
+
   // ---- today: greeting, suggestions, at-a-glance tiles ----------------------------------------------
   let upcoming = [];
   let budget = null;   // {spent_usd, total_usd, task_usd, left_usd, ...} from /usage: the limits enforced in code
+  let savedWeek = null;   // {total_min, days: [{day, minutes}]} from /stats/time-saved: the honest week total
+  function tileBars(g) {
+    if (!g.bars) return null;
+    const max = Math.max(1, ...g.bars);
+    return h('div', { class: 'bars', 'aria-hidden': 'true' },
+      ...g.bars.map((v) => h('span', { style: `height: ${Math.max(8, Math.round((v / max) * 100))}%` })));
+  }
   function renderGlance() {
     const t = now();
     $('today-date').textContent = LanternToday.dateLine(t);
     $('today-greeting').textContent = LanternToday.greeting(t);
-    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t, budget }).map((g) =>
-      h('div', { class: `tile ${g.tone}`, 'data-tile': g.id },
-        h('span', { class: 't-label' }, g.label), h('span', { class: 't-value' }, g.value), h('span', { class: 't-note' }, g.note))));
+    $('glance').replaceChildren(...LanternToday.glance(state, { reminders: upcoming, now: t, budget, timeSaved: savedWeek }).map((g) =>
+      h('div', { class: `tile ${g.tone}`, 'data-tile': g.id, ...(g.a11y ? { 'aria-label': g.a11y, role: 'img' } : {}) },
+        h('span', { class: 't-label' }, g.label), h('span', { class: 't-value' }, g.value), h('span', { class: 't-note' }, g.note), tileBars(g))));
+  }
+  async function loadSaved() {
+    try { savedWeek = await api.get('/stats/time-saved?days=7'); } catch (e) { savedWeek = null; }
+    renderGlance();
   }
   $('suggestions').replaceChildren(...LanternToday.SUGGESTIONS.map((s) => h('button', { class: 'chip-s', type: 'button', onclick: () => {
     $('goal').value = s.goal;
@@ -1034,6 +1187,506 @@
     }
   });
 
+  // ---- agents (shareable packs; routes are lantern/server.py's /agents) ------------------------------------
+  let agentPacks = [];
+  let agentRunTask = {};    // pack name -> task id of its latest run, for the Watch/Stop line
+  let agentRunOpen = null;  // pack name with its run form open
+  let agentFaceOpen = null; // pack name with its face form open ("Make a face")
+  let agentFaceURL = {};    // pack name -> object URL of its drawn icon
+  let agentDraft = null;    // {fields, from} a draft being edited, or null
+  let draftRefs = {};       // field name -> input element in the draft editor
+
+  async function loadAgents() {
+    const list = $('agent-list');
+    try {
+      agentPacks = (await api.get('/agents')).agents || [];
+    } catch (e) {
+      list.textContent = '';
+      list.append(h('p', { class: 'empty' }, `Can't reach Lantern (${e.message})`));
+      return;
+    }
+    await loadAgentFaces();
+    renderAgents();
+    renderAgentDraft();
+  }
+
+  async function loadAgentFaces() {
+    const next = {};
+    for (const pack of agentPacks) {
+      if (pack.face && pack.face.icon && pack.name) {
+        try {   // the icon needs the token header, so it loads as a blob, never a bare <img src>
+          const blob = await api.blob(`/agents/${encodeURIComponent(pack.name)}/face`);
+          next[pack.name] = URL.createObjectURL(blob);
+        } catch (e) { /* no icon on disk yet: the emoji or the Face button shows */ }
+      }
+    }
+    agentFaceURL = next;
+  }
+
+  function agentTaskStatus(name) {
+    const id = agentRunTask[name];
+    const t = id != null && state.tasks[id];
+    return t ? { id, status: t.status, live: t.status === 'running' || t.status === 'queued' } : null;
+  }
+
+  function renderAgents() {
+    const list = $('agent-list');
+    list.textContent = '';
+    if (!agentPacks.length) {
+      list.append(h('p', { class: 'empty' }, 'No agents yet. Add a .lantern-agent.json file above to get started.'));
+    }
+    for (const pack of agentPacks) list.append(agentCard(pack));
+  }
+
+  function agentFaceThumb(pack, face) {
+    if (face.kind === 'icon' && agentFaceURL[pack.name]) {
+      return h('img', { class: 'agent-face', src: agentFaceURL[pack.name], alt: '' });
+    }
+    if (face.kind === 'emoji') {
+      return h('span', { class: 'agent-face emoji', role: 'img', 'aria-label': 'Agent face' }, face.emoji);
+    }
+    return null;
+  }
+
+  function agentCard(pack) {
+    const c = LanternAgents.cardView(pack);
+    const face = LanternAgents.faceView(pack);
+    const sig = LanternAgents.signatureBadge(pack);
+    const run = agentTaskStatus(c.name);
+    const refs = {};
+    const form = agentRunOpen === c.name && c.runnable
+      ? h('div', { class: 'agent-form' },
+        c.inputs.map((i) => {
+          const el = h('input', { value: '', placeholder: i.example || '', 'aria-label': i.question || i.key });
+          refs[i.key] = el;
+          return h('label', {}, i.question || i.key, el);
+        }),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'tinted', onclick: () => startAgentRun(pack, refs) }, 'Start')))
+      : null;
+    const faceRefs = {};
+    const faceForm = agentFaceOpen === c.name && !pack.disabled
+      ? h('div', { class: 'agent-form' },
+        h('label', {}, 'An emoji for this agent',
+          (() => { const el = h('input', { value: '', placeholder: '📦', 'aria-label': 'Emoji for this agent', maxlength: '8' });
+                   faceRefs.emoji = el; return el; })()),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'forget', onclick: () => saveAgentFace(pack, faceRefs.emoji.value) }, 'Save emoji'),
+          h('button', { class: 'tinted', onclick: () => drawAgentFace(pack) }, 'Draw one (~$0.01)')))
+      : null;
+    return h('article', { class: 'task agent' },
+      h('div', { class: 'head' },
+        agentFaceThumb(pack, face),
+        h('div', {},
+          h('div', { class: 'goal' }, c.title, c.disabled ? h('span', { class: 'chip' }, 'off') : null),
+          c.sub ? h('div', { class: 'status' }, c.sub) : null,
+          h('div', { class: `agent-sig ${sig.kind}` }, sig.text))),
+      c.description ? h('p', { class: 'reply' }, c.description) : null,
+      c.tools.length ? h('div', { class: 'agent-tools' }, c.tools.map((t) => h('span', { class: 'chip' }, t))) : null,
+      surfaceBox(pack),
+      loopBox(pack),
+      run ? h('div', { class: 'agent-run' },
+        h('span', {}, run.live ? `Running as task #${run.id}` : `Last run: #${run.id} · ${run.status}`),
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'tinted', onclick: () => showTab('tasks') }, 'Watch'),
+          run.live ? h('button', { class: 'stop-big', onclick: stopEverything }, 'Stop') : null)) : null,
+      form,
+      faceForm,
+      h('div', { class: 'actions' },
+        c.runnable && agentRunOpen !== c.name
+          ? h('button', { class: 'forget', onclick: () => { agentRunOpen = c.name; renderAgents(); } }, 'Run') : null,
+        !pack.disabled && agentFaceOpen !== c.name
+          ? h('button', { class: 'forget', onclick: () => { agentFaceOpen = c.name; renderAgents(); } },
+            face.kind === 'none' ? 'Make a face' : 'Change face') : null,
+        h('button', { class: 'forget', onclick: () => shareAgent(pack) }, 'Share'),
+        h('button', { class: 'forget', onclick: () => shareAgentCard(pack) }, 'Share as A2A card'),
+        c.disabled
+          ? h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, true) }, 'Enable')
+          : h('button', { class: 'forget', onclick: () => setAgentEnabled(pack, false) }, 'Disable')));
+  }
+
+  async function saveAgentFace(pack, text) {
+    const parsed = LanternAgents.parseEmoji(text);
+    if (!parsed.ok) {
+      toast(parsed.error);
+      return;
+    }
+    try {   // an emoji is free: no model call, no approval
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/face`, { emoji: parsed.emoji });
+      agentFaceOpen = null;
+      toast(`“${pack.title || pack.name}” now looks like ${parsed.emoji}.`);
+    } catch (e) {
+      toast(`Couldn't set it: ${e.message}`);
+      return;
+    }
+    loadAgents();
+  }
+
+  async function drawAgentFace(pack) {
+    try {   // one Muse Image icon, behind an approval showing the cost
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/face`, { generate: true });
+      agentFaceOpen = null;
+      toast(r.made ? `Drew a face for “${pack.title || pack.name}”.` : `Not drawn: ${r.reason || 'declined'}.`);
+    } catch (e) {
+      toast(`Couldn't draw it: ${e.message}`);
+      return;
+    }
+    loadAgents();
+  }
+
+  async function startAgentRun(pack, refs) {
+    const values = {};
+    for (const i of pack.inputs || []) values[i.key] = refs[i.key] ? refs[i.key].value : '';
+    const payload = LanternAgents.runPayload(pack, values);
+    if (!payload.ok) {
+      toast(payload.error);
+      return;
+    }
+    try {
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/run`, { inputs: payload.inputs });
+      agentRunTask[pack.name] = r.task_id;
+      agentRunOpen = null;
+      renderAgents();
+      showTab('tasks');   // the live timeline is the Today task view; Stop is in the header
+    } catch (e) {
+      toast(`Couldn't start it: ${e.message}`);
+    }
+  }
+
+  async function setAgentEnabled(pack, on) {
+    try {
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/${on ? 'enable' : 'disable'}`);
+      loadAgents();
+    } catch (e) {
+      toast(`Couldn't change it: ${e.message}`);
+    }
+  }
+
+  // ---- surfaces: where an agent can start (laptop, phone, or both; the store keeps it) --
+  function surfaceBox(pack) {
+    const sv = LanternAgents.surfaceView(pack);
+    const names = { laptop: 'Laptop', phone: 'Phone', both: 'Both' };
+    return h('div', { class: 'agent-surface' },
+      h('span', { class: 'status' }, 'Runs on'),
+      h('div', { class: 'actions' },
+        ...sv.options.map((o) => h('button', {
+          class: o === sv.surface ? 'tinted' : 'forget',
+          onclick: () => setAgentSurface(pack, o),
+        }, names[o]))));
+  }
+
+  async function setAgentSurface(pack, surface) {
+    try {
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/surface`, { surface });
+    } catch (e) {
+      toast(`Couldn't change where it runs: ${e.message}`);
+    }
+    loadAgents();
+  }
+
+  // ---- loops: packs that run on a schedule (the loop state rides on the agent list) --
+  function loopBox(pack) {
+    const lv = LanternAgents.loopView(pack, Date.now());
+    if (!lv.schedulable) return null;
+    return h('div', { class: 'agent-loop' },
+      h('div', { class: 'status' }, `🔁 ${lv.schedule || 'On a schedule'}`),
+      h('div', { class: 'status' }, lv.next),
+      h('div', { class: 'status' },
+        h('span', {}, lv.last),
+        lv.lastTask ? h('button', { class: 'forget quiet', onclick: () => showReceipt(lv.lastTask) }, 'Receipt') : null),
+      h('div', { class: 'actions' },
+        lv.enabled
+          ? h('button', { class: 'forget', onclick: () => pauseLoop(pack) }, 'Pause')
+          : h('button', { class: 'forget', onclick: () => resumeLoop(pack) }, 'Resume'),
+        h('button', { class: 'forget', onclick: () => runLoopNow(pack) }, 'Run now')));
+  }
+
+  async function resumeLoop(pack) {
+    try {   // approval card first: how often it runs and the per-run budget
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/loop/resume`);
+      toast(r.enabled ? `“${pack.title || pack.name}” runs on schedule now.` : `Not turned on: ${r.reason || 'declined'}.`);
+    } catch (e) {
+      toast(`Couldn't turn it on: ${e.message}`);
+    }
+    loadAgents();
+  }
+
+  async function pauseLoop(pack) {
+    try {
+      await api.post(`/agents/${encodeURIComponent(pack.name)}/loop/pause`);
+      toast(`Paused “${pack.title || pack.name}”. A run already going keeps going.`);
+    } catch (e) {
+      toast(`Couldn't pause it: ${e.message}`);
+    }
+    loadAgents();
+  }
+
+  async function runLoopNow(pack) {
+    try {
+      const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/loop/run-now`);
+      agentRunTask[pack.name] = r.task_id;
+      renderAgents();
+      showTab('tasks');   // the live timeline is the Today task view; Stop is in the header
+    } catch (e) {
+      toast(`Couldn't start it: ${e.message}`);
+    }
+  }
+
+  async function shareAgent(pack) {
+    if (!window.lantern.saveAgentFile) {
+      toast('Sharing needs the newest Lantern app.');
+      return;
+    }
+    if (pack.mine && pack.signature_status === 'unsigned'
+        && window.confirm(`“${pack.title || pack.name}” is unsigned. Sign it with your key before sharing?`)) {
+      try {   // one approval, then the export below carries the signature
+        const r = await api.post(`/agents/${encodeURIComponent(pack.name)}/sign`);
+        if (!r.signed) {
+          toast(`Not signed: ${r.reason || 'declined'}.`);
+          return;
+        }
+        toast(`Signed with key ${r.fingerprint}.`);
+        await loadAgents();
+        const fresh = agentPacks.find((p) => p.name === pack.name);
+        if (fresh) pack = fresh;
+      } catch (e) {
+        toast(`Couldn't sign it: ${e.message}`);
+        return;
+      }
+    }
+    try {
+      const text = await api.raw(`/agents/${encodeURIComponent(pack.name)}/export`);   // the exact file bytes
+      const r = await window.lantern.saveAgentFile({ name: LanternAgents.packFileName(pack), text });
+      if (r && !r.cancelled) toast(`Saved ${r.path || 'the agent file'}.`);
+    } catch (e) {
+      toast(`Couldn't share it: ${e.message}`);
+    }
+  }
+
+  // ---- install: the Add… button, or a file dropped on the row -----------------------------------
+  // Returns true when the pack was installed (so the draft editor can clear itself).
+  async function installPackText(text, replace) {
+    const parsed = LanternAgents.parsePackFile(text);
+    if (!parsed.ok) {
+      toast(parsed.error);
+      return false;
+    }
+    try {
+      const r = await api.post(`/agents/install${replace ? '?replace=true' : ''}`, parsed.data);
+      if (r.installed) {
+        toast(`Agent “${r.name}” installed.`);
+        loadAgents();
+        return true;
+      }
+      if (!replace && /already installed|take its place/i.test(r.reason || '')) {
+        if (window.confirm(`${r.reason} Install anyway, replacing it?`)) return installPackText(text, true);
+        return false;
+      }
+      toast(`Couldn't install it: ${r.reason || 'the server refused it'}`);
+      return false;
+    } catch (e) {
+      toast(`Couldn't install it: ${e.message}`);   // a bad pack explains itself here
+      return false;
+    }
+  }
+
+  async function shareAgentCard(pack) {
+    if (!window.lantern.saveAgentFile) {
+      toast('Sharing needs the newest Lantern app.');
+      return;
+    }
+    try {
+      const card = await api.get(`/agents/${encodeURIComponent(pack.name)}/a2a-card`);
+      const text = `${JSON.stringify(card, null, 2)}\n`;
+      const r = await window.lantern.saveAgentFile({ name: LanternAgents.a2aFileName(pack), text });
+      if (r && !r.cancelled) toast(`Saved ${r.path || 'the agent card'}.`);
+    } catch (e) {
+      toast(`Couldn't share it: ${e.message}`);
+    }
+  }
+
+  // ---- import: a community SKILL.md becomes a pack (scripts are never imported) --
+  let skillPreview = null;   // the /agents/import-skill preview being reviewed, or null
+
+  async function pickSkillFile() {
+    if (window.lantern.openSkillFile) {
+      const r = await window.lantern.openSkillFile();
+      if (r && !r.cancelled) importSkillPath(r.path || '');
+      return;
+    }
+    $('skill-file').click();   // older app: the hidden file input (text only)
+  }
+
+  async function importSkillPath(path) {
+    if (!path) return;
+    try {
+      skillPreview = await api.post('/agents/import-skill', { path });
+    } catch (e) {
+      toast(`Couldn't import it: ${e.message}`);
+      return;
+    }
+    renderSkillImport();
+  }
+
+  async function importSkillText(text, filename) {
+    try {
+      skillPreview = await api.post('/agents/import-skill', { text, filename });
+    } catch (e) {
+      toast(`Couldn't import it: ${e.message}`);
+      return;
+    }
+    renderSkillImport();
+  }
+
+  function renderSkillImport() {
+    const box = $('agent-import-form');
+    box.textContent = '';
+    if (!skillPreview) return;
+    const view = LanternAgents.importView(skillPreview);
+    const boxes = {};
+    const notes = [];
+    if (view.skipped.length) {
+      notes.push(`Not imported (packs never run code): ${view.skipped.join(', ')}`);
+    }
+    if (view.truncated) notes.push('The instructions were cut to 4000 characters; the full text stays in SKILL.md.');
+    box.append(h('div', { class: 'group' },
+      h('div', { class: 'goal' }, `Import “${view.title}” as an agent?`),
+      view.description ? h('p', { class: 'reply' }, view.description) : null,
+      notes.length ? h('div', { class: 'status' }, notes.join(' ') + ' Unsigned: anyone could have changed it.') : null,
+      h('div', { class: 'agent-tools' },
+        view.available.map((name) => {
+          const el = h('input', { type: 'checkbox', value: name, 'aria-label': name });
+          el.checked = view.tools.includes(name);
+          boxes[name] = el;
+          return h('label', { class: 'chip' }, el, ` ${name}`);
+        })),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'tinted', onclick: () => installSkillPreview(skillPreview, boxes) }, 'Install'),
+        h('button', { class: 'forget', onclick: () => { skillPreview = null; renderSkillImport(); } }, 'Cancel'))));
+  }
+
+  async function installSkillPreview(preview, boxes) {
+    const tools = Object.keys(boxes).filter((name) => boxes[name] && boxes[name].checked);
+    const data = LanternAgents.packWithTools(preview.pack || {}, tools);
+    data.source = 'imported skill';
+    if (Array.isArray(preview.skipped) && preview.skipped.length) data.skipped = preview.skipped;
+    try {
+      const r = await api.post('/agents/install', data);
+      if (r.installed) {
+        toast(`Agent “${r.name}” installed.`);
+        skillPreview = null;
+        renderSkillImport();
+        loadAgents();
+        return;
+      }
+      toast(`Couldn't install it: ${r.reason || 'the server refused it'}`);
+    } catch (e) {
+      toast(`Couldn't install it: ${e.message}`);   // a bad pack explains itself here
+    }
+  }
+
+  async function pickAgentFile() {
+    if (window.lantern.openAgentFile) {
+      const r = await window.lantern.openAgentFile();
+      if (r && !r.cancelled) installPackText(r.text || '');
+      return;
+    }
+    $('agent-file').click();   // older app: the hidden file input
+  }
+
+  $('agent-add').addEventListener('click', pickAgentFile);
+  $('agent-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) f.text().then((t) => installPackText(t));
+  });
+  $('agent-import').addEventListener('click', pickSkillFile);
+  $('skill-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) f.text().then((t) => importSkillText(t, f.name || 'SKILL.md'));
+  });
+  for (const ev of ['dragenter', 'dragover']) {
+    $('agent-drop').addEventListener(ev, (e) => { e.preventDefault(); $('agent-drop').classList.add('over'); });
+  }
+  for (const ev of ['dragleave', 'drop']) {
+    $('agent-drop').addEventListener(ev, (e) => { e.preventDefault(); $('agent-drop').classList.remove('over'); });
+  }
+  $('agent-drop').addEventListener('drop', (e) => {
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) f.text().then((t) => installPackText(t));
+  });
+
+  // ---- draft: turn a finished task into a new agent ----------------------------------------------
+  async function draftFromTask(id) {
+    let draft;
+    try {
+      draft = await api.post('/agents/draft', { task_id: id });
+    } catch (e) {
+      toast(`Couldn't draft it: ${e.message}`);
+      return;
+    }
+    agentDraft = { fields: LanternAgents.draftFields(draft), from: id };
+    agentRunOpen = null;
+    showTab('agents');
+    renderAgents();
+    renderAgentDraft();
+    window.scrollTo({ top: 0 });
+  }
+
+  function draftField(label, key, rows) {
+    const el = rows ? h('textarea', { rows }, draftRefs[key] || agentDraft.fields[key] || '')
+                    : h('input', { value: agentDraft.fields[key] || '' });
+    draftRefs[key] = el;
+    return h('label', {}, label, el);
+  }
+
+  function renderAgentDraft() {
+    const box = $('agent-draft');
+    box.textContent = '';
+    draftRefs = {};
+    if (!agentDraft) return;
+    const inputs = agentDraft.fields.inputs || [];
+    box.append(h('article', { class: 'task agent draft-form' },
+      h('div', { class: 'head' }, h('div', {},
+        h('div', { class: 'goal' }, 'New agent'),
+        h('div', { class: 'status' }, `Drafted from task #${agentDraft.from} · edit it, then install`))),
+      h('div', { class: 'agent-form' },
+        draftField('Name (lowercase, dashes)', 'name'),
+        draftField('Title', 'title'),
+        draftField('What it does', 'description'),
+        draftField('Author', 'author'),
+        draftField('Version', 'version'),
+        draftField('Goal (use {blanks} for the fill-ins)', 'goal', 3),
+        draftField('Instructions', 'instructions', 4),
+        draftField('Tools (one per line)', 'tools', 3)),
+      inputs.length ? h('div', { class: 'agent-tools' },
+        inputs.map((i) => h('span', { class: 'chip' }, `{${i.key}} ${i.question}`))) : null,
+      h('p', { class: 'hint' }, 'Installing asks first, bound to the exact file. The draft never picks a model.'),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'tinted', onclick: saveAgentDraft }, 'Review & install'),
+        h('button', { class: 'forget', onclick: () => { agentDraft = null; renderAgentDraft(); } }, 'Discard'))));
+  }
+
+  async function saveAgentDraft() {
+    if (!agentDraft) return;
+    for (const key of ['name', 'title', 'description', 'author', 'version', 'goal', 'instructions', 'tools']) {
+      agentDraft.fields[key] = draftRefs[key] ? draftRefs[key].value : '';
+    }
+    const data = LanternAgents.packFromFields({ ...agentDraft.fields, inputs: agentDraft.fields.inputs });
+    const replace = agentPacks.some((p) => p.name === data.name);
+    if (replace && !window.confirm(`An agent called “${data.name}” is already installed. Replace it?`)) return;
+    if (await installPackText(JSON.stringify(data), replace || undefined)) {
+      agentDraft = null;
+      renderAgentDraft();
+    }
+  }
+
+  async function stopEverything() {
+    const r = await window.lantern.stop();
+    toast(r && r.stopped ? `Stopped. ${r.denied_approvals || 0} approval(s) denied.` : 'Could not reach Lantern to stop it.');
+  }
+
   // ---- live events -------------------------------------------------------------------------------------------
   function renderAll() {
     renderOrb();
@@ -1045,6 +1698,13 @@
   api.events((e) => {
     state = LanternState.reduce(state, { ts: now(), ...e });
     renderAll();
+    // A tracked agent run finished or stopped, or a loop changed: refresh its
+    // Watch/Stop line, unless the user is mid-form (re-rendering would wipe typing).
+    if ((e.type === 'done' || e.type === 'stopped' || e.type === 'loop')
+        && tab === 'agents' && !agentRunOpen && !agentDraft) {
+      renderAgents();
+    }
+    if (e.type === 'loop' && e.event === 'paused') toast(`⏸️ ${e.text || 'A loop paused itself.'}`);
     if ((e.type === 'approval' && e.event === 'requested') || (e.type === 'task_parked' && e.reason === 'waiting_user')) window.lantern.showPanel();
     if (e.type === 'done' && tab === 'privacy') loadPrivacy();
     if (tab === 'phone' && (e.type === 'approval' || e.type === 'done' || e.type === 'queued' || e.type === 'reminder')) setTimeout(loadPhone, 300);
@@ -1069,6 +1729,9 @@
     if (e.type === 'routine_learned' || e.type === 'routine_healed' || e.type === 'routines' ||
         (e.type === 'done' && tab === 'learn')) loadRoutines();
     if (e.type === 'routine_healed') toast(`The page had changed: healed ${(e.steps || []).length} step(s), now v${e.version}.`);
+    if (e.type === 'done') loadSaved();
+    if (e.type === 'avatar' && tab === 'setup') loadAvatar();
+    if (e.type === 'settings' && e.skin) setLook(e.skin);   // changed here or in another window
   }, async (up) => {
     $('conn').textContent = up ? (cfg.mock ? 'Connected · mock' : 'Connected') : 'Offline: is `lantern --serve` running?';
     $('conn').className = 'status ' + (up ? 'up' : 'down');
@@ -1081,6 +1744,7 @@
       loadReminders();
       loadCosts();
       loadLessons();
+      loadSaved();
     }
   });
 

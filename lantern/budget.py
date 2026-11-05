@@ -68,13 +68,30 @@ class Limits:
         return out
 
 
+SCHEDULED_TASK_DEFAULT = 0.10   # a loop's run costs less than an interactive task ($3)
+
+
+def scheduled_task_budget(env: dict) -> float | None:
+    """The per-run budget for scheduled pack runs: LANTERN_TASK_BUDGET_USD when set,
+    else $0.10. "off"/"0" means no cap, like the other limits."""
+    return _limit(env.get(ENV["task"]), SCHEDULED_TASK_DEFAULT)
+
+
 class BudgetGuard:
     def __init__(self, memory: Memory, limits: Limits, current_task: Callable[[], int | None] = lambda: None,
                  on_event: Callable[[dict], None] | None = None):
         self.memory, self.limits = memory, limits
         self.current_task = current_task
         self.on_event = on_event or (lambda e: None)
+        self.overrides: dict[int, float | None] = {}   # per-task caps (scheduled runs); cleared when they settle
         self._warned = False
+
+    def set_task_budget(self, task_id: int, cap_usd: float | None) -> None:
+        """Cap one task's spending (a scheduled run). Cleared with clear_task_budget."""
+        self.overrides[task_id] = cap_usd
+
+    def clear_task_budget(self, task_id: int) -> None:
+        self.overrides.pop(task_id, None)
 
     def check(self) -> None:
         """Raise BudgetError if any limit is reached; otherwise let the call through."""
@@ -94,10 +111,11 @@ class BudgetGuard:
                 raise BudgetError(f"Today's spending reached the {usd(lim.daily)} daily limit ({ENV['daily']}); "
                                   "Lantern will call the model again tomorrow, or raise the limit in .env.")
         task_id = self.current_task()
-        if lim.task is not None and task_id is not None:
+        cap = self.overrides[task_id] if task_id in self.overrides else lim.task
+        if cap is not None and task_id is not None:
             cost = self.memory.task_usage(task_id)["cost_usd"]
-            if cost >= lim.task:
-                raise BudgetError(f"This task reached its {usd(lim.task)} limit ({ENV['task']}) and was stopped so it "
+            if cost >= cap:
+                raise BudgetError(f"This task reached its {usd(cap)} limit ({ENV['task']}) and was stopped so it "
                                   "can't run up the bill. Try again, or raise the limit in .env.")
 
     def status(self) -> dict:

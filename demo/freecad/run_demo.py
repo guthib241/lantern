@@ -48,6 +48,11 @@ def fill(value, out: Path):
     return value
 
 
+def same_path(a: str | None, b: str) -> bool:
+    """Equal as file paths: on Windows 'out/x.stl' and 'out\\x.stl' (any case) are the same file."""
+    return bool(a) and os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
 class Run:
     """One connected session (tasks that continue a previous one share it, like the third demo)."""
 
@@ -77,7 +82,7 @@ class Run:
         check = state.last_verdict or {}
         failed = list(check.get("failed", []))
         for f in fill(t.get("files", []), self.out):
-            if not (last.get("path") == f and last.get("verified")):
+            if not (same_path(last.get("path"), f) and last.get("verified")):
                 failed.append(f"file {f} not written and verified")
         return {"passed": bool(check.get("passed")) and not failed, "failed": failed, "check": check, "last": last}
 
@@ -95,6 +100,8 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     client = None
     if a.spark:
+        from lantern.config import load_env
+        load_env()   # the repo's .env (gitignored), like Lantern itself
         if not os.environ.get("MODEL_API_KEY"):
             raise SystemExit("--spark needs MODEL_API_KEY")
         from openai import OpenAI

@@ -52,9 +52,10 @@ def test_a_fully_set_up_laptop(tmp_path, monkeypatch):
     (tmp_path / "desktop" / "node_modules" / "electron").mkdir(parents=True)
     e, probed = env(dict(READY))
     checks = doctor.run_checks(cfg_for(tmp_path), e)
-    assert {c.id: c.status for c in checks if c.status != "ok"} == {}
+    assert {c.id: c.status for c in checks if c.status != "ok"} == {"localsend": "off", "github": "warn"}
     assert probed == ["http://127.0.0.1:8080/v1/models"]
-    assert doctor.readiness(checks) == {"rehearsal": {"blocked_by": [], "to_do": []}, "demo": {"blocked_by": [], "to_do": []}}
+    assert doctor.readiness(checks) == {"rehearsal": {"blocked_by": [], "to_do": []},
+                                           "demo": {"blocked_by": [], "to_do": ["github"]}}
     text = doctor.report(checks)
     assert "Real demo: ready ✓" in text
     for secret in (KEY, "abcd efgh", "t" * 40, "s" * 32):   # secrets are never shown
@@ -89,6 +90,25 @@ def test_bad_owner_number_and_dead_glimmer(tmp_path):
     assert c["glimmer"].status == "fail" and "does not answer" in c["glimmer"].detail
     e, probed = env({**READY, "LANTERN_GLIMMER_URL": "https://glimmer.example.modal.run/v1"})
     assert by_id(doctor.run_checks(cfg_for(tmp_path), e))["glimmer"].status == "ok" and probed == []  # remote: not probed
+
+
+def test_localsend_check_off_listening_and_broken(tmp_path, monkeypatch):
+    e, _ = env({})
+    assert by_id(doctor.run_checks(cfg_for(tmp_path), e))["localsend"].status == "off"
+    monkeypatch.setattr(doctor, "_tcp_open", lambda host, port: True)
+    e, _ = env({"LANTERN_LOCALSEND": "1"})
+    c = by_id(doctor.run_checks(cfg_for(tmp_path), e))["localsend"]
+    assert c.status == "ok" and "listening on port 53317" in c.detail
+    (tmp_path / "localsend").mkdir(exist_ok=True)
+    (tmp_path / "localsend" / "status.json").write_text(
+        json.dumps({"discovery_error": "can't join the discovery group"}))
+    cfg = cfg_for(tmp_path)
+    cfg.db_path = str(tmp_path / "m.db")
+    c = by_id(doctor.run_checks(cfg, env({"LANTERN_LOCALSEND": "1"})[0]))["localsend"]
+    assert "discovery degraded" in c.detail
+    monkeypatch.setattr(doctor, "_tcp_open", lambda host, port: False)
+    c = by_id(doctor.run_checks(cfg, env({"LANTERN_LOCALSEND": "1"})[0]))["localsend"]
+    assert c.status == "fail" and "Firewall" in c.fix
 
 
 def test_server_route_and_cli(tmp_path, monkeypatch, capsys):

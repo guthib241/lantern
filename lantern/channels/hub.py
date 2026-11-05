@@ -9,6 +9,9 @@ Incoming, from the owner only (everyone else is ignored and counted):
   "summary"     -> today's short summary, written by Muse Spark from Lantern's own records
   "resume"      -> run the tasks cut short when Lantern stopped
   "undo"        -> put back the files the last task moved (one approval, no model call)
+  "loops"       -> scheduled agents and whether each loop is on; "pause <name>" turns one off
+  "agents"      -> installed agents that run on the phone, with Run buttons
+  "run <name> key=value ..." -> start a phone agent (a laptop-only agent is refused)
   "receipt [N]" -> the last finished task's receipt (or task N's): changes, checks, approvals, data sent, cost
   "#N answer"   -> the answer to task N's question (ask_user; the task was parked, scheduler.py), also by button
   "learn [N]"   -> compile the last finished task (or task N) into a routine that runs with no model calls (S4)
@@ -17,11 +20,13 @@ Incoming, from the owner only (everyone else is ignored and counted):
   button tap    -> approve / deny / show an approval (cards.py); a menu row; "stop all?" yes/no;
                    a suggested next step (starts a new task). Approval button ids carry the nonce
                    and the first 8 hex of its payload hash, so only the card that was shown can
-                   answer, and only for the action it showed.
+                   answer, and only for the action it showed. "run:<name>" starts a phone agent.
 Outgoing (core events): every approval request becomes a card with Approve / Deny / Show
-buttons on every channel (the expiry line is the footer on WhatsApp, text elsewhere);
-a finished task's reply goes back to the channel it came from, with up to 2 suggested
-next steps as buttons (suggest.py; just new requests, through the normal agent).
+buttons on every channel (the expiry line is the footer on WhatsApp, text elsewhere),
+unless its task is a laptop-only agent (the panel shows those); a finished task's reply
+goes back to the channel it came from, with up to 2 suggested next steps as buttons
+(suggest.py; just new requests, through the normal agent), and a scheduled agent run
+with no channel reports to its pack's surface.
 Questions from parked tasks that arrive within a second of each other go out as one message.
 
 Work happens on two small threads (inbox, outbox), so webhooks answer fast and a slow
@@ -34,6 +39,7 @@ import json
 import queue
 import re
 import secrets
+import shlex
 import threading
 import time
 from collections import deque
@@ -42,6 +48,7 @@ from typing import Any, Callable
 
 from .. import models
 from ..approvals import ApprovalError
+from ..linkopen import clean_url
 from ..scrubber import DEFAULT as SCRUBBER
 from ..undo import WORDS as UNDO_WORDS, UndoError
 from ..network import PREFIX as NET_PREFIX
@@ -64,6 +71,12 @@ LEARN = re.compile(r"^\W*/?learn(?:\s+(?:it|this|that|task))?(?:\s+#?(\d+))?\W*$
 # S16: a photo of handwritten working with these words goes to Check my work, not to the scanner
 CHECK_WORK = re.compile(r"\bcheck\s+(?:my|this|the)?\s*(?:work|working|homework|answer|solution|steps|math|maths)\b", re.I)
 QUESTION_DELAY = 1.0   # seconds: questions that arrive together go out as one message
+LOOPS = re.compile(r"^\W*/?loops\W*$", re.I)
+PAUSE = re.compile(r"^\W*/?pause\s+([A-Za-z0-9][A-Za-z0-9-]*)\W*$", re.I)
+AGENTS = re.compile(r"^\W*/?agents\W*$", re.I)
+RUN = re.compile(r"^\W*/?run\s+([A-Za-z0-9][A-Za-z0-9-]*)", re.I)
+LINK_OPEN = re.compile(r"^\W*(?:open\s+this\s+on\s+my\s+laptop\s+|open\s+)?(https?://\S+)\W*$", re.I)
+LAPTOP_ONLY = "this agent runs on the laptop only; change it in the Agents tab"
 SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the reimbursement form\", "
          "\"which projects use torch?\", \"remind me at 6 to call Priya\"), STOP to halt everything, status, "
          "resume, undo (puts back the files the last task moved), receipt (proof of what the last task did), or "
@@ -71,6 +84,7 @@ SCOPE = ("I'm Lantern, your computer's task console. Send me a task (\"fill the 
          "your phone or glasses) and say what it's for: I scan it and run the routine with the scan attached. Send a "
          "how-to video and I'll send back its steps to check before I do them. Send a photo of your math working with "
          "\"check my work\" and I'll find the first line that doesn't follow. "
+         "Agents that run on the phone: send agents to list them, run <name> key=value to start one. "
          "Approvals arrive here as buttons.")
 Transcriber = Callable[..., dict]   # (wav_path, keywords=[...]) -> {"transcript", "audioDurationMs", ...}
 
@@ -88,6 +102,7 @@ class ChannelHub:
         self.media_dir = Path(media_dir or core.cfg.media_dir).expanduser()
         self.origin: dict[int, str] = {}          # task id -> channel that asked for it
         self.borrowed: dict[int, tuple[str, str, str]] = {}   # S13: task id -> (channel, borrower address, name)
+        self.pack_of: dict[int, str] = {}         # task id -> agent pack it runs (for surface routing)
         self.ignored = 0                          # messages from anyone but the owner
         self.errors: deque = deque(maxlen=50)
         self._seen: deque = deque(maxlen=500)     # message ids already handled (webhooks retry)
@@ -492,8 +507,23 @@ class ChannelHub:
             return
         if m := LEARN.match(t):
             return self._learn(ch, int(m.group(1)) if m.group(1) else None)
+        if LOOPS.match(t):
+            return self.say(ch.name, self._loops())
+        if m := PAUSE.match(t):
+            return self.say(ch.name, self._pause(m.group(1)))
+        if AGENTS.match(t):
+            return self._agents(ch)
+        if m := RUN.match(t):
+            if self._run_agent(ch, m.group(1), t[m.end():]):
+                return
         if UNDO_WORDS.match(t):
             return self._do_undo(ch)
+        if m := LINK_OPEN.match(t):  # phone fast path: no model call, faster and free
+            url = clean_url(m.group(1))
+            if url is not None:
+                task_id = self.core.submit(f"[{ch.name}] open this link on my laptop: {url}")
+                self.origin[task_id] = ch.name
+                return self.say(ch.name, f"🏮 On it (task #{task_id}).")
         task_id = self.core.submit(f"[{ch.name}] {t}")
         self.origin[task_id] = ch.name
         self.say(ch.name, f"🏮 On it (task #{task_id}).")
@@ -530,6 +560,120 @@ class ChannelHub:
             return True
         self.origin.setdefault(task_id, ch.name)
         self.say(ch.name, f"✅ Thanks. Task #{task_id} continues.")
+        return True
+
+    def _loops(self) -> str:
+        """Every scheduled pack and whether its loop is on."""
+        from ..reminders import describe
+        loops = self.core.loops()
+        if not loops:
+            return "No scheduled agents. Turn one on in the Agents tab."
+        lines = []
+        for loop in loops:
+            state = "on" if loop["enabled"] else "off"
+            extra = f", next run {describe(loop['next_run'])}" if loop["enabled"] and loop["next_run"] else ""
+            last = f", last run {loop['last_status']}" if loop.get("last_status") else ""
+            lines.append(f"{loop['name']} ({loop.get('description') or 'scheduled'}): {state}{extra}{last}")
+        lines.append("Reply 'pause <name>' to turn one off.")
+        return "\n".join(lines)
+
+    def _pause(self, name: str) -> str:
+        try:
+            self.core.loop_pause(name)
+        except KeyError:
+            return f"No loop called '{name}': no agent by that name is installed."
+        except Exception as e:   # a tampered file refuses instead of pausing
+            return f"Couldn't pause '{name}': {e}."
+        return f"Paused the '{name}' loop."
+
+    # ---- agent packs on the phone (T3d) -------------------------------------------
+    def _pack_surface(self, name: str) -> str:
+        """This pack's Runs-on setting. An unreadable store entry stays on the laptop."""
+        try:
+            return self.core.packs.surface(name)
+        except Exception:
+            return "laptop"
+
+    def _phone_packs(self) -> list[dict]:
+        """Installed, enabled packs whose surface includes the phone."""
+        out = []
+        for entry in self.core.packs.list():
+            if entry.get("disabled"):
+                continue
+            surface = entry.get("surface") or self._pack_surface(entry["name"])
+            if surface in ("phone", "both"):
+                out.append(entry)
+        return out
+
+    def _agents(self, ch: Channel) -> None:
+        """List the phone agents in chunks of 3 (the inline-button limit), each with a Run button."""
+        packs = self._phone_packs()
+        if not packs:
+            self.say(ch.name, "No agents run on the phone yet. Switch one on in the Agents tab (Runs on: Phone or Both).")
+            return
+        for i in range(0, len(packs), 3):
+            chunk = packs[i:i + 3]
+            lines = [f"📦 Agents on this phone ({len(packs)}): reply run <name> key=value, or tap Run."]
+            buttons = []
+            for entry in chunk:
+                lines.append(f"• {entry.get('title', entry['name'])} ({entry['name']}) — "
+                             f"{entry.get('description', '')}".rstrip(" —").rstrip())
+                buttons.append((f"run:{entry['name']}", f"Run {entry['name']}"[:20]))
+            self._outbox.put((ch.name, "buttons", ("\n".join(lines), buttons)))
+
+    @staticmethod
+    def _run_args(rest: str) -> dict:
+        """`folder=Notes who=Priya` (quotes for spaces) -> {folder: Notes, ...}."""
+        try:
+            tokens = shlex.split(rest or "")
+        except ValueError as e:
+            raise ValueError(f"couldn't read that ({e}); use key=value, e.g. run NAME folder=Downloads") from None
+        args: dict[str, str] = {}
+        for token in tokens:
+            if "=" not in token:
+                raise ValueError(f"'{token}' is not key=value; e.g. run NAME folder=Downloads")
+            key, value = token.split("=", 1)
+            if not key.strip():
+                raise ValueError(f"'{token}' is not key=value; e.g. run NAME folder=Downloads")
+            args[key.strip()] = value.strip()
+        return args
+
+    def _run_agent(self, ch: Channel, name: str, rest: str) -> bool:
+        """Start an installed pack from the phone. True when handled; False when
+        `name` is no agent at all (the text stays an ordinary task)."""
+        try:
+            pack = self.core.packs.get(name)   # re-validated: a changed file is refused, not run
+        except KeyError:
+            return False
+        except Exception as e:   # PackError, ValueError, OSError: say so, don't run
+            self.say(ch.name, f"Couldn't run '{name}': {e}.")
+            return True
+        if pack.disabled:
+            self.say(ch.name, f"Agent '{name}' is off (disabled). Turn it on in the Agents tab to run it.")
+            return True
+        if self._pack_surface(name) == "laptop":
+            self.say(ch.name, f"Agent '{name}': {LAPTOP_ONLY}.")
+            return True
+        try:
+            args = self._run_args(rest)
+        except ValueError as e:
+            self.say(ch.name, f"{e}.")
+            return True
+        missing = [i for i in pack.inputs if i.key not in args]
+        if missing:
+            lines = [f"To run '{pack.title}' I still need:"]
+            lines += [f"– {i.question} ({i.key}" + (f", e.g. {i.example}" if i.example else "") + ")"
+                      for i in missing]
+            lines.append(f"Reply: run {name} " + " ".join(f"{i.key}=…" for i in pack.inputs))
+            self.say(ch.name, "\n".join(lines))
+            return True
+        try:
+            task_id = self.core.submit("", pack=name, inputs=args)
+        except ValueError as e:   # an unknown key, a value too long: the store's own check
+            self.say(ch.name, f"Couldn't run '{name}': {e}.")
+            return True
+        self.origin[task_id] = ch.name
+        self.say(ch.name, f"🏮 On it (task #{task_id}).")
         return True
 
     def _receipt(self, task_id: int | None) -> str:
@@ -607,6 +751,11 @@ class ChannelHub:
             return self._suggest_tap(ch, inc, aid)
         if verb == "answer":
             return self._answer_button(ch, inc, parts)
+        if verb == "run" and len(parts) == 2:
+            ch.acknowledge(inc, "Starting")
+            if not self._run_agent(ch, parts[1], ""):
+                self.say(ch.name, f"No agent called '{parts[1]}'. Send agents to see which run on the phone.")
+            return
         try:
             a = self.core.bus.get(aid)
             if verb == "show":
@@ -713,9 +862,22 @@ class ChannelHub:
         return out[:100]
 
     # ---- outgoing (core events) ----------------------------------------------------------
+    def _surface_muted(self, task_id: int | None) -> bool:
+        """A laptop-only agent task: the panel shows its cards and results, the phone stays quiet."""
+        pack = self.pack_of.get(task_id) if task_id is not None else None
+        return pack is not None and self._pack_surface(pack) == "laptop"
+
     def _on_event(self, event: dict) -> None:
         kind = event.get("type")
+        if kind == "queued" and event.get("task_id") is not None:
+            if event.get("pack"):   # a pack run: remember it, so cards and results follow its surface
+                if len(self.pack_of) > 1000:
+                    self.pack_of.pop(next(iter(self.pack_of)))
+                self.pack_of[event["task_id"]] = event["pack"]
+            return
         if kind == "approval" and event.get("event") == "requested":
+            if self._surface_muted(event.get("task_id")):
+                return
             card = approval_card(event["approval"], time.time())
             self._outbox.put((None, "card", (card.text, card.footer, card.buttons)))
         elif kind == "checkwork" and event.get("image"):
@@ -766,25 +928,39 @@ class ChannelHub:
             self.tell(ch, who, reply or "That didn't work.")
             self.say(None, f"🔑 {name}'s task #{event['id']} finished ({event.get('status')}).\n"
                            + self._receipt(event["id"]))
+        elif kind == "loop" and event.get("event") == "paused":
+            if event.get("name") and self._pack_surface(event["name"]) == "laptop":
+                return   # a laptop-only loop pauses quietly; the panel shows it
+            self._outbox.put((None, "text", (f"⏸️ {event.get('text', 'A loop paused itself.')}",)))
         elif kind == "done":
-            name = self.origin.pop(event.get("id"), None)
+            task_id = event.get("id")
+            name = self.origin.pop(task_id, None)
+            pack = self.pack_of.pop(task_id, None)
             if name:
-                self._finished[event.get("id")] = name
+                self._finished[task_id] = name
                 while len(self._finished) > 50:
                     self._finished.pop(next(iter(self._finished)))
-            image = self._check_images.pop(event.get("id"), None)
-            if name and event.get("status") != "cancelled":  # STOP already got its own reply
-                # S0: a reply that quotes private content goes out with that part kept on the computer
-                reply = (event.get("reply_public") or event.get("reply") or event.get("summary") or "").strip()
-                status = event.get("status")
-                if status == "failed" and not reply:
-                    reply = f"That didn't work: {event.get('summary', '')}"
-                if reply:
-                    sent = bool(image and status == "done"
-                                and self.say_image(name, image, reply, task_id=event.get("id"), event=event))
-                    if not sent:
-                        self.say(name, reply)
-                    self._maybe_suggest(event, name, reply)
+            image = self._check_images.pop(task_id, None)
+            if pack is not None and self._pack_surface(pack) == "laptop":
+                return   # a laptop-only run reports to the panel, never the phone
+            if event.get("status") == "cancelled":   # STOP already got its own reply
+                return
+            # S0: a reply that quotes private content goes out with that part kept on the computer
+            reply = (event.get("reply_public") or event.get("reply") or event.get("summary") or "").strip()
+            status = event.get("status")
+            if status == "failed" and not reply:
+                reply = f"That didn't work: {event.get('summary', '')}"
+            if not reply:
+                return
+            if name:
+                sent = bool(image and status == "done"
+                            and self.say_image(name, image, reply, task_id=task_id, event=event))
+                if not sent:
+                    self.say(name, reply)
+                self._maybe_suggest(event, name, reply)
+            elif pack is not None:
+                # A scheduled run has no channel: it reports to its pack's surface.
+                self._outbox.put((None, "text", (reply,)))
 
 
     def _maybe_suggest(self, event: dict, channel: str, reply: str) -> None:

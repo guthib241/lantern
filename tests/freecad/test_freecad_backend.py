@@ -162,3 +162,17 @@ def test_demo_tasks_pass_on_real_freecad(tmp_path):
     sys.path.insert(0, str(REPO / "demo" / "freecad"))
     import run_demo
     assert run_demo.main(["--freecad", "--out", str(tmp_path / "real")]) == 0
+
+
+def test_dead_pipe_restarts_once_like_windows_errno_22(fake_cmd):
+    """Windows reports writing to a just-crashed worker as OSError(22); the backend restarts and sends again."""
+    b = FreeCADBackend("freecadcmd", popen=fake_cmd).start()
+    try:
+        class Dead:
+            def write(self, s):
+                raise OSError(22, "Invalid argument")
+            flush = write
+        b.proc.stdin = Dead()
+        assert b.call("list_objects", {})["echo"] == "list_objects"
+    finally:
+        b.close()

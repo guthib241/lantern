@@ -64,6 +64,25 @@ def _probe(url: str) -> bool:
         return False
 
 
+def _tcp_open(host: str, port: int) -> bool:
+    """Is something listening on host:port? A plain connect; nothing is sent."""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def _localsend_status(cfg: Config) -> dict:
+    """What the receiver last wrote about itself (no contents, only state)."""
+    try:
+        return json.loads((Path(cfg.db_path).expanduser().parent / "localsend" / "status.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def _run(argv: list[str]) -> str:
     try:
         return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
@@ -179,6 +198,12 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
         gone = [k for k in ("TELEGRAM_BOT_TOKEN", "LANTERN_TELEGRAM_OWNER") if not v.get(k)]
         add(Check("telegram", "Telegram", FAIL if gone else OK, "missing: " + ", ".join(gone) if gone else "configured",
                   "Create a bot with @BotFather and set both variables" if gone else "", []))
+    gh = (v.get("GITHUB_TOKEN") or "").strip()
+    from .repolearn import GITHUB_TOKEN_ENV
+    add(Check("github", "GitHub helper", OK if gh else WARN,
+              f"{GITHUB_TOKEN_ENV} is set (not shown)" if gh else f"{GITHUB_TOKEN_ENV} is not set",
+              "" if gh else f"Add {GITHUB_TOKEN_ENV}=<a fine-grained read-only token> to .env "
+                            f"(the GitHub agent stays read-only; the token is never stored or shown)"))
     mode = v.get("LANTERN_EMAIL_MODE", "fake")
     if mode == "smtp":
         gone = [k for k in ("LANTERN_SMTP_USER", "LANTERN_SMTP_PASSWORD") if not v.get(k)]
@@ -188,6 +213,26 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     else:
         add(Check("email", "Email (SMTP + IMAP)", WARN, "off: emails go to a local outbox folder",
                   "Set LANTERN_EMAIL_MODE=smtp, LANTERN_SMTP_USER, LANTERN_SMTP_PASSWORD (Gmail app password)"))
+
+    # -- LocalSend receiver (T5): files and links from phones over home Wi-Fi ------------------
+    from . import localsend as localsend_mod
+    ls_wanted = localsend_mod.enabled_in(v, cfg)
+    ls_port = localsend_mod.port_in(v)
+    if not ls_wanted:
+        add(Check("localsend", "LocalSend receiver", OFF, "off",
+                  "Setup → Receive from phones on Wi-Fi, or set LANTERN_LOCALSEND=1"))
+    elif _tcp_open("127.0.0.1", ls_port):
+        detail = f"listening on port {ls_port}"
+        discovery_error = _localsend_status(cfg).get("discovery_error")
+        if discovery_error:
+            detail += f"; discovery degraded: {discovery_error}"
+        add(Check("localsend", "LocalSend receiver", OK, detail))
+    else:
+        add(Check("localsend", "LocalSend receiver", FAIL,
+                  f"on, but nothing listens on 127.0.0.1:{ls_port}",
+                  f"Restart Lantern with LANTERN_LOCALSEND=1 and allow Python through the firewall "
+                  f"(on Windows: Windows Firewall → allow inbound TCP {ls_port}, "
+                  f"and UDP {localsend_mod.MULTICAST_PORT} for discovery)"))
 
     # -- privacy setup -------------------------------------------------------------------------
     from .policy import Policy
@@ -218,6 +263,15 @@ def run_checks(cfg: Config, env: Env | None = None) -> list[Check]:
     add(Check("desktop", "Desktop app", OK if node and electron else FAIL,
               "ready" if node and electron else "Node.js not found" if not node else "Electron not installed",
               "" if node and electron else "Install Node.js 18+, then: cd desktop && npm install"))
+    try:
+        servers = json.loads(Path(cfg.mcp_config).expanduser().read_text(encoding="utf-8")).get("servers", {})
+    except (OSError, ValueError):
+        servers = {}
+    if "freecad" in servers:
+        from .integrations.freecad.backend import find_freecadcmd
+        cad = find_freecadcmd({**v, **(servers["freecad"].get("env") or {})})
+        add(Check("freecad", "FreeCAD (CAD tools)", OK if cad else FAIL, cad or "FreeCAD not found",
+                  "" if cad else "Install FreeCAD 1.0+ or set LANTERN_FREECAD_CMD in mcp.json's freecad env"))
     face = _avatar_expressions()
     add(Check("avatar", "Lantern's face (made with Muse)", OK if face else WARN,
               f"{face} expressions" if face else "none yet: the avatar is a faceless glow",

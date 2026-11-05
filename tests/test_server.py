@@ -192,7 +192,9 @@ def test_zones_say_whether_each_path_exists(tmp_path):
 def test_settings_change_the_persona_and_are_remembered(tmp_path):
     import json as _json
     core, c, _ = make(tmp_path, [])
-    assert c.get("/settings", headers=H).json() == {"persona": "smug", "personas": ["helpful", "sarcastic", "smug"]}
+    assert c.get("/settings", headers=H).json() == {"persona": "smug", "personas": ["helpful", "sarcastic", "smug"],
+                                                       "skin": "muse", "skins": ["muse", "orb", "glow", "clock"],
+                                                       "localsend": False}
     assert c.post("/settings", json={"persona": "helpful"}, headers=H).json()["persona"] == "helpful"
     assert core.agent.persona == "helpful" and "warm, upbeat" in core.agent.instructions()
     saved = _json.loads((tmp_path / "config.json").read_text())   # next to memory.db, not the real ~/.lantern
@@ -203,6 +205,31 @@ def test_settings_change_the_persona_and_are_remembered(tmp_path):
     import pytest as _pytest
     with _pytest.raises(ValueError):
         config_mod.save_setting("roots", ["/"], tmp_path)   # only allowlisted keys
+
+
+def test_settings_change_the_avatar_skin_and_reject_unknown(tmp_path):
+    import json as _json
+    core, c, _ = make(tmp_path, [])
+    assert c.post("/settings", json={"skin": "clock"}, headers=H).json()["skin"] == "clock"
+    assert core.cfg.skin == "clock"
+    saved = _json.loads((tmp_path / "config.json").read_text())   # next to memory.db, not the real ~/.lantern
+    assert saved == {"skin": "clock"}   # switching skins is free: no model call, just saved
+    assert c.post("/settings", json={"localsend": False}, headers=H).json()["localsend"] is False
+    assert c.post("/settings", json={"skin": "watch"}, headers=H).status_code == 400
+    assert c.post("/settings", json={}, headers=H).status_code == 400
+    assert c.post("/settings", json={"skin": "glow"}).status_code == 401
+    assert core.cfg.skin == "clock"   # rejected writes change nothing
+
+
+def test_the_orb_is_a_look_and_a_changed_look_is_announced(tmp_path):
+    """The orb (from the handoff branch) is one of Lantern's looks next to the Muse face, the glow and the clock;
+    changing it tells the avatar window at once over /events instead of waiting for its 30 s poll."""
+    core, c, _ = make(tmp_path, [])
+    seen = []
+    core.subscribe(seen.append)
+    assert c.post("/settings", json={"skin": "orb"}, headers=H).json()["skin"] == "orb"
+    assert core.cfg.skin == "orb"
+    assert any(e.get("type") == "settings" and e.get("skin") == "orb" for e in seen)
 
 
 def test_a_task_from_another_program_starts_untrusted(tmp_path):

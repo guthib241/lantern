@@ -3,7 +3,7 @@
 // the sprite, a panel (chat, approvals, privacy, phone, costs, widgets), Quick Ask, and the teaching board. Renderers are
 // sandboxed with context isolation; they talk to the local Lantern server on 127.0.0.1 with
 // the per-install token from ~/.lantern/token. Ctrl/Cmd+Shift+X is the global STOP.
-const { app, BrowserWindow, Menu, Notification, Tray, globalShortcut, ipcMain, nativeImage, nativeTheme, screen, session } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, dialog, globalShortcut, ipcMain, nativeImage, nativeTheme, screen, session } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -46,7 +46,10 @@ async function ensureServer() {
   if (await healthy()) return 'running';
   const url = new URL(config.apiBase);
   if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return 'remote';
-  const python = process.env.LANTERN_PYTHON || (process.platform === 'win32' ? 'py' : 'python3');
+  // The checkout's .venv first: a bare `py` on Windows is the system Python, without Lantern's packages.
+  const venv = path.resolve(__dirname, '..', '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
+  const python = process.env.LANTERN_PYTHON || (fs.existsSync(venv) ? venv
+    : process.platform === 'win32' ? 'py' : 'python3');
   const args = ['-m', 'lantern', '--serve', '--port', url.port || '8765'];
   if (process.argv.includes('--rehearsal')) args.push('--demo');
   const log = fs.openSync(path.join(app.getPath('userData'), 'server.log'), 'w');   // why it failed, if it does
@@ -207,6 +210,31 @@ function lockDown() {
 
 ipcMain.handle('config', () => config);
 ipcMain.handle('stop', () => stopEverything());
+// Agent packs: installing picks a .lantern-agent.json file; sharing saves the exact bytes.
+ipcMain.handle('agent:open', async () => {
+  const r = await dialog.showOpenDialog(panel, {
+    title: 'Add an agent', filters: [{ name: 'Lantern agent (.lantern-agent.json)', extensions: ['json'] }],
+    properties: ['openFile'],
+  });
+  if (r.canceled || !r.filePaths.length) return { cancelled: true };
+  return { cancelled: false, path: r.filePaths[0], text: fs.readFileSync(r.filePaths[0], 'utf8') };
+});
+// Agent Skills: importing picks a SKILL.md file or the folder holding one; the server reads it.
+ipcMain.handle('skill:open', async () => {
+  const r = await dialog.showOpenDialog(panel, {
+    title: 'Import a skill', filters: [{ name: 'Agent skill (SKILL.md)', extensions: ['md', 'markdown'] }],
+    properties: ['openFile', 'openDirectory'],
+  });
+  if (r.canceled || !r.filePaths.length) return { cancelled: true };
+  return { cancelled: false, path: r.filePaths[0] };
+});
+ipcMain.handle('agent:save', async (_e, { name, text }) => {
+  const r = await dialog.showSaveDialog(panel, { title: 'Share this agent', defaultPath: String(name || 'agent.lantern-agent.json') });
+  if (r.canceled || !r.filePath) return { cancelled: true };
+  fs.writeFileSync(r.filePath, String(text == null ? '' : text), 'utf8');   // verify: read it back
+  if (fs.readFileSync(r.filePath, 'utf8') !== String(text == null ? '' : text)) throw new Error('the file did not save correctly');
+  return { cancelled: false, path: r.filePath };
+});
 ipcMain.handle('camera:allow-once', () => { cameraUntil = Date.now() + 5000; return true; });
 ipcMain.handle('mic:allow-once', () => { micUntil = Date.now() + 5000; return true; });
 ipcMain.on('avatar:hover', (_e, over) => {
@@ -221,6 +249,10 @@ ipcMain.handle('board:open', (e, lesson, name) => {
 });
 ipcMain.on('panel:toggle', () => togglePanel());
 ipcMain.on('panel:show', () => togglePanel(true));
+ipcMain.on('panel:show-task', (_e, id) => {   // an agent face opens its task's timeline
+  togglePanel(true);
+  if (panel) panel.webContents.send('panel:show-task', id);
+});
 ipcMain.on('quick:hide', () => toggleQuick(false));
 ipcMain.on('avatar:menu', () => {
   Menu.buildFromTemplate([

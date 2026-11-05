@@ -22,8 +22,9 @@ from .base import (Channel, ChannelError, Http, Incoming, json_call, multipart_c
                    urllib_http)
 
 API = "https://api.telegram.org"
-MAX_CAPTION = 1024   # sendPhoto caption
+MAX_CAPTION = 1024   # sendPhoto and sendDocument captions are cut at 1024 chars
 MAX_IMAGE_BYTES = 10 * 1024 * 1024   # photos sent by multipart upload
+MAX_FILE_BYTES = 50 * 1024 * 1024   # bots can't send more than 50 MB
 
 
 class TelegramChannel(Channel):
@@ -91,6 +92,19 @@ class TelegramChannel(Channel):
             lines.append(footer)
         self._call("sendMessage", {"chat_id": self.owner, "text": "\n".join(lines)[:4096], "reply_markup": {
             "inline_keyboard": [[{"text": title[:60], "callback_data": rid}] for rid, title, _ in rows]}})
+
+    def send_file(self, data: bytes, filename: str, caption: str = "") -> dict:
+        """Send a file as a Telegram document (Bot API sendDocument, multipart).
+        Returns {"ok": bool, "bytes": int} with the size Telegram reports back."""
+        if len(data) > MAX_FILE_BYTES:
+            raise ChannelError(f"telegram can't send {filename}: {len(data)} bytes is over the 50 MB bot limit")
+        result = self._call_multipart("sendDocument", {"chat_id": self.owner, "caption": caption[:MAX_CAPTION]},
+                                      "document", filename, data, "application/octet-stream")
+        try:
+            size = int(result["document"]["file_size"])
+        except (KeyError, TypeError, ValueError):
+            raise ChannelError("telegram sendDocument gave no document file_size") from None
+        return {"ok": True, "bytes": size}
 
     def acknowledge(self, incoming: Incoming, text: str = "") -> None:
         if incoming.callback_id:

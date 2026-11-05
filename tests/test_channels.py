@@ -12,8 +12,9 @@ from fastapi.testclient import TestClient
 from fakes import FakeClient, call
 from test_routines import Both
 from lantern import models
-from lantern.channels import (ChannelHub, FakeChannel, TelegramChannel, WhatsAppChannel, channels_from_env,
-                              verify_signature)
+from lantern.channels import (ChannelHub, FakeChannel, Incoming, TelegramChannel, WhatsAppChannel,
+                              channels_from_env, verify_signature)
+from lantern.channels.fake import FAKE_OWNER
 from lantern.config import Config
 from lantern.core import Core
 from lantern.server import create_app
@@ -434,4 +435,149 @@ def test_wav_voice_note_is_converted_not_overwritten(tmp_path):
         assert got["format"] == (1, 16000, 2)
         assert not any("couldn't hear" in m.get("text", "") for m in phone.messages())
     finally:
+        core.shutdown()
+
+
+# ---- agent packs on the phone (T3d: runs on laptop, phone or both) -----------------
+PHONE_PACK = {"format": "lantern-agent/1", "name": "hello-pack", "title": "Hello",
+              "description": "Says hi.", "author": "bea", "version": "1.0.0",
+              "inputs": [{"key": "who", "question": "Who to greet?", "example": "Priya"}],
+              "goal": "Say hello to {who}.", "instructions": "Just answer in one line.",
+              "tools": ["list_folders"]}
+
+
+def phone_core(tmp_path, script):
+    root = tmp_path / "docs"
+    root.mkdir(exist_ok=True)
+    cfg = Config(roots=[str(root)], db_path=str(tmp_path / "m.db"))
+    cfg.audit_path, cfg.zones_file = str(tmp_path / "a.db"), str(tmp_path / "z.json")
+    cfg.agents_dir = str(tmp_path / "agents")
+    return Core(cfg, FakeClient(script), approval_timeout=10, reminder_tick=0)
+
+
+def phone_hub(core, *phones):
+    hub = ChannelHub(core, list(phones)).start(listen=False)
+    return hub
+
+
+def phone_texts(phone):
+    return [m["text"] for m in phone.messages() if m.get("type") == "text" and not m.get("from_owner")]
+
+
+def phone_cards(phone):
+    return [m for m in phone.messages() if m.get("type") == "buttons"]
+
+
+def last_card_button(phone):
+    assert wait_for(lambda: phone_cards(phone))
+    card = phone_cards(phone)[-1]
+    return card, {b["title"]: b["id"] for b in card["buttons"]}
+
+
+def test_phone_lists_and_runs_a_phone_surface_pack(tmp_path):
+    core = phone_core(tmp_path, [([call("finish", "c1", status="done", summary="hi Priya")], ""),
+                                 ([], "hi Priya.")])
+    phone = FakeChannel()
+    hub = phone_hub(core, phone)
+    try:
+        core.packs.install(PHONE_PACK)
+        core.set_pack_surface("hello-pack", "phone")
+        hub.handle(FakeChannel.incoming(text="agents"))
+        assert hub.wait_idle()
+        card, ids = last_card_button(phone)
+        assert "hello-pack" in card["text"] and ids.get("Run hello-pack") == "run:hello-pack"
+        hub.handle(FakeChannel.incoming(button="run:hello-pack"))   # no inputs yet: it asks
+        assert hub.wait_idle()
+        assert "Who to greet?" in phone_texts(phone)[-1]
+        assert "run hello-pack" in phone_texts(phone)[-1]
+        hub.handle(FakeChannel.incoming(text="run hello-pack who=Priya"))
+        assert hub.wait_idle() and core.wait_idle()
+        (task,) = core.memory.recent_tasks()
+        assert task.goal == "[agent:hello-pack] Say hello to Priya."
+        assert "hi Priya." in phone_texts(phone)
+    finally:
+        hub.stop()
+        core.shutdown()
+
+
+def test_laptop_only_pack_is_refused_from_the_phone(tmp_path):
+    from lantern.channels.hub import LAPTOP_ONLY
+    core = phone_core(tmp_path, [])
+    phone = FakeChannel()
+    hub = phone_hub(core, phone)
+    try:
+        core.packs.install(PHONE_PACK)   # the default surface is laptop-only
+        hub.handle(FakeChannel.incoming(text="agents"))
+        assert hub.wait_idle()
+        assert "No agents run on the phone" in phone_texts(phone)[-1]
+        hub.handle(FakeChannel.incoming(text="run hello-pack who=Priya"))
+        assert hub.wait_idle()
+        assert LAPTOP_ONLY in phone_texts(phone)[-1]
+        assert core.memory.recent_tasks() == []
+    finally:
+        hub.stop()
+        core.shutdown()
+
+
+def test_unknown_run_stays_an_ordinary_task(tmp_path):
+    core = phone_core(tmp_path, [([], "on my way.")])
+    phone = FakeChannel()
+    hub = phone_hub(core, phone)
+    try:
+        hub.handle(FakeChannel.incoming(text="run errands quickly"))
+        assert hub.wait_idle() and core.wait_idle()
+        (task,) = core.memory.recent_tasks()
+        assert task.goal == "[fake] run errands quickly"
+    finally:
+        hub.stop()
+        core.shutdown()
+
+
+def test_laptop_pack_cards_and_results_stay_off_the_phone(tmp_path):
+    core = phone_core(tmp_path, [([call("write_file", "c1", path="n.txt", content="hi")], ""),
+                                 ([call("finish", "c2", status="done", summary="wrote it")], ""),
+                                 ([], "wrote it.")])
+    phone = FakeChannel()
+    hub = phone_hub(core, phone)
+    try:
+        core.packs.install({**PHONE_PACK, "tools": ["write_file"]})   # laptop-only
+        tid = core.submit("", pack="hello-pack", inputs={"who": "Priya"})
+        assert wait_for(lambda: core.bus.pending())   # the card exists on the bus ...
+        hub.wait_idle()
+        assert phone_cards(phone) == []               # ... but never reaches the phone
+        a = core.bus.pending()[0]
+        core.bus.decide(a.id, a.nonce, True, by="desktop")
+        assert core.wait_idle() and hub.wait_idle()
+        assert core.memory.get_task(tid).status == "done"
+        assert phone_texts(phone) == []               # and neither does the result
+    finally:
+        hub.stop()
+        core.shutdown()
+
+
+def test_both_pack_cards_reach_both_channels_first_answer_wins(tmp_path):
+    core = phone_core(tmp_path, [([call("write_file", "c1", path="n.txt", content="hi")], ""),
+                                 ([call("finish", "c2", status="done", summary="wrote it")], ""),
+                                 ([], "wrote it.")])
+    first, second = FakeChannel(), FakeChannel()
+    second.name = "phone2"
+    hub = phone_hub(core, first, second)
+    try:
+        core.packs.install({**PHONE_PACK, "tools": ["write_file"]})
+        core.set_pack_surface("hello-pack", "both")
+        hub.handle(Incoming("fake", FAKE_OWNER, "text", text="run hello-pack who=Priya"))
+        assert hub.wait_idle()
+        _, ids1 = last_card_button(first)
+        _, ids2 = last_card_button(second)
+        assert ids1.get("✅ Approve") == ids2.get("✅ Approve")   # the same card on both
+        aid = core.bus.pending()[0].id
+        hub.handle(Incoming("phone2", FAKE_OWNER, "button", button=ids2["❌ Deny"]))
+        assert hub.wait_idle()
+        hub.handle(Incoming("fake", FAKE_OWNER, "button", button=ids1["✅ Approve"]))
+        assert hub.wait_idle()
+        assert [m["text"] for m in first.messages() if "isn't open" in m.get("text", "")]
+        assert core.bus.get(aid).decided_by == "phone2"   # the first answer won
+        assert core.wait_idle()
+    finally:
+        hub.stop()
         core.shutdown()
