@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hackathon Reimbursement Request</title>
+<link rel="stylesheet" href="forms.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="mark">₹</div>
+    <div>
+      <h1>Hackathon Reimbursement Request</h1>
+      <p class="sub">Open Build Hackathon 2026 · travel &amp; expenses · Lantern demo form</p>
+    </div>
+  </header>
+
+  <form id="claim" class="card" action="confirmation.html" method="get" novalidate>
+    <div class="grid">
+      <div class="field">
+        <label for="full_name" class="req">Full name</label>
+        <input id="full_name" name="full_name" type="text" autocomplete="name" required>
+      </div>
+      <div class="field">
+        <label for="email" class="req">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div class="field">
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel">
+      </div>
+      <div class="field">
+        <label for="team">Team name</label>
+        <input id="team" name="team" type="text">
+      </div>
+
+      <div class="field">
+        <span class="label req" id="category-label">Expense category</span>
+        <div class="combo" id="category" role="combobox" tabindex="0" aria-labelledby="category-label"
+             aria-haspopup="listbox" aria-expanded="false" aria-controls="category-list" aria-required="true">
+          <span class="ph">Choose a category…</span>
+        </div>
+        <ul class="combo-list" id="category-list" role="listbox" hidden>
+          <li role="option" data-value="travel">Travel</li>
+          <li role="option" data-value="accommodation">Accommodation</li>
+          <li role="option" data-value="meals">Meals</li>
+          <li role="option" data-value="hardware">Hardware</li>
+          <li role="option" data-value="other">Other</li>
+        </ul>
+        <input type="hidden" name="category" id="category-value">
+      </div>
+      <div class="field">
+        <label for="expense_date" class="req">Expense date</label>
+        <input id="expense_date" name="expense_date" type="date" required>
+      </div>
+
+      <div class="field">
+        <label for="amount" class="req">Amount</label>
+        <div class="row2">
+          <input id="amount" name="amount" type="number" min="1" step="0.01" required>
+          <select id="currency" name="currency" aria-label="Currency">
+            <option value="INR">INR</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="receipt">Receipt (PDF or image)</label>
+        <input id="receipt" name="receipt" type="file" accept=".pdf,.png,.jpg,.jpeg,.txt">
+      </div>
+
+      <div class="field full">
+        <label for="purpose" class="req">Purpose</label>
+        <textarea id="purpose" name="purpose" required placeholder="What was this expense for?"></textarea>
+      </div>
+
+      <label class="check full"><input id="confirm" name="confirm" type="checkbox" value="yes" required>
+        I confirm these expenses are accurate and were for the hackathon.</label>
+    </div>
+
+    <div class="section-title">Payout details <span class="pill">optional · we'll email you if blank</span></div>
+    <p class="hint">Lantern leaves these for you: it never types passwords, one-time codes, card or ID numbers.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="portal_password">Organiser portal password</label>
+        <input id="portal_password" name="portal_password" type="password" autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="otp">One-time code sent to your phone</label>
+        <input id="otp" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code">
+      </div>
+      <div class="field">
+        <label for="card_number">Card number for payout</label>
+        <input id="card_number" name="card_number" type="text" inputmode="numeric" autocomplete="cc-number">
+      </div>
+      <div class="field">
+        <label for="cvv">CVV</label>
+        <input id="cvv" name="cvv" type="text" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="pan">PAN (tax ID)</label>
+        <input id="pan" name="pan" type="text">
+      </div>
+    </div>
+
+    <div class="actions">
+      <div class="error" id="error" role="alert"></div>
+      <button class="primary" type="submit">Submit request</button>
+    </div>
+  </form>
+</div>
+
+<script>
+(() => {
+  const combo = document.getElementById('category');
+  const list = document.getElementById('category-list');
+  const hidden = document.getElementById('category-value');
+  const open = (yes) => { list.hidden = !yes; combo.setAttribute('aria-expanded', String(yes)); };
+  const pick = (li) => {
+    list.querySelectorAll('li').forEach(x => x.setAttribute('aria-selected', String(x === li)));
+    combo.innerHTML = '';
+    combo.textContent = li.textContent;
+    combo.setAttribute('data-value', li.dataset.value);
+    hidden.value = li.dataset.value;
+    open(false);
+  };
+  combo.addEventListener('click', () => open(list.hidden));
+  combo.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') { e.preventDefault(); open(true); }
+    if (e.key === 'Escape') open(false);
+  });
+  list.addEventListener('click', (e) => { const li = e.target.closest('li'); if (li) pick(li); });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#category, #category-list')) open(false); }, true);
+
+  document.getElementById('claim').addEventListener('submit', (e) => {
+    const err = document.getElementById('error');
+    const form = e.target;
+    const missing = [...form.querySelectorAll('[required]')].filter(el => el.type === 'checkbox' ? !el.checked : !el.value.trim());
+    if (!hidden.value) missing.push(combo);
+    if (missing.length) {
+      e.preventDefault();
+      err.textContent = 'Please fill: ' + missing.map(el => (el.labels && el.labels[0] ? el.labels[0].textContent : 'Expense category').trim()).join(', ');
+    }
+  });
+})();
+</script>
+</body>
+</html>

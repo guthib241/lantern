@@ -1,0 +1,486 @@
+{
+ "city-permit-application": {
+  "same": [
+   "please submit a city permit request for my new fence",
+   "I need to apply for a permit to remodel my kitchen",
+   "go ahead and file my city permit for the backyard deck",
+   "hey can you put in the permit application for my garage conversion",
+   "start the city permit application for our coffee shop on Main Street",
+   "submit the permit paperwork for my shed before June",
+   "I want to get a city permit for adding a patio cover next month",
+   "file a permit application for the storefront sign",
+   "do the city permit thing for my basement finish",
+   "apply for the city permit for solar panels on my roof"
+  ],
+  "near": [
+   "check the status of my city permit application",
+   "look up what kind of city permit I need for a food truck",
+   "how much does a city permit cost these days",
+   "cancel my pending permit application with the city",
+   "find my old permit approval letter to download",
+   "what are the city parking rules during street sweeping"
+  ]
+ },
+ "tidy-downloads": {
+  "same": [
+   "my downloads are a mess, can you organize them by type please",
+   "put my Downloads into subfolders based on file kind",
+   "group all the stuff I downloaded in March by file type",
+   "clean up my downloads folder, docs with docs and music with music",
+   "please sort the downloads, all those manuals from Home Depot are mixed in",
+   "organize Downloads so videos go with videos and zips go with zips",
+   "do that downloads tidy-up thing",
+   "from last Tuesday's downloads, arrange everything by what kind of file it is",
+   "I need my Downloads sorted neatly into type folders",
+   "separate my downloaded files by category already"
+  ],
+  "near": [
+   "how many files are in my Downloads folder right now?",
+   "show me the biggest file sitting in Downloads",
+   "sort my Documents folder by file type instead",
+   "delete everything in my Downloads to free up space",
+   "what's the best way to manually sort files by type?",
+   "download some pictures of organization ideas for my folders"
+  ]
+ },
+ "expense-reimbursement": {
+  "same": [
+   "please file my dinner receipts from Tuesday for reimbursement",
+   "need to claim back what I paid for parking yesterday",
+   "submit these office supply costs to get paid back",
+   "can you put through my train tickets from the March trip?",
+   "expense the client lunch at Main Street Deli last Friday please",
+   "get me reimbursed for the printer ink I bought this morning",
+   "i wanna send in my mileage and tolls for last week",
+   "file for reimbursement for the September workshop fees",
+   "hey, claim my airport shuttle and baggage fees",
+   "turn in my receipts from the supply run on the 12th for payback"
+  ],
+  "near": [
+   "what's the status of my reimbursement from last month?",
+   "show me a breakdown of everything I expensed in April",
+   "what's the company limit for hotel and travel claims?",
+   "who is supposed to approve my expense report?",
+   "cancel my pending reimbursement request",
+   "how long does it take to get paid after filing expenses?"
+  ]
+ },
+ "renew-library-books": {
+  "same": [
+   "renew my checked-out library items please",
+   "can you extend all my library borrows for another couple weeks?",
+   "Hey, roll over my library loans so I don't get late fees",
+   "Please renew everything I borrowed from the downtown central library",
+   "My books are due tomorrow, can you renew them for me?",
+   "Extend my library checkouts that expire on March 5th",
+   "I need more time with my library books, please renew them all",
+   "Yo just renew my library stuff",
+   "Keep my current library loans for another three weeks please",
+   "Could you renew the two novels I have out from the Riverside branch?"
+  ],
+  "near": [
+   "What library books do I currently have checked out?",
+   "When are my borrowed library books due back?",
+   "Search the library catalog for new mystery books",
+   "Put a hold on that new bestseller at the library for me",
+   "How much do I owe in overdue fines for my library books?",
+   "Can I donate my old books to the library?"
+  ]
+ },
+ "pay-electricity-bill": {
+  "same": [
+   "go ahead and pay my power bill for this month",
+   "can you handle the electric bill? it's due on Friday",
+   "pay off what I owe for electricity",
+   "Hey, settle my September electricity charges please",
+   "take care of the bill from City Power",
+   "I need to pay my electricity, do it now",
+   "please pay the light bill before they add a late fee",
+   "Cover my October power payment with my default card",
+   "yo pay the electric real quick",
+   "Make the payment for my home electricity account for November"
+  ],
+  "near": [
+   "What's the total on my electricity bill this month?",
+   "When is my electric bill due?",
+   "Show me all my past electricity bills from this year",
+   "How much power did I use last month?",
+   "Set a reminder to pay the electricity bill on the 5th",
+   "Turn off autopay for my electric company"
+  ]
+ },
+ "weekly-timesheet": {
+  "same": [
+   "turn in my hours for this week",
+   "log my 40 hours and file the timesheet for last week",
+   "submit the timesheet for the week ending October 24",
+   "hey can you file my work hours for this week please",
+   "send in my weekly timesheet for the Riverside store",
+   "do my timesheet for this week, I worked 32 hours",
+   "file my hours for the week of October 19th",
+   "put in this week's shift hours and submit them",
+   "I need to get my timesheet in for September's last week",
+   "yo submit my work hours, did overtime on Friday"
+  ],
+  "near": [
+   "show me my submitted timesheets from September",
+   "when is the deadline to turn in hours this week?",
+   "how many hours did I log on last week's timesheet?",
+   "delete my draft hours for this week without submitting",
+   "who approves my timesheet after I send it?",
+   "export last month's timesheets as a summary report"
+  ]
+ },
+ "order-office-supplies": {
+  "same": [
+   "order more copy paper and sticky notes for the break room",
+   "hey can you grab us some new pens, folders and toner?",
+   "we're low on supplies, put in an order for notebooks and binder clips",
+   "stock up the supply cabinet before Monday morning",
+   "order highlighters, envelopes and printer ink from OfficeMax",
+   "need staples, tape and A4 paper ordered for November",
+   "get the monthly office essentials ordered, we're out of almost everything",
+   "please reorder desk supplies - paper, clips, and whiteboard markers",
+   "send off a quick stationery order for the new quarter",
+   "buy some extra notepads and mailing labels for the office"
+  ],
+  "near": [
+   "how much did we spend on office supplies back in September?",
+   "look up the tracking status for our last stationery order",
+   "what office supplies do we already have in the storage closet?",
+   "cancel the pending order for printer paper",
+   "find me reviews for the best office supply shops in town",
+   "what's our office supply budget for this quarter?"
+  ]
+ },
+ "parking-permit": {
+  "same": [
+   "please renew my resident street parking for another year",
+   "my parking permit expires next week, can you extend it?",
+   "sort out the renewal for our residents' parking permit for March",
+   "need this year's renewal for the neighborhood parking permit asap",
+   "hey can you handle my parking permit renewal before the 30th",
+   "renew the residents permit for my car for 2027",
+   "keep my street parking valid — renew my residents permit",
+   "do the annual renewal on my residential parking pass please",
+   "my residents' parking runs out in December, renew it now",
+   "extend my council residents parking permission for another 12 months"
+  ],
+  "near": [
+   "how much does a residents' parking permit cost this year?",
+   "where can I find free street parking near the town centre?",
+   "cancel my residents' parking permit, I sold my car",
+   "I got a parking ticket on my street, help me pay the fine",
+   "what streets are covered by the residents' parking zone?",
+   "apply for a temporary visitor parking pass for my guests this weekend"
+  ]
+ },
+ "update-shipping-address": {
+  "same": [
+   "please switch my delivery address to 14 Oak Lane starting next week",
+   "i moved to a new apartment, update my shipping info for future orders",
+   "change the shipping address on my Brightline Store account to my work place",
+   "hey can you make my packages go to my downtown condo from now on?",
+   "i moved in March, set my shop account to send stuff to the new house",
+   "update where my online orders get delivered - new address as of Monday",
+   "set my default ship-to address to the new flat",
+   "change the address on file for deliveries on my shopping profile",
+   "just moved, please put my current home address down for shipping going forward",
+   "use 45 Harbor Road for all my shop shipments from November onward"
+  ],
+  "near": [
+   "what's my current shipping address saved on my shop account?",
+   "how much will shipping cost to send my order to the new flat?",
+   "where is my package right now - track the shipment to my address",
+   "update my billing address but leave the shipping address alone",
+   "look up the store's warehouse address for returns",
+   "what shops near my home offer in-store pickup instead of shipping?"
+  ]
+ },
+ "leave-request": {
+  "same": [
+   "take tomorrow off please",
+   "I want to request two vacation days next week",
+   "put in PTO for December 23rd",
+   "can you file a day off for me on Monday?",
+   "need three days off in August for a trip",
+   "submit a leave request for the last week of November",
+   "yo, get me off work this Friday",
+   "request a full week of vacation starting July 7th",
+   "I need to take October 12th and 13th off work",
+   "please send a time-off request for next Thursday and Friday"
+  ],
+  "near": [
+   "how many vacation days do I have left this year?",
+   "show me my upcoming approved days off at work",
+   "cancel my leave request for next week",
+   "what is the company policy for requesting vacation?",
+   "who else from work is off next Friday?",
+   "look up the public holidays for work in December"
+  ]
+ },
+ "archive-old-invoices": {
+  "same": [
+   "please archive all my invoices from last year",
+   "hey, file away my 2025 invoices into the archive, thanks",
+   "can you shift the January invoices from last year over to the archive?",
+   "put away last year's invoices from Greenleaf Supplies into the archive",
+   "tidy up by moving last year's billing paperwork to the archive",
+   "yo just toss all my old invoices from last year in the archive",
+   "Could you transfer the invoices from December last year into archive storage for me?",
+   "take everything I was invoiced for last year and archive it",
+   "archive it all - every last invoice from last year",
+   "Would you mind cleaning up and filing the invoices from last March into the archive?"
+  ],
+  "near": [
+   "how many invoices did I have last year in total?",
+   "look up last year's invoices in the archive and show me the totals",
+   "delete last year's invoices permanently instead of saving them",
+   "move last year's receipts into the archive",
+   "make a new invoice for this year and archive it right away",
+   "show me what is currently stored in the invoice archive"
+  ]
+ },
+ "rename-scanned-receipts": {
+  "same": [
+   "clean up the names of my receipt scans so they include the store and date",
+   "hey can you retitle all those scanned grocery receipts from March?",
+   "update my receipt scan filenames to show where and when I bought stuff",
+   "organize my scanned receipts with tidy names please",
+   "change the receipt PDFs from FreshMart to be named with shop plus purchase date",
+   "please relabel my December scans from PaperTrail Books by purchase date",
+   "make my scanned receipt files actually readable with dates in them",
+   "tidy up those messy receipt scan titles and add the shop name?",
+   "go through last week's receipt scans and give them proper date-shop names",
+   "can you fix the filenames for my scans from Sunny Corner Cafe?"
+  ],
+  "near": [
+   "find my scanned receipt from the bookshop from last Tuesday and show it to me",
+   "add up the totals on all my scanned receipts from March",
+   "scan this pile of paper receipts for me and save them",
+   "sort my scanned receipts into separate folders by shop without renaming them",
+   "delete any duplicate scanned receipts from April",
+   "what shop and date is on this scanned receipt image?"
+  ]
+ },
+ "backup-photos": {
+  "same": [
+   "save my latest photos to the backup folder",
+   "hey, copy the new pics over to backup",
+   "please duplicate this week's photos into the backup folder",
+   "secure my October pictures by copying them to backup",
+   "copy all the new shots from Saturday to the backup folder",
+   "make sure my recent vacation photos get copied to backup",
+   "back up the pictures I took yesterday",
+   "sync my July photos to the backup folder please",
+   "copy over any new images to the photo backup",
+   "could you stash copies of my latest camera photos in backup?"
+  ],
+  "near": [
+   "how many photos are currently stored in the backup folder?",
+   "show me the newest pictures inside the backup folder",
+   "delete the old copies from the backup folder to free space",
+   "move my photos out of the backup folder back to the main album",
+   "where is the backup folder located on this computer?",
+   "how much storage space is left for photo backups?"
+  ]
+ },
+ "meeting-room": {
+  "same": [
+   "grab me a meeting room for Monday morning at 9",
+   "can you book the big boardroom for our planning session next week?",
+   "I need a room for 6 people this Friday afternoon",
+   "hey, set aside somewhere quiet for the client chat tomorrow",
+   "reserve a meeting space on November 12th for two hours",
+   "book something for the brainstorm at 2pm today",
+   "we need the downtown hub room for the quarterly review",
+   "please lock in a conference room for Dec 3rd",
+   "find and book an available room for my 11 o'clock",
+   "snag the upstairs meeting room for tomorrow evening"
+  ],
+  "near": [
+   "show me a list of all the meeting rooms in the building",
+   "cancel the meeting room I booked for last Tuesday",
+   "what's the capacity of the small conference room?",
+   "book a hotel room for the out-of-town meeting guests",
+   "where is the meeting room for the 10am session?",
+   "how do I connect the projector in the board room?"
+  ]
+ },
+ "report-pothole": {
+  "same": [
+   "there's a big pothole in front of Fresh Buns Bakery, please report it to the city",
+   "can you log a pothole for me on Oak Avenue near the bus stop",
+   "hey, the road outside my apartment is crumbling, send in a pothole complaint",
+   "I hit a nasty pothole yesterday on River Road, need to notify the city",
+   "submit a city report for a deep hole in the pavement on 5th Street",
+   "pothole alert - corner of Maple and 2nd, right by the flower shop, it's getting worse",
+   "please tell the city about multiple potholes on my commute route spotted back in March",
+   "quick, file this: large pothole outside Dollar Corner store causing traffic to swerve",
+   "my tire popped on a pothole last night downtown, report it before someone else gets hurt",
+   "yo, road's messed up with a sinky pothole by the park entrance, let the council know"
+  ],
+  "near": [
+   "where can I check the status of the pothole I already reported",
+   "show me a map of all potholes already reported in the city",
+   "what is the phone number for the city road repair department",
+   "how long does the council usually take to fix a reported pothole",
+   "what counts as a pothole versus just a crack in the road",
+   "find me tips to patch a pothole in my own driveway myself"
+  ]
+ },
+ "cancel-magazine": {
+  "same": [
+   "cancel my subscription to Mountain Trails Monthly",
+   "can you stop my magazine delivery effective next month?",
+   "I'm done with City Food Digest, please end it",
+   "please call off the print magazine, I don't read it anymore",
+   "terminate my Home Style magazine subscription right away",
+   "hey, cancel the kids science magazine for me",
+   "stop renewing my magazine subscription in December",
+   "I want to discontinue the weekly news magazine",
+   "unsubscribe me from the gardening magazine before the March issue",
+   "kill my subscription to Travel Ideas Monthly, please"
+  ],
+  "near": [
+   "when does my magazine subscription run out?",
+   "how much am I paying for my monthly magazine?",
+   "pause my magazine delivery for the summer",
+   "sign me up for a new travel magazine subscription",
+   "renew my print magazine for another year",
+   "list all my active magazine subscriptions"
+  ]
+ },
+ "webinar-signup": {
+  "same": [
+   "please enroll me in tomorrow's webinar on budgeting",
+   "save me a seat for the online workshop this Friday",
+   "i want to join the November live webinar about home decor",
+   "hook me up with a spot in the BrightMart holiday sales webinar",
+   "count me in for Thursday evening's virtual talk",
+   "can you get me registered for the upcoming product demo webinar?",
+   "add me to the attendee list for next week's marketing webinar",
+   "yo put me on for that webinar later today",
+   "book my place in the December e-commerce trends online seminar",
+   "sign me up, I don't want to miss the small business webinar on the 15th"
+  ],
+  "near": [
+   "when is the next product webinar scheduled?",
+   "cancel my registration for Thursday's webinar",
+   "send me the recording from yesterday's webinar",
+   "who is speaking at the online talk this week?",
+   "take me off the mailing list for webinars",
+   "what do I need to install to watch the webinar?"
+  ]
+ },
+ "homework-upload": {
+  "same": [
+   "put my science homework up on the school portal",
+   "hey can you hand in my book report before midnight",
+   "submit my October math worksheet to class online",
+   "upload the file for this week's geography assignment please",
+   "turn in my homework on the portal, it's due tomorrow morning",
+   "do the school portal upload for my art project",
+   "send in my homework",
+   "please post my completed English essay to the school portal for Friday's class",
+   "I finished my homework, upload it for me",
+   "hand over my history homework to the portal now"
+  ],
+  "near": [
+   "what homework assignments are listed on the school portal right now?",
+   "did my homework upload go through yesterday?",
+   "download the homework sheet from the school portal for me",
+   "what grade did I get on my last uploaded assignment?",
+   "delete my old homework submission from the portal",
+   "how do I find my class schedule on the school portal?"
+  ]
+ },
+ "move-screenshots": {
+  "same": [
+   "Tidy up my desktop by relocating the screenshots elsewhere",
+   "Get these screenshot files off my desktop please",
+   "Can you stash yesterday's desktop screenshots in the Pictures folder?",
+   "My desktop is messy, move the screenshots from March into storage",
+   "Yo clear off those screengrabs cluttering my desktop",
+   "Transfer every screenshot sitting on the desktop to the Screenshots album",
+   "Please organize my desktop by moving all the screen captures away",
+   "Move the screenshots I took last weekend off the desktop",
+   "Help me clean my desktop, just relocate the screenshot images",
+   "Shift my October desktop screenshots somewhere else so it's tidy"
+  ],
+  "near": [
+   "Where on my computer are screenshots currently stored?",
+   "How do I take a screenshot on this desktop?",
+   "Show me a preview of the screenshots sitting on my desktop",
+   "Rename all the screenshots on my desktop with today's date",
+   "Delete my desktop screenshots permanently instead of keeping them",
+   "Take a new screenshot of my desktop right now"
+  ]
+ },
+ "transcript-request": {
+  "same": [
+   "I need an official transcript sent out this week",
+   "Please order my college transcript for me",
+   "Get my official academic record sent to the admissions office",
+   "Hey can you handle my transcript request before Friday?",
+   "I have to submit my official transcripts for a job application, please request one",
+   "Send an official copy of my transcript to Riverside Community College",
+   "Need my university transcript ASAP for March deadlines",
+   "Could you put in a request for my sealed transcript?",
+   "Yo order me that official school transcript thing",
+   "Please request two official copies of my final grades transcript by December"
+  ],
+  "near": [
+   "What's my current GPA listed on my transcript?",
+   "How much does an official transcript cost and how long does delivery take?",
+   "Show me an unofficial preview of my grades just to look at",
+   "Can you fix a wrong grade showing on my academic record?",
+   "Where do I pick up my diploma instead of getting a transcript?",
+   "Do I need a transcript or just a degree verification letter for this application?"
+  ]
+ },
+ "water-bill": {
+  "same": [
+   "please pay my water bill now",
+   "go ahead and clear the water utility charges",
+   "take care of September's water bill for me",
+   "water bill due on the 5th — just pay it",
+   "pay off what I owe for water this month",
+   "hey, can you settle my water account balance today?",
+   "make the payment for the city water services bill",
+   "pay the October water invoice before Friday",
+   "I need the household water bill paid ASAP",
+   "cover my water charges for this billing cycle, thanks"
+  ],
+  "near": [
+   "what's the total on my current water bill?",
+   "show me last quarter's water bill amount",
+   "when is my water payment due this month?",
+   "look up the water company's customer service number",
+   "how much water did we use in August?",
+   "download a PDF of my recent water invoice"
+  ]
+ },
+ "donate-books": {
+  "same": [
+   "book a collection for the books I'm giving away",
+   "please arrange someone to pick up my donated novels this Friday",
+   "I have three boxes of kids books to donate, can you get them collected?",
+   "set up a book donation pickup for next week",
+   "get someone to come by Tuesday and grab my old paperbacks for charity",
+   "organize a pickup of my donation to Second Chapter in November",
+   "come collect my used books for donation tomorrow morning",
+   "I want to donate these cookbooks, please schedule a pickup",
+   "book me in for a charity book collection on the 15th",
+   "yo can you have someone swing by and pick up these donated books?"
+  ],
+  "near": [
+   "where's the nearest drop-off point for donating books?",
+   "what kinds of books do charities accept for donation?",
+   "look up what my old first-edition books are worth",
+   "schedule a pickup for my donated clothes and furniture instead",
+   "cancel my scheduled book donation collection",
+   "remind me to pack my books for donation this weekend"
+  ]
+ }
+}

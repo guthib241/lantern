@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src http://127.0.0.1:* ws://127.0.0.1:*">
+<meta name="color-scheme" content="light dark">
+<title>Lantern</title>
+<link rel="stylesheet" href="avatar.css">
+</head>
+<body>
+  <div class="stage">
+    <!-- The live activity: a black capsule that says what Lantern is doing, and grows into a small card
+         for approvals, results and reminders. -->
+    <div class="island" id="island" data-mode="idle" hidden role="status" aria-live="polite">
+      <div class="compact">
+        <span class="lead" id="island-lead" aria-hidden="true"></span>
+        <span class="text" id="island-text"></span>
+        <span class="tag" id="island-badge" hidden></span>
+      </div>
+      <div class="more">
+        <p class="detail" id="island-detail"></p>
+        <div class="buttons" id="island-buttons" hidden>
+          <button class="deny" id="island-deny">Deny</button>
+          <button class="allow" id="island-allow">Allow</button>
+          <button class="review" id="island-review">Review…</button>
+        </div>
+      </div>
+    </div>
+    <div class="sprite" id="sprite" title="Lantern: click to open, right-click for STOP"></div>
+  </div>
+  <script src="../assets/avatar/manifest.js"></script>
+  <script src="lib/state.js"></script>
+  <script src="lib/cards.js"></script>
+  <script src="lib/expression.js"></script>
+  <script src="lib/activity.js"></script>
+  <script src="lib/sprite.js"></script>
+  <script src="lib/api.js"></script>
+  <script src="avatar.js"></script>
+</body>
+</html>

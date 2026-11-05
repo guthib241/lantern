@@ -1,0 +1,12 @@
+{
+ "lessons": [
+  {
+   "file": "quadratic.json",
+   "title": "Solve x² − 5x + 6 = 0"
+  },
+  {
+   "file": "derivative.json",
+   "title": "Differentiate x² · sin x"
+  }
+ ]
+}

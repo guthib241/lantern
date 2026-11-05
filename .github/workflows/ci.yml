@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: System tools (ffmpeg for voice notes)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install Lantern
+        run: pip install -e ".[dev,network,teach,cv]"
+      - name: Browser for the form tests
+        run: python -m playwright install --with-deps chromium
+      - name: Lint (pyflakes)
+        run: python -m pyflakes lantern scripts tests
+      - name: Tests (offline, scripted fake model; includes the desktop's node tests)
+        run: python -m pytest -q
+      - name: Rehearsal (the whole demo story, offline)
+        run: lantern --demo-run --demo-dir "$RUNNER_TEMP/rehearsal"
+      - name: Setup doctor runs
+        run: lantern --doctor
